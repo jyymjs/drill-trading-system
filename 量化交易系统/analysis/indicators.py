@@ -140,6 +140,215 @@ def consecutive_count(series: pd.Series, condition) -> int:
     return count
 
 
+def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int = 3) -> int:
+    """平台位测试次数计数（PT 维度核心）
+
+    统计价格对同一水平位的反复测试次数。
+    两次测试间隔 < min_gap 根K线算同一次。
+
+    Args:
+        df: K线DataFrame
+        tolerance: 同一水平位的容忍范围（比例）
+        min_gap: 两次测试最小间隔K线数
+
+    Returns:
+        有效测试次数
+    """
+    if len(df) < 20:
+        return 0
+
+    close = df["收盘"].values
+    high = df["最高"].values
+    low = df["最低"].values
+
+    # 取最近60根K线的主要价格水平（用均值聚类）
+    n = min(60, len(df))
+    prices = close[-n:]
+
+    # 用简单方法：找价格反复触及的区域
+    # 计算每个价格水平附近的触及次数
+    levels = []
+    counts = []
+    last_touch = []  # 记录每次测试的位置
+
+    for i in range(len(prices)):
+        p = prices[i]
+        matched = False
+        for j, lv in enumerate(levels):
+            if abs(p - lv) / (lv + 1e-8) <= tolerance:
+                # 检查间隔
+                if last_touch and i - last_touch[j] < min_gap:
+                    last_touch[j] = i
+                    matched = True
+                    break
+                counts[j] += 1
+                last_touch[j] = i
+                matched = True
+                break
+        if not matched:
+            levels.append(p)
+            counts.append(1)
+            last_touch.append(i)
+
+    return max(counts) if counts else 0
+
+
+def profile_compactness(df: pd.DataFrame, window: int = 20) -> float:
+    """轮廓紧凑度评分（LK 维度核心）
+
+    计算K线实体占波幅比例的平均值。
+    >0.5 = 紧凑，<0.3 = 松散。
+
+    Args:
+        df: K线DataFrame
+        window: 计算窗口
+
+    Returns:
+        紧凑度评分 0~1
+    """
+    if len(df) < window:
+        window = len(df)
+    recent = df.tail(window)
+    hl = recent["最高"] - recent["最低"]
+    body = (recent["收盘"] - recent["开盘"]).abs()
+    ratios = (body / hl).fillna(1.0).clip(upper=1.0)
+    return float(ratios.mean())
+
+
+def retracement_detect(df: pd.DataFrame, lookback: int = 15) -> dict:
+    """回踩轨迹检测
+
+    检测最近的"上→下→上"摆动结构。
+    "直接往上冲不做"——必须检测到回踩动作。
+
+    Args:
+        df: K线DataFrame
+        lookback: 回溯K线数
+
+    Returns:
+        {"has_retracement": bool, "quality": "good"/"weak"/"none"}
+    """
+    if len(df) < lookback:
+        return {"has_retracement": False, "quality": "none"}
+
+    recent = df.tail(lookback)
+    highs = recent["最高"].values
+    lows = recent["最低"].values
+
+    # 检测是否存在先升→后降→再升的摆动
+    n = len(highs)
+    mid = n // 2
+
+    first_half_high = highs[:mid].max()
+    first_half_low = lows[:mid].min()
+    second_half_high = highs[mid:].max()
+    second_half_low = lows[mid:].min()
+
+    # 完整回踩：先升(前段高点高) → 降(中段低点低) → 再升(后段高点>前段高点)
+    if (second_half_high > first_half_high * 0.98
+            and first_half_low < second_half_low * 1.02
+            and first_half_high > first_half_high * 0.95):
+        return {"has_retracement": True, "quality": "good"}
+
+    # 微弱回踩
+    if second_half_high > first_half_high * 0.95:
+        return {"has_retracement": True, "quality": "weak"}
+
+    return {"has_retracement": False, "quality": "none"}
+
+
+def channel_detect(df: pd.DataFrame, n: int = 8) -> dict:
+    """通道上涨检测
+
+    检测是否形成狭窄上升通道。"通道感不喜欢"——降级。
+
+    Args:
+        df: K线DataFrame
+        n: 检测窗口
+
+    Returns:
+        {"is_channel": bool, "strength": float}
+    """
+    if len(df) < n:
+        return {"is_channel": False, "strength": 0.0}
+
+    recent = df.tail(n)
+    highs = recent["最高"].values
+    lows = recent["最低"].values
+
+    # 检查高低点是否同步抬高
+    high_increasing = all(highs[i] <= highs[i + 1] for i in range(n - 1))
+    low_increasing = all(lows[i] <= lows[i + 1] for i in range(n - 1))
+
+    if not (high_increasing or low_increasing):
+        return {"is_channel": False, "strength": 0.0}
+
+    # 通道稳定性：回归R²
+    x = np.arange(n)
+    try:
+        coefs = np.polyfit(x, highs, 1)
+        preds = np.polyval(coefs, x)
+        ss_res = np.sum((highs - preds) ** 2)
+        ss_tot = np.sum((highs - np.mean(highs)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    except Exception:
+        r2 = 0
+
+    # 波动范围 vs 趋势幅度
+    total_range = highs.max() - lows.min()
+    trend_range = abs(highs[-1] - highs[0])
+    channel_ratio = total_range / trend_range if trend_range > 0 else 1.0
+
+    is_channel = r2 > 0.7 and channel_ratio < 0.4
+    return {"is_channel": is_channel, "strength": r2 if is_channel else 0.0}
+
+
+def overshoot_detect(df: pd.DataFrame, window: int = 60) -> dict:
+    """过高点检测
+
+    检测结构内是否出现过"创新高后回落"的过高点。
+    过高点后需从新位置重新计数结构。
+
+    Args:
+        df: K线DataFrame
+        window: 检测窗口
+
+    Returns:
+        {"has_overshoot": bool, "position": int}
+    """
+    if len(df) < 30:
+        return {"has_overshoot": False, "position": -1}
+
+    close = df["收盘"].values
+    n = min(window, len(df))
+    recent_close = close[-n:]
+    recent_high = df["最高"].values[-n:]
+
+    # 找局部最高点
+    local_high_idx = -1
+    local_high_val = 0
+    for i in range(10, n - 5):  # 排除边界
+        if (recent_high[i] > recent_high[i - 1]
+                and recent_high[i] >= recent_high[i - 2]
+                and recent_high[i] > recent_high[i + 1]
+                and recent_high[i] > recent_high[i + 2]):
+            # 检查这个高点后是否回落超过2%
+            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
+                if recent_high[i] > local_high_val:
+                    local_high_val = recent_high[i]
+                    local_high_idx = i
+
+    # 过高点：创了收盘新高后回落
+    if local_high_idx >= 0:
+        # 检查此高点前是否有更低的起点
+        pre_low = min(recent_close[:local_high_idx])
+        post_low = recent_close[local_high_idx:].min()
+        if pre_low < post_low < local_high_val:
+            return {"has_overshoot": True, "position": local_high_idx}
+
+    return {"has_overshoot": False, "position": -1}
+
+
 def support_resistance_levels(df: pd.DataFrame, n_bins: int = 20) -> list[float]:
     """简易支撑/阻力位检测：价格分布峰值
 

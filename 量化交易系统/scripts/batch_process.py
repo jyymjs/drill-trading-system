@@ -74,6 +74,8 @@ def process_one_video(video_path: str, output_dir: str, zhipu_key: str,
             cmd,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=1800,  # 30分钟超时
             env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,

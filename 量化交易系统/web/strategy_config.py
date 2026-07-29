@@ -2,16 +2,12 @@
 import streamlit as st
 from strategy.base import BaseStrategy
 from strategy.samples.demo_strategy import GoldenCrossStrategy
-from strategy.samples.zuanqian_strategy import (
-    ZuanQianStandardStrategy,
-    ZuanQianVCPStrategy,
-)
+from strategy.samples.zuanqian_strategy import ZuanQianStrategy
 
 # 注册可用策略
 AVAILABLE_STRATEGIES: dict[str, type[BaseStrategy]] = {
     "均线金叉+放量": GoldenCrossStrategy,
-    "钻潜标准模式": ZuanQianStandardStrategy,
-    "钻潜VCP模式": ZuanQianVCPStrategy,
+    "钻潜评级策略": ZuanQianStrategy,
 }
 
 

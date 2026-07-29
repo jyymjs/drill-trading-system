@@ -44,24 +44,36 @@ _ETF_NAMES = {
 
 
 def get_etf_list() -> list[dict]:
-    """获取全部ETF列表（从 bulk ETF 数据中提取）
+    """获取全部ETF列表
+
+    优先从静态映射表返回常见ETF，确保不依赖 baostock bulk API。
 
     Returns:
         [{"code": "510050", "name": "上证50ETF"}, ...]
     """
     try:
-        from data.fetcher import get_bulk_etf_day
-        df = get_bulk_etf_day()
-        if not df.empty:
-            unique = sorted(df["code"].dropna().unique())
-            return [
-                {"code": c, "name": _ETF_NAMES.get(c, c)}
-                for c in unique
-            ]
-        return []
-    except Exception as e:
-        print(f"获取ETF列表失败: {e}")
-        return []
+        # 尝试从 pytdx 获取 ETF 列表
+        from pytdx.hq import TdxHq_API
+        api = TdxHq_API()
+        api.connect('180.153.18.170', 7709, time_out=3)
+        count = api.get_security_count(1)  # 上海ETF
+        if count and count > 0:
+            etfs = api.get_security_list(1, 0, count)
+            api.disconnect()
+            if etfs:
+                result = []
+                for e in etfs:
+                    code = str(e.get('code', ''))
+                    if code.startswith('51') or code.startswith('15') or code.startswith('16'):
+                        name = e.get('name', code)
+                        result.append({"code": code, "name": name})
+                if result:
+                    return result
+    except Exception:
+        pass
+
+    # 回退：返回静态ETF列表
+    return [{"code": c, "name": n} for c, n in _ETF_NAMES.items()]
 
 
 def get_all_securities(include_etf: bool = True) -> list[dict]:

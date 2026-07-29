@@ -15,21 +15,33 @@ except ImportError:
     HAS_MPF = False
 
 
-def print_results(results: list[dict], top_n: int = 30) -> None:
+def print_results(results: list[dict], top_n: int = 30, mode: str = "normal") -> None:
     """打印扫描结果表格"""
     if not results:
         print("\n没有符合条件股票")
         return
 
+    if mode == "prebreak":
+        _print_prebreak(results, top_n)
+    else:
+        _print_normal(results, top_n)
+
+    if len(results) > top_n:
+        print(f"\n... 还有 {len(results) - top_n} 只 (完整结果保存在 output/)")
+
+
+def _print_normal(results: list[dict], top_n: int) -> None:
+    """标准模式表格"""
     table = PrettyTable()
-    table.field_names = ["序号", "代码", "名称", "收盘", "涨幅%", "换手率%", "RSI", "MA5", "MA20"]
+    table.field_names = ["评级", "代码", "名称", "收盘", "涨幅%", "换手率%", "RSI", "MA5", "MA20"]
     table.align["名称"] = "l"
     table.align["代码"] = "l"
     table.float_format = ".2"
 
     for i, r in enumerate(results[:top_n], 1):
+        grade = r.get("评级", "?")
         table.add_row([
-            i,
+            grade,
             r["code"],
             r["name"],
             r.get("price", "--"),
@@ -43,8 +55,37 @@ def print_results(results: list[dict], top_n: int = 30) -> None:
     print(f"\n=== 扫描结果 ({len(results)} 只符合条件) ===\n")
     print(table)
 
-    if len(results) > top_n:
-        print(f"\n... 还有 {len(results) - top_n} 只 (完整结果保存在 output/)")
+
+def _print_prebreak(results: list[dict], top_n: int) -> None:
+    """预突破模式表格（含条件单参数）"""
+    table = PrettyTable()
+    table.field_names = ["评级", "代码", "名称", "收盘", "触发价", "止损价", "风险/股", "手数"]
+    table.align["名称"] = "l"
+    table.align["代码"] = "l"
+    table.float_format = ".2"
+
+    for i, r in enumerate(results[:top_n], 1):
+        grade = r.get("评级", "?")
+        trigger = r.get("触发价", 0)
+        stop = r.get("止损价", 0)
+        risk_per = r.get("每股风险", 0)
+        # 手数 = 150 / 每股风险 / 100 → 取整（最小1手）
+        lots = max(1, int(150 / risk_per / 100)) if risk_per > 0 else 0
+        table.add_row([
+            grade,
+            r["code"],
+            r["name"],
+            r.get("price", "--"),
+            f'{trigger:.2f}' if trigger else "--",
+            f'{stop:.2f}' if stop else "--",
+            f'{risk_per:.2f}' if risk_per else "--",
+            lots if lots > 0 else "--",
+        ])
+
+    print(f"\n=== 预突破候选 ({len(results)} 只) ===\n")
+    print(f"       条件单参数: 风险=¥150 | 触发=TY上沿 | 止损=TY下沿")
+    print(f"       晚间挂单 → 次日盘中自动触发 → 同步挂止损单\n")
+    print(table)
 
 
 def save_results(results: list[dict]) -> str:

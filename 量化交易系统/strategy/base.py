@@ -55,8 +55,37 @@ class BaseStrategy(ABC):
         Args:
             df: 仅含基础K线列的DataFrame（开盘/收盘/最高/最低/成交量/日期）
         """
-        # 默认：至少有足够数据
-        return len(df) >= 60
+        if len(df) < 60:
+            return False
+
+        close = df["收盘"].values
+        high = df["最高"].values
+        low = df["最低"].values
+
+        # 1. 近期波动不能过大（60根K线内波幅不超过50%）
+        recent_high = high[-60:].max()
+        recent_low = low[-60:].min()
+        if (recent_high - recent_low) / close[-1] > 0.50:
+            return False
+
+        # 2. 排除完全释放（涨幅过大）——从60日低点起涨幅>40%则排除
+        low_60 = low[-60:].min()
+        if low_60 > 0 and (close[-1] - low_60) / low_60 > 0.40:
+            return False
+
+        # 3. 排除通道上涨（沿着一条斜线慢慢上蹭）
+        recent_highs = high[-8:]
+        recent_lows = low[-8:]
+        high_inc = all(recent_highs[i] <= recent_highs[i + 1] for i in range(min(7, len(recent_highs) - 1)))
+        low_inc = all(recent_lows[i] <= recent_lows[i + 1] for i in range(min(7, len(recent_lows) - 1)))
+        if high_inc and low_inc:
+            # 检查幅度是否过小（狭窄通道）
+            total_range = recent_highs.max() - recent_lows.min()
+            trend_range = abs(recent_highs[-1] - recent_highs[0])
+            if trend_range > 0 and total_range / trend_range < 0.4:
+                return False
+
+        return True
 
     def get_params(self) -> dict:
         """返回策略参数，用于展示"""

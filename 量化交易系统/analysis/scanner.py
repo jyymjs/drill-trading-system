@@ -19,8 +19,12 @@ def scan_single_stock(
     stock: dict,
     strategy: BaseStrategy,
     years: int = KLINE_YEARS,
+    mode: str = "normal",
 ) -> dict | None:
     """对单只股票执行策略筛选
+
+    Args:
+        mode: "normal"=完整6条件, "prebreak"=预突破5条件（不含DN）
 
     Returns:
         {"code":, "name":, "match": bool, "price":, ...} 或 None
@@ -43,11 +47,22 @@ def scan_single_stock(
             df = all_indicators(df, needed_cols=needed)
 
             # 执行策略
-            match = strategy.filter(df)
+            if mode == "prebreak" and hasattr(strategy, 'prebreak_grade'):
+                result = strategy.prebreak_grade(df)
+                match = result.get("match", False)
+                grade = result.get("grade", "C")
+            elif hasattr(strategy, 'grade'):
+                result = strategy.grade(df)
+                match = result.get("match", False)
+                grade = result.get("grade", "C")
+            else:
+                match = strategy.filter(df)
+                grade = "?"
+                result = {}
 
             if match:
                 latest = df.iloc[-1]
-                return {
+                entry = {
                     "code": code,
                     "name": name,
                     "price": latest.get("收盘", 0),
@@ -57,8 +72,19 @@ def scan_single_stock(
                     "MA5": latest.get("MA5", 0),
                     "MA20": latest.get("MA20", 0),
                     "RSI": round(latest.get("RSI", 0), 1),
+                    "评级": grade,
                     "策略": strategy.name,
                 }
+
+                # 预突破模式：附加条件单关键参数
+                if mode == "prebreak":
+                    entry["触发价"] = result.get("trigger_price", 0)
+                    entry["止损价"] = result.get("stop_loss", 0)
+                    entry["每股风险"] = result.get("risk_per_share", 0)
+                    entry["TY高"] = result.get("ty_high", 0)
+                    entry["TY低"] = result.get("ty_low", 0)
+
+                return entry
             return None
 
         except Exception as e:
@@ -75,6 +101,7 @@ def scan(
     show_progress: bool = SCAN_PROGRESS,
     progress_callback: Callable | None = None,
     security_type: str = "stock",
+    mode: str = "normal",
 ) -> list[dict]:
     """全市场扫描
 
@@ -84,12 +111,14 @@ def scan(
         show_progress: 是否显示 tqdm 进度条
         progress_callback: Streamlit 进度回调 fn(current, total, stock_name)
         security_type: "stock"=仅股票, "etf"=仅ETF, "all"=全部
+        mode: "normal"=标准评级, "prebreak"=预突破模式
 
     Returns:
         符合条件的标的列表 [{code, name, price, ...}, ...]
     """
-    logger.info("开始扫描 | 策略: %s | 类型: %s | 并发: %d",
-                strategy.name, security_type, max_workers)
+    mode_label = {"normal": "标准6条件", "prebreak": "预突破5条件"}.get(mode, mode)
+    logger.info("开始扫描 | 策略: %s | 模式: %s | 类型: %s | 并发: %d",
+                strategy.name, mode_label, security_type, max_workers)
     logger.info("策略说明: %s", strategy.description)
 
     # 获取股票/ETF池
@@ -108,7 +137,7 @@ def scan(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(scan_single_stock, s, strategy): s
+            executor.submit(scan_single_stock, s, strategy, KLINE_YEARS, mode): s
             for s in stocks
         }
 
@@ -127,8 +156,12 @@ def scan(
             if progress_callback:
                 progress_callback(i + 1, total, "")
 
-    # 按涨幅排序
-    results.sort(key=lambda x: x.get("涨幅%", 0), reverse=True)
+    # 排序：预突破模式按评级优先，标准模式按涨幅
+    if mode == "prebreak":
+        grade_order = {"S": 0, "A": 1, "B": 2}
+        results.sort(key=lambda x: grade_order.get(x.get("评级", "C"), 3))
+    else:
+        results.sort(key=lambda x: x.get("涨幅%", 0), reverse=True)
 
     logger.info("扫描完成 | 符合条件: %d 只", len(results))
     return results

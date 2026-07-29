@@ -1,21 +1,27 @@
-"""数据更新模块 - 增量/全量更新
+"""数据更新模块 - pytdx + 并发加速
 
-使用 baostock 批量 API 实现快速增量更新：
-- 首次全量：逐只下载（已有缓存的重用）
-- 每日增量：用 bulk API 批量拉取最新一天数据，约 10 秒搞定
+数据源优先级: pytdx(0.1-0.3秒/只) → baostock(2-3秒/只, fallback)
+
+更新策略:
+  - 快速更新: 用 pytdx 并发拉取最新数据（全市场约 10-20 秒）
+  - 全量更新: 逐只 pytdx + ThreadPoolExecutor 并行
 """
 import os
 import time
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 import pandas as pd
 
-from data.fetcher import get_daily_kline, get_bulk_day, get_stock_list
+from data.fetcher import get_daily_kline, _fetch_by_pytdx
 from data.cache import cache_path, read_cache, write_cache
 from config.settings import KLINE_YEARS
 
 MODE_SKIP = "skip"
 MODE_OVERWRITE = "over"
+
+# 并发线程数
+MAX_WORKERS = 8
 
 
 def _latest_date_in_cache(symbol: str) -> str | None:
@@ -32,22 +38,8 @@ def _latest_date_in_cache(symbol: str) -> str | None:
     return None
 
 
-def _read_cache_dates(symbol: str) -> tuple[str | None, str | None]:
-    """读取缓存中的最早和最晚日期"""
-    path = cache_path(symbol)
-    if not os.path.exists(path):
-        return None, None
-    try:
-        df = pd.read_csv(path, parse_dates=["日期"])
-        if df.empty:
-            return None, None
-        return df["日期"].min().strftime("%Y-%m-%d"), df["日期"].max().strftime("%Y-%m-%d")
-    except Exception:
-        return None, None
-
-
 def _is_data_upto_date(symbol: str, max_days: int = 3) -> bool:
-    """判断缓存是否已包含最新数据（最近max_days天内）"""
+    """判断缓存是否已包含最新数据"""
     latest = _latest_date_in_cache(symbol)
     if latest is None:
         return False
@@ -72,152 +64,160 @@ def update_single_stock(symbol: str, mode: str = MODE_SKIP) -> str:
         return "failed"
 
 
-def incremental_update(
-    mode: str = MODE_SKIP,
-    include_etf: bool = True,
-    progress_callback: Callable | None = None,
-) -> dict:
-    """增量更新 - 使用bulk API快速拉取最新一天数据
-
-    这是主要更新函数。流程：
-    1. 从 baostock bulk API 批量获取全市场最新一日 K 线
-    2. 遍历每个标的，合并到本地缓存文件
-    3. 支持跳过/覆盖模式
-
-    Args:
-        mode: MODE_SKIP（已有不覆盖）或 MODE_OVERWRITE（强制覆盖）
-        include_etf: 是否包含ETF
-        progress_callback: fn(current, total, code, name, status)
-
-    Returns:
-        {"updated": N, "skipped": N, "failed": N}
-    """
-    # Step 1: 批量拉取全市场最新数据
-    latest_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    bulk_df = get_bulk_day(latest_date, include_etf=include_etf)
-
-    if bulk_df.empty:
-        # fallback: 尝试更早日期
-        for days_back in range(2, 7):
-            test_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-            bulk_df = get_bulk_day(test_date, include_etf=include_etf)
-            if not bulk_df.empty:
-                latest_date = test_date
-                break
-
-    if bulk_df.empty:
-        return {"updated": 0, "skipped": 0, "failed": 0, "info": "未获取到数据"}
-
-    total = len(bulk_df)
-    result = {"updated": 0, "skipped": 0, "failed": 0, "date": latest_date}
-
-    for i, (_, row) in enumerate(bulk_df.iterrows()):
-        code = row.get("code", "")
-        if not code:
-            continue
-
-        status = _merge_bulk_row(code, row, latest_date, mode)
-
-        if status == "updated":
-            result["updated"] += 1
-        elif status == "skipped":
-            result["skipped"] += 1
-        else:
-            result["failed"] += 1
-
-        if progress_callback:
-            progress_callback(i + 1, total, code, "", status)
-
-    return result
-
-
-def _merge_bulk_row(code: str, new_row: pd.Series, date_str: str, mode: str) -> str:
-    """将单日bulk数据合并到本地缓存
-
-    如果缓存存在、且包含此日期 → skip
-    如果缓存不存在 → 创建新缓存
-    如果缓存不全 → 用 get_daily_kline 补全历史 + 追加新数据
-    """
-    path = cache_path(code)
-    latest, oldest = _read_cache_dates(code)
-
-    # 缓存已包含此日期
-    if latest and latest >= date_str:
-        if mode == MODE_SKIP:
-            return "skipped"
-
-    try:
-        row_data = {
-            "日期": pd.to_datetime(new_row.get("日期", date_str)),
-            "开盘": float(new_row.get("开盘", 0)),
-            "最高": float(new_row.get("最高", 0)),
-            "最低": float(new_row.get("最低", 0)),
-            "收盘": float(new_row.get("收盘", 0)),
-            "成交量": float(new_row.get("成交量", 0)),
-            "成交额": float(new_row.get("成交额", 0)),
-            "换手率": float(new_row.get("换手率", 0)),
-        }
-
-        if os.path.exists(path) and latest:
-            # 读取已有缓存
-            df = pd.read_csv(path, parse_dates=["日期"])
-            # 如果这个日期已经存在，删除旧行再追加
-            mask = df["日期"].dt.strftime("%Y-%m-%d") != date_str
-            new_df = pd.concat([df[mask], pd.DataFrame([row_data])], ignore_index=True)
-            new_df = new_df.sort_values("日期").reset_index(drop=True)
-
-            # 补涨跌幅
-            if "收盘" in new_df.columns:
-                new_df["涨跌幅"] = new_df["收盘"].pct_change() * 100
-                new_df["涨跌额"] = new_df["收盘"].diff()
-                new_df["振幅"] = (new_df["最高"] - new_df["最低"]) / new_df["最低"].replace(0, pd.NA) * 100
-        else:
-            # 无缓存 - 拉取全年历史 + 追加当日
-            df = get_daily_kline(code, use_cache=False)
-            if df is None or df.empty:
-                return "failed"
-            new_df = df
-
-        write_cache(code, new_df)
-        return "updated"
-
-    except Exception:
-        return "failed"
-
-
 def update_all_stocks(
     stocks: list[dict] | None = None,
     mode: str = MODE_SKIP,
     progress_callback: Callable | None = None,
 ) -> dict:
-    """全量逐只更新（适用于首次下载）
+    """全量逐只更新（并发 pytdx，推荐方式）
 
-    性能较差，建议优先使用 incremental_update()
-    仅用于首次全量下载或强制覆盖模式
+    Args:
+        stocks: 股票列表 [{code, name}, ...]
+        mode: MODE_SKIP（已有不覆盖）或 MODE_OVERWRITE
+        progress_callback: fn(current, total, code, name, status)
+
+    Returns:
+        {"updated": N, "skipped": N, "failed": N}
     """
     if stocks is None:
-        stocks = get_stock_list()
+        from config.stock_pool import get_all_stocks
+        stocks = get_all_stocks()
 
     total = len(stocks)
     result = {"updated": 0, "skipped": 0, "failed": 0}
+    lock = __import__("threading").Lock()
 
-    for i, stock in enumerate(stocks):
+    def _update_one(stock: dict) -> tuple[str, str, str]:
+        """线程内更新单只"""
         code = stock["code"]
-        name = stock["name"]
-        status = update_single_stock(code, mode)
+        name = stock.get("name", code)
 
-        if status == "updated":
-            result["updated"] += 1
-        elif status == "skipped":
-            result["skipped"] += 1
-        else:
-            result["failed"] += 1
+        if mode == MODE_SKIP:
+            try:
+                if _is_data_upto_date(code):
+                    return code, name, "skipped"
+            except Exception:
+                pass
 
-        if progress_callback:
-            progress_callback(i + 1, total, code, name, status)
+        try:
+            # 优先 pytdx
+            df = _fetch_by_pytdx(code, KLINE_YEARS)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, name, "updated"
 
-        time.sleep(0.05)
+            # fallback baostock
+            df = get_daily_kline(code, use_cache=False)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, name, "updated"
+            return code, name, "failed"
+        except Exception:
+            return code, name, "failed"
 
+    completed = 0
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(_update_one, s): s for s in stocks}
+
+        for future in as_completed(futures):
+            try:
+                code, name, status = future.result()
+                with lock:
+                    if status == "updated":
+                        result["updated"] += 1
+                    elif status == "skipped":
+                        result["skipped"] += 1
+                    else:
+                        result["failed"] += 1
+                    completed += 1
+                if progress_callback:
+                    progress_callback(completed, total, code, name, status)
+            except Exception:
+                with lock:
+                    result["failed"] += 1
+                    completed += 1
+
+    return result
+
+
+def incremental_update(
+    mode: str = MODE_SKIP,
+    include_etf: bool = True,
+    progress_callback: Callable | None = None,
+) -> dict:
+    """增量更新 - 使用 pytdx 并发拉取最新全市场数据
+
+    这是推荐的日常更新方式。
+    用 pytdx 并行拉取全市场数据，速度比 baostock bulk API 快 10 倍以上。
+
+    Args:
+        mode: MODE_SKIP（已有不覆盖）或 MODE_OVERWRITE
+        include_etf: 是否包含ETF（暂未实现，仅更新股票）
+        progress_callback: fn(current, total, code, name, status)
+
+    Returns:
+        {"updated": N, "skipped": N, "failed": N, "date": str}
+    """
+    from config.stock_pool import get_all_stocks, get_etf_list
+
+    # 获取全部股票
+    stocks = get_all_stocks()
+    if include_etf:
+        etfs = get_etf_list()
+        stocks += [{"code": e["code"], "name": e["name"]} for e in etfs]
+
+    # 只保留需要更新的（跳过已是最新的）
+    if mode == MODE_SKIP:
+        to_update = [s for s in stocks if not _is_data_upto_date(s["code"])]
+    else:
+        to_update = stocks
+
+    if not to_update:
+        today = datetime.now().strftime("%Y-%m-%d")
+        return {"updated": 0, "skipped": len(stocks), "failed": 0, "date": today}
+
+    total = len(to_update)
+    result = {"updated": 0, "skipped": 0, "failed": 0, "date": datetime.now().strftime("%Y-%m-%d")}
+    lock = __import__("threading").Lock()
+
+    def _update_one(code: str) -> tuple[str, str]:
+        """线程内更新单只"""
+        try:
+            df = _fetch_by_pytdx(code, KLINE_YEARS)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, "updated"
+            # fallback
+            df = get_daily_kline(code, use_cache=False)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, "updated"
+            return code, "failed"
+        except Exception:
+            return code, "failed"
+
+    completed = 0
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(_update_one, s["code"]): s for s in to_update}
+
+        for future in as_completed(futures):
+            try:
+                code, status = future.result()
+                with lock:
+                    if status == "updated":
+                        result["updated"] += 1
+                    else:
+                        result["failed"] += 1
+                    completed += 1
+                if progress_callback:
+                    progress_callback(completed, total, code, "", status)
+            except Exception:
+                with lock:
+                    result["failed"] += 1
+                    completed += 1
+
+    # 把跳过的也算上
+    result["skipped"] = len(stocks) - len(to_update)
     return result
 
 
@@ -232,11 +232,9 @@ def get_cache_stats() -> dict:
 
     stock_count = 0
     etf_count = 0
-    latest = None
 
     for f in files:
         code = f.replace(".csv", "")
-        # ETF 代码: 51xxxx, 15xxxx, 16xxxx
         if (code.startswith("51") and len(code) == 6) or \
            (code.startswith("15") and len(code) == 6) or \
            (code.startswith("16") and len(code) == 6):
@@ -244,14 +242,22 @@ def get_cache_stats() -> dict:
         else:
             stock_count += 1
 
-    # 获取最新日期
+    # 获取最新日期（读取每组最后100只的最新日期）
+    latest = None
     try:
         dated_files = []
-        for f in files[:100]:  # 检查前100个文件
-            path = os.path.join(cache_dir, f)
-            df = pd.read_csv(path, parse_dates=["日期"], nrows=1)
+        # 从前、中、后各取一些文件，读取最后一行
+        n = len(files)
+        check_indices = list(range(0, min(50, n))) + \
+                        list(range(n // 2, min(n // 2 + 30, n))) + \
+                        list(range(max(0, n - 50), n))
+        for idx in set(check_indices):
+            if idx >= len(files):
+                continue
+            path = os.path.join(cache_dir, files[idx])
+            df = pd.read_csv(path, parse_dates=["日期"], usecols=["日期"])
             if not df.empty:
-                dated_files.append(df["日期"].iloc[0])
+                dated_files.append(df["日期"].iloc[-1])  # 取最后一行（最新）
         if dated_files:
             latest = max(dated_files).strftime("%Y-%m-%d")
     except Exception:

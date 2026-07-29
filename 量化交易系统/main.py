@@ -89,11 +89,11 @@ def cmd_scan(args):
     print()
 
     # 执行扫描
-    results = scan(strategy)
+    results = scan(strategy, mode=getattr(args, "mode", "normal"))
 
     # 输出结果
     if results:
-        print_results(results)
+        print_results(results, mode=getattr(args, "mode", "normal"))
         save_results(results)
     else:
         print("\n当前没有符合条件的股票")
@@ -184,6 +184,9 @@ def main():
     scan_parser = subparsers.add_parser("scan", help="全市场扫描选股")
     scan_parser.add_argument("--strategy", type=str, default="demo",
                            help="策略名称 (默认: demo)")
+    scan_parser.add_argument("--mode", type=str, default="normal",
+                           choices=["normal", "prebreak"],
+                           help="扫描模式: normal=标准6条件, prebreak=预突破5条件(挂条件单用)")
 
     # diagnose
     diag_parser = subparsers.add_parser("diagnose", help="诊断单只股票各策略条件")

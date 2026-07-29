@@ -9,10 +9,10 @@ from datetime import datetime
 
 st.set_page_config(page_title="市场概览", page_icon="📊", layout="wide")
 
-# ── 数据加载（带缓存） ──
-@st.cache_data(ttl=3600)
+# ── 数据加载 ──
+@st.cache_data(ttl=60)
 def load_market_data():
-    """加载市场概览数据（1小时缓存）"""
+    """加载市场概览数据（1分钟缓存）"""
     from config.stock_pool import get_all_stocks, get_etf_list
     from data.updater import get_cache_stats
     stocks = get_all_stocks()
@@ -48,8 +48,9 @@ with col4:
     cached = stats.get("total", 0)
     total_stocks = len(stocks) + len(etfs)
     pct = cached / total_stocks * 100 if total_stocks else 0
-    st.metric("已缓存", f"{cached:,} ({pct:.0f}%)" if cached else "--",
-              delta=f"{pct:.0f}%" if pct else None)
+    display_pct = min(pct, 100)
+    st.metric("已缓存", f"{cached:,} ({display_pct:.0f}%)" if cached else "--",
+              delta=f"{display_pct:.0f}%" if display_pct else None)
 with col5:
     latest = stats.get("latest_date") or "--"
     st.metric("数据日期", str(latest))

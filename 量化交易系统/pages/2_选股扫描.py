@@ -124,8 +124,13 @@ with right_col:
                 gain_str = f'{gain:+.2f}%'
                 gain_color = "#ff4d4d" if gain >= 0 else "#26a69a"
 
+                grade = r.get("评级", "?")
+                grade_colors = {"S": "#00d4aa", "A": "#60a5fa", "B": "#ffa726", "C": "#8b949e"}
+                gc = grade_colors.get(grade, "#8b949e")
                 display_data.append({
                     "序号": i,
+                    "评级": grade,
+                    "评级颜色": gc,
                     "代码": r.get("code", ""),
                     "名称": r.get("name", ""),
                     "收盘": f'{r.get("price", 0):.2f}',
@@ -177,9 +182,11 @@ with right_col:
             rows_html = ""
             for _, row in df_display.iterrows():
                 gain_class = "gain-up" if row["涨幅值"] >= 0 else "gain-down"
+                gc = row["评级颜色"]
                 rows_html += f"""
                 <tr>
                     <td>{row['序号']}</td>
+                    <td><span style="display:inline-block;background:{gc};color:#000;font-weight:700;font-size:0.7rem;padding:0.1rem 0.4rem;border-radius:4px;">{row['评级']}</span></td>
                     <td><a href="/3_K线分析?symbol={row['代码']}" target="_self" style="color:#60a5fa;text-decoration:none;">{row['代码']}</a></td>
                     <td>{row['名称']}</td>
                     <td>{row['收盘']}</td>
@@ -194,7 +201,7 @@ with right_col:
             st.markdown(f"""
             <table class="scan-table">
                 <thead><tr>
-                    <th>序号</th><th>代码</th><th>名称</th>
+                    <th>#</th><th>评级</th><th>代码</th><th>名称</th>
                     <th>收盘</th><th>涨幅</th><th>换手率</th>
                     <th>RSI</th><th>MA5</th><th>MA20</th>
                 </tr></thead>
