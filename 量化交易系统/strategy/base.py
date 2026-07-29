@@ -91,5 +91,23 @@ class BaseStrategy(ABC):
         """返回策略参数，用于展示"""
         return {}
 
+    def to_trade_signal(self, df: pd.DataFrame) -> dict | None:
+        """预留实盘信号接口（将来对接 vnpy / CTP / XTP）
+
+        子类可覆盖此方法，将策略判断结果转换为标准交易信号格式。
+
+        Returns:
+            None = 无信号（不交易）
+            {
+                "action": "buy" | "sell",
+                "symbol": str,       # 代码
+                "price": float,      # 委托价（0=市价）
+                "volume": int,       # 手数
+                "stop_loss": float,  # 止损价
+                "take_profit": float,# 止盈价
+            }
+        """
+        return None
+
     def __str__(self) -> str:
         return f"[{self.name}] {self.description}"

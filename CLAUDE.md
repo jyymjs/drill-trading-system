@@ -5,7 +5,7 @@
 
 ## 量化策略规则
 - **所有量化条件参数（阈值、周期、比例等）的调整必须经用户书面同意后执行。**
-- 策略参数包括但不限于：DL_S/DL_A/DL_B、DL_RANGE_S/A/B、TY_S/TY_A/TY_B、TY_RANGE_S/A/B、DN_S/DN_A/DN_B（量比/实体比阈值）、VCP_S/A/B 等。
+- 策略参数包括但不限于：DL_S/DL_A/DL_B、DL_RANGE_S/A/B、TY_S/TY_A/TY_B、TY_RANGE_S/A/B、DN_S/DN_A/DN_B（量比/实体比阈值）等。
 - 未经明确授权，不得修改 `strategy/samples/zuanqian_strategy.py` 中的任何数值参数。
 - 如需建议参数调整，先给出具体修改内容和理由，等待用户确认后再执行。
 
@@ -14,78 +14,78 @@
 ```
 量化交易系统/
 ├── main.py                     # CLI入口 (list/kline/scan/diagnose)
-├── app.py                      # Streamlit Web入口
-├── .streamlit/config.toml      # 深色金融主题配置
 ├── strategy/
-│   ├── base.py                 # BaseStrategy基类（filter/grade/quick_prefilter）
+│   ├── base.py                 # BaseStrategy（filter/grade/quick_prefilter/to_trade_signal）
 │   ├── conditions.py            # 条件函数库
 │   └── samples/
 │       ├── demo_strategy.py    # 示例策略（均线金叉+放量）
-│       └── zuanqian_strategy.py # 钻潜评级策略（唯一主策略）
+│       └── zuanqian_strategy.py # 钻潜评级策略 V2（唯一主策略）
 ├── analysis/
-│   ├── indicators.py           # 技术指标计算（MA/MACD/RSI/KDJ/BOLL/量比/ATR等）
-│   ├── scanner.py              # 全市场扫描器（5线程并发）
-│   └── reporter.py             # 结果报告（表格/CSV/K线图）
+│   ├── indicators.py           # 技术指标（MA/MACD/RSI/KDJ/BOLL/ATR + 12 Alpha因子 + PT/LK/回踩/通道/过高点检测）
+│   ├── scanner.py              # 全市场扫描器（5线程并发，normal/prebreak双模式）
+│   ├── reporter.py             # 结果报告（表格/CSV/K线图，双模式表格）
+│   └── factor_eval.py          # 因子评估（Alphalens IC分析 + 快检）
 ├── data/
 │   ├── fetcher.py              # 数据获取 pytdx→baostock→akshare 三路冗余
-│   ├── cache.py                # CSV缓存管理
+│   ├── cache.py                # CSV缓存管理（5210只A股）
 │   └── updater.py              # 数据更新（8线程并发pytdx）
 ├── config/
 │   ├── settings.py             # 全局配置
-│   └── stock_pool.py           # 股票池管理（ETF静态列表→pytdx→baostock）
-├── web/
-│   ├── kline_chart.py          # Plotly K线图（自定义暗色模板）
-│   ├── stock_table.py          # 结果表格（条件格式）
-│   ├── strategy_config.py      # 策略注册/选择
-│   └── data_manager.py         # 数据管理面板
-└── pages/
-    ├── 1_市场概览.py           # KPI仪表盘+市场分布+缓存状态+数据管理
-    ├── 2_选股扫描.py           # 双栏布局+评级结果表格+条件格式
-    └── 3_K线分析.py            # 交互式K线+均线/MACD/RSI+周期切换
+│   └── stock_pool.py           # 股票池管理
+└── scripts/
+    ├── extract_knowledge.py    # 视频知识提取引擎
+    ├── batch_process.py        # 批量视频处理
+    └── output/                 # 53份知识文档（30课程+23扫盘）
 ```
 
-## 当前状态（2026-07-29）
+## 当前状态（2026-07-30）
+
+### 策略层 V2（课程标准版）
+- 唯一主策略：`ZuanQianStrategy`（钻潜评级策略 V2）
+- 6条件体系：**DL（独立结构）/ PT（平台位测试）/ LK（轮廓质量）/ TY（统一区间）/ DN（动能）/ SF（释放级别）**
+- 优先级：Tier0 一票否决 → Tier1 核心三要素(PT>TY≈DN) → Tier2 质量分级(DL>LK>SF) → Tier3 加减分
+- 评级 S/A/B/C：
+  - **S级**：全部≥A + ≥3个S。全市场扫描 2只
+  - **A级**：全部≥A 或 仅1个B。全市场扫描 16只
+  - **B级**：最多3个B。全市场扫描 32只
+  - **C级**：不展示（5152只）
+- 双重扫描模式：
+  - `--mode normal`：标准6条件评级（已突破的品种）
+  - `--mode prebreak`：预突破5条件（不含DN），输出触发价/止损价/手数——晚间复盘挂条件单用
+
+### 因子库
+- 12个精选 Alpha 因子（从 Qlib Alpha158 提炼）：ROC10/STD20/VSTD10/MAXPOS20/KLEN/WVMA20/CORR10/RSQR20/BIAS5/MAD20/ILLIQUIDITY/TURN_ZSCORE
+- Alphalens 因子评估模块（IC分析 + 分层回测 + 快检）
 
 ### 数据层
 - 数据源：**pytdx**（通达信协议直连，~0.3秒/只）→ **baostock**（fallback）→ **akshare**（最后备选）
 - 服务器：`180.153.18.170:7709`（最快）和 `60.191.117.167:7709`（稳定）
-- 缓存：5,202 只 A 股全部缓存，数据日期 2026-07-29
-- 全市场扫描速度：~3分钟（旧版 baostock 需数小时）
+- 缓存：5,202 只 A 股全部缓存，11列完整（换手率全为0是pytdx已知局限）
+- 全市场扫描速度：~7分钟（normal）/ ~8分钟（prebreak）
 
-### 策略层
-- 唯一主策略：`ZuanQianStrategy`（钻潜评级策略）
-- 评级体系 S/A/B/C（与课程一致）：
-  - **S级**（优质）：全部条件优秀，独立结构≥120根+量比≥2.5x+1st释放
-  - **A级**（常规）：核心条件满足，独立结构≥90根+量比≥1.8x+1st/2nd
-  - **B级**（瑕疵）：基本满足，独立结构≥60根+量比≥1.5x
-  - **C级**（不满足）：不展示
-- 6条件评级：独立结构 + 统一区间 + 动能 + 释放级别 + 波动率收缩 + 均线过滤
-- VCP 模式前称已合并进评级体系作为"波动率收缩"维度
+### 知识库
+- 53份知识文档：30节课程 + 23份市场扫描录屏
+- 13个 Claude 记忆文件：标准模式6条件、意图模式、离场规则、K线形态、市场结构、成交量、心理、资金管理等
 
-### Web层
-- 深色金融主题（青色#00d4aa主色）
-- 三页面：市场概览→选股扫描→K线分析
-- 市场概览：KPI卡片+市场分布饼图+缓存状态图+标的卡片网格
-- 选股扫描：双栏布局+评级彩色徽章（S绿/A蓝/B黄）+条件格式表格
-- K线分析：按钮组时间选择+周期切换(日/周/月)+暗色Plotly模板
-
-### 记忆文件
-- 10个交易知识记忆文件在 `C:\Users\32032\.claude\memory/`
-- 覆盖：标准模式6条件、意图模式、离场规则、K线形态、市场结构、成交量、心理、资金管理
+### 前端
+- **已废弃**。Streamlit Web 前端（app.py/web/pages/）已删除，全部操作通过 CLI 完成
 
 ### 远端仓库
 - GitHub: `https://github.com/jyymjs/drill-trading-system`
-- 最后提交: `feat: 钻潜交易系统 - A股量化选股策略框架`
 
-## CLI 常用命令
+## CLI 命令
 ```bash
-python main.py scan --strategy zuanqian_strategy    # 全市场评级扫描
-python main.py diagnose 000001 --strategy zuanqian_strategy  # 单股诊断
-python main.py scan --strategy demo_strategy        # demo策略扫描
-```
+# 全市场扫描
+python main.py scan --strategy zuanqian_strategy                    # 标准6条件
+python main.py scan --strategy zuanqian_strategy --mode prebreak    # 预突破（挂条件单用）
+python main.py scan --strategy demo_strategy                        # demo策略
 
-## Web 启动
-```bash
-cd 量化交易系统 && streamlit run app.py
+# 单股诊断
+python main.py diagnose 600419 --strategy zuanqian_strategy
+
+# 股票列表
+python main.py list
+
+# K线图
+python main.py kline 600419
 ```
-桌面快捷方式：`C:\Users\32032\Desktop\启动看板.bat`

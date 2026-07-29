@@ -8,6 +8,13 @@ def ma(series: pd.Series, n: int) -> pd.Series:
     return series.rolling(window=n).mean()
 
 
+def _put(df: pd.DataFrame, needed: set, mapping: dict[str, pd.Series]) -> None:
+    """按需写入指标列（减少重复的 if col in needed 分支）"""
+    for col, val in mapping.items():
+        if col in needed:
+            df[col] = val
+
+
 def ema(series: pd.Series, n: int) -> pd.Series:
     """指数移动平均线"""
     return series.ewm(span=n, adjust=False).mean()
@@ -130,14 +137,17 @@ def body_to_range_series(df: pd.DataFrame) -> pd.Series:
 
 
 def consecutive_count(series: pd.Series, condition) -> int:
-    """最近连续满足条件的次数"""
-    count = 0
-    for val in series[::-1]:
-        if condition(val):
-            count += 1
-        else:
-            break
-    return count
+    """最近连续满足条件的次数（向量化实现）"""
+    mask = series.map(condition)
+    if mask.empty or not mask.iloc[-1]:
+        return 0
+    # 从尾部开始累计 True，遇到 False 终止
+    rev_mask = mask.iloc[::-1]
+    first_false = (~rev_mask).idxmax()
+    if first_false == rev_mask.index[0] and rev_mask.iloc[0]:
+        return len(rev_mask)  # 全部满足
+    pos = rev_mask.index.get_loc(first_false)
+    return int(rev_mask.iloc[:pos].sum())
 
 
 def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int = 3) -> int:
@@ -366,6 +376,139 @@ def support_resistance_levels(df: pd.DataFrame, n_bins: int = 20) -> list[float]
     return levels
 
 
+# ══════════════════════════════════════════════════════════
+# Qlib Alpha158 精选因子（手工实现，零外部依赖）
+# 选取与钻潜6条件体系直接相关的因子
+# ══════════════════════════════════════════════════════════
+
+def roc(close: pd.Series, n: int = 10) -> pd.Series:
+    """N日涨跌幅 (Rate of Change)
+
+    对应: DN 动能辅助判断，跟踪价格趋势强度
+    """
+    return close.pct_change(periods=n)
+
+
+def rolling_std(close: pd.Series, n: int = 20) -> pd.Series:
+    """N日滚动标准差
+
+    对应: LK 轮廓波动 — 标准差低 = 横盘紧凑
+    """
+    return close.rolling(window=n).std()
+
+
+def volume_std(volume: pd.Series, n: int = 10) -> pd.Series:
+    """N日成交量标准差
+
+    对应: DN 放量检测 — 突然放量 = 异常信号
+    """
+    return volume.rolling(window=n).std()
+
+
+def max_position(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 20) -> pd.Series:
+    """最高价相对位置 (0~1)
+
+    当前价格在N日区间中的位置，>0.8=右上角，<0.2=右下角。
+    对应: DL 结构检测 — 右上角需谨慎
+    """
+    hh = high.rolling(window=n).max()
+    ll = low.rolling(window=n).min()
+    return (close - ll) / (hh - ll).replace(0, np.nan)
+
+
+def klen(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    """K线实体比例 (KLEN)
+
+    (最高-最低)/收盘，值越小 = 整理越充分。
+    对应: LK 实体比 + TY 窄幅检测
+    """
+    return (high - low) / close.replace(0, np.nan)
+
+
+def wvma(close: pd.Series, volume: pd.Series, n: int = 20) -> pd.Series:
+    """量加权均价 (Volume Weighted Moving Average)
+
+    对应: 支撑/阻力参考 — 量大的价位支撑更强
+    """
+    pv = close * volume
+    return pv.rolling(window=n).sum() / volume.rolling(window=n).sum().replace(0, np.nan)
+
+
+def price_volume_corr(close: pd.Series, volume: pd.Series, n: int = 10) -> pd.Series:
+    """量价相关系数
+
+    >0 = 量价同向（健康），<0 = 量价背离（警惕）。
+    对应: 量价配合确认
+    """
+    return close.rolling(window=n).corr(volume)
+
+
+def r_squared(high: pd.Series, low: pd.Series, n: int = 20) -> pd.Series:
+    """线性回归 R²（通道感量化）
+
+    >0.7 = 强烈通道感，应降级或排除。
+    对应: 通道上涨检测（替代原有 channel_detect 函数）
+    """
+    x = np.arange(n)
+    x_mean = x.mean()
+
+    def calc_rsq(y):
+        if len(y) < n:
+            return np.nan
+        coefs = np.polyfit(x, y, 1)
+        preds = np.polyval(coefs, x)
+        ss_res = np.sum((y - preds) ** 2)
+        ss_tot = np.sum((y - y.mean()) ** 2)
+        return 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    mid = (high + low) / 2
+    return mid.rolling(window=n).apply(calc_rsq, raw=True)
+
+
+def bias(close: pd.Series, n: int = 5) -> pd.Series:
+    """N日乖离率
+
+    (收盘-MA)/MA，衡量短期偏离均线程度。
+    对应: 短期偏离检测 — 乖离过大不追
+    """
+    ma_n = ma(close, n)
+    return (close - ma_n) / ma_n.replace(0, np.nan)
+
+
+def mad(close: pd.Series, n: int = 20) -> pd.Series:
+    """价格离散度 (Mean Absolute Deviation)
+
+    衡量K线的均匀程度。值越小=横盘越"密集"。
+    对应: LK 轮廓松散度
+    """
+    ma_n = close.rolling(window=n).mean()
+    mad_val = (close - ma_n).abs().rolling(window=n).mean()
+    return mad_val / ma_n.replace(0, np.nan)
+
+
+def illiquidity(close: pd.Series, volume: pd.Series, n: int = 20) -> pd.Series:
+    """非流动性指标 (Amihud Illiquidity)
+
+    |收益率| / 成交额，值越大=流动性越差。
+    对应: 品种过滤 — 流动性太差的品种不纳入候选池
+    """
+    ret = close.pct_change().abs()
+    amount = volume * close  # 近似成交额
+    illiq = ret / amount.replace(0, np.nan)
+    return illiq.rolling(window=n).mean()
+
+
+def turn_zscore(turnover: pd.Series, n: int = 20) -> pd.Series:
+    """换手率 Z-Score
+
+    检测换手率异常放大的时点。Z>2 = 异常活跃。
+    对应: 异常换手检测 — 配合 DN 动能判断
+    """
+    ma_n = turnover.rolling(window=n).mean()
+    std_n = turnover.rolling(window=n).std()
+    return (turnover - ma_n) / std_n.replace(0, np.nan)
+
+
 def all_indicators(df: pd.DataFrame,
                    needed_cols: list[str] | None = None) -> pd.DataFrame:
     """计算技术指标，支持按需计算
@@ -390,73 +533,89 @@ def all_indicators(df: pd.DataFrame,
             "K", "D", "J",
             "BOLL_MID", "BOLL_UPPER", "BOLL_LOWER",
             "VOL_RATIO", "ATR", "VOLATILITY", "BODY_RATIO", "MA_CROSS",
+            # Qlib 精选因子
+            "ROC10", "STD20", "VSTD10", "MAXPOS20", "KLEN",
+            "WVMA20", "CORR10", "RSQR20", "BIAS5", "MAD20",
         ]
     needed = set(needed_cols)
 
-    # 均线（依赖：收盘）
-    ma_cols = {"MA5": 5, "MA10": 10, "MA20": 20, "MA60": 60, "MA120": 120}
-    needed_ma = {k: v for k, v in ma_cols.items() if k in needed}
-    for col, period in needed_ma.items():
-        result[col] = ma(result["收盘"], period)
+    # === 指标计算映射表 ===
+    # (依赖列, 计算函数, 输出映射)
+    # 函数签名 fn(df, result) → 修改 result 原地
+    c = result  # 简写
 
-    # 成交量均线（依赖：成交量）
-    if "VOL_MA5" in needed:
-        result["VOL_MA5"] = ma(result["成交量"], 5)
-    if "VOL_MA10" in needed:
-        result["VOL_MA10"] = ma(result["成交量"], 10)
+    _MA_SPECS = {"MA5": 5, "MA10": 10, "MA20": 20, "MA60": 60, "MA120": 120}
+    _VOL_MA_SPECS = {"VOL_MA5": 5, "VOL_MA10": 10}
 
-    # MACD（依赖：收盘）
-    if "DIF" in needed or "DEA" in needed or "MACD" in needed:
-        dif, dea, macd_bar = macd(result["收盘"])
-        if "DIF" in needed:
-            result["DIF"] = dif
-        if "DEA" in needed:
-            result["DEA"] = dea
-        if "MACD" in needed:
-            result["MACD"] = macd_bar
+    # 1) 均线
+    for col, period in _MA_SPECS.items():
+        if col in needed:
+            c[col] = ma(c["收盘"], period)
 
-    # RSI（依赖：收盘）
+    # 2) 成交量均线
+    for col, period in _VOL_MA_SPECS.items():
+        if col in needed:
+            c[col] = ma(c["成交量"], period)
+
+    # 3) MACD
+    if needed & {"DIF", "DEA", "MACD"}:
+        dif, dea, macd_bar = macd(c["收盘"])
+        _put(c, needed, {"DIF": dif, "DEA": dea, "MACD": macd_bar})
+
+    # 4) RSI
     if "RSI" in needed:
-        result["RSI"] = rsi(result["收盘"])
+        c["RSI"] = rsi(c["收盘"])
 
-    # KDJ（依赖：最高、最低、收盘）
-    if "K" in needed or "D" in needed or "J" in needed:
-        k, d, j = kdj(result["最高"], result["最低"], result["收盘"])
-        if "K" in needed:
-            result["K"] = k
-        if "D" in needed:
-            result["D"] = d
-        if "J" in needed:
-            result["J"] = j
+    # 5) KDJ
+    if needed & {"K", "D", "J"}:
+        k, d, j = kdj(c["最高"], c["最低"], c["收盘"])
+        _put(c, needed, {"K": k, "D": d, "J": j})
 
-    # 布林带（依赖：收盘）
-    if "BOLL_MID" in needed or "BOLL_UPPER" in needed or "BOLL_LOWER" in needed:
-        mid, upper, lower = boll(result["收盘"])
-        if "BOLL_MID" in needed:
-            result["BOLL_MID"] = mid
-        if "BOLL_UPPER" in needed:
-            result["BOLL_UPPER"] = upper
-        if "BOLL_LOWER" in needed:
-            result["BOLL_LOWER"] = lower
+    # 6) 布林带
+    if needed & {"BOLL_MID", "BOLL_UPPER", "BOLL_LOWER"}:
+        mid, upper, lower = boll(c["收盘"])
+        _put(c, needed, {"BOLL_MID": mid, "BOLL_UPPER": upper, "BOLL_LOWER": lower})
 
-    # 量比（依赖：成交量）
+    # 7) 量比
     if "VOL_RATIO" in needed:
-        result["VOL_RATIO"] = volume_ratio(result["成交量"])
+        c["VOL_RATIO"] = volume_ratio(c["成交量"])
 
-    # 波动率指标（依赖：最高/最低/收盘）
+    # 8) 波动率指标
     if "ATR" in needed:
-        result["ATR"] = atr(result["最高"], result["最低"], result["收盘"])
+        c["ATR"] = atr(c["最高"], c["最低"], c["收盘"])
     if "VOLATILITY" in needed:
-        result["VOLATILITY"] = rolling_volatility(result["收盘"])
+        c["VOLATILITY"] = rolling_volatility(c["收盘"])
     if "BODY_RATIO" in needed:
-        result["BODY_RATIO"] = body_to_range_series(result)
+        c["BODY_RATIO"] = body_to_range_series(c)
 
-    # 均线交叉信号（依赖：MA5, MA20）
+    # 9) 均线交叉信号（依赖 MA5, MA20）
     if "MA_CROSS" in needed:
-        if "MA5" not in result.columns:
-            result["MA5"] = ma(result["收盘"], 5)
-        if "MA20" not in result.columns:
-            result["MA20"] = ma(result["收盘"], 20)
-        result["MA_CROSS"] = ma_cross(result["MA5"], result["MA20"])
+        if "MA5" not in c.columns:
+            c["MA5"] = ma(c["收盘"], 5)
+        if "MA20" not in c.columns:
+            c["MA20"] = ma(c["收盘"], 20)
+        c["MA_CROSS"] = ma_cross(c["MA5"], c["MA20"])
+
+    # 10) Qlib 精选因子（12个）
+    if "ROC10" in needed:
+        c["ROC10"] = roc(c["收盘"], 10)
+    if "STD20" in needed:
+        c["STD20"] = rolling_std(c["收盘"], 20)
+    if "VSTD10" in needed:
+        c["VSTD10"] = volume_std(c["成交量"], 10)
+    if "MAXPOS20" in needed:
+        c["MAXPOS20"] = max_position(c["最高"], c["最低"], c["收盘"], 20)
+    if "KLEN" in needed:
+        c["KLEN"] = klen(c["最高"], c["最低"], c["收盘"])
+    if "WVMA20" in needed:
+        c["WVMA20"] = wvma(c["收盘"], c["成交量"], 20)
+    if "CORR10" in needed:
+        c["CORR10"] = price_volume_corr(c["收盘"], c["成交量"], 10)
+    if "RSQR20" in needed:
+        c["RSQR20"] = r_squared(c["最高"], c["最低"], 20)
+    if "BIAS5" in needed:
+        c["BIAS5"] = bias(c["收盘"], 5)
+    if "MAD20" in needed:
+        c["MAD20"] = mad(c["收盘"], 20)
 
     return result

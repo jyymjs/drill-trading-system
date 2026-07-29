@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      {
+        "tool": "Bash",
+        "prompt": "python run_video.py *"
+      },
+      {
+        "tool": "Bash",
+        "prompt": "python scripts/*"
+      },
+      {
+        "tool": "Bash",
+        "prompt": "ffmpeg *"
+      },
+      {
+        "tool": "Bash",
+        "prompt": "pip install *"
+      }
+    ]
+  }
+}
