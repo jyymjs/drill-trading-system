@@ -1,0 +1,14 @@
+[theme]
+# 深色金融主题 - 专业级配色
+primaryColor = "#00d4aa"
+backgroundColor = "#0a0a0a"
+secondaryBackgroundColor = "#141420"
+textColor = "#e0e0e0"
+font = "sans serif"
+
+[server]
+maxUploadSize = 10
+runOnSave = false
+
+[browser]
+gatherUsageStats = false

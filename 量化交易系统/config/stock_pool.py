@@ -1,0 +1,83 @@
+"""股票/ETF 池管理"""
+from itertools import islice
+from data.fetcher import get_stock_list
+
+
+def get_all_stocks(use_cache: bool = True) -> list[dict]:
+    """获取全部A股列表（通过 bulk API，最稳定）"""
+    try:
+        from data.fetcher import get_bulk_a_stock_day
+        df = get_bulk_a_stock_day()
+        if not df.empty:
+            unique = sorted(df["code"].dropna().unique())
+            # 过滤掉ETF代码 (51xxx/15xxx/16xxx)
+            unique = [c for c in unique if not (c.startswith("51") or c.startswith("15") or c.startswith("16"))]
+            return [{"code": c, "name": c} for c in unique]
+        return get_stock_list(use_cache=use_cache)
+    except Exception:
+        return get_stock_list(use_cache=use_cache)
+
+
+def get_stock_codes(use_cache: bool = True) -> list[str]:
+    return [s["code"] for s in get_all_stocks(use_cache)]
+
+
+def get_stock_names(stocks: list[dict]) -> dict[str, str]:
+    return {s["code"]: s["name"] for s in stocks}
+
+
+# 常见ETF名称映射（补充bulk数据中缺失的名称）
+_ETF_NAMES = {
+    "510050": "上证50ETF", "510300": "沪深300ETF", "510500": "中证500ETF",
+    "510880": "红利ETF", "510180": "上证180ETF", "510230": "金融ETF",
+    "512100": "中证1000ETF", "512880": "证券ETF", "512660": "军工ETF",
+    "512480": "半导体ETF", "512010": "医药ETF", "512170": "医疗ETF",
+    "515050": "5GETF", "515880": "通信ETF", "515030": "新能源车ETF",
+    "516160": "新能源ETF", "517050": "互联网ETF",
+    "159915": "创业板ETF", "159949": "创业板50ETF",
+    "159845": "中证1000ETF", "159766": "旅游ETF",
+    "159928": "消费ETF", "159865": "养殖ETF",
+    "159870": "化工ETF", "159766": "旅游ETF",
+    "518880": "黄金ETF", "513100": "纳指ETF",
+    "513050": "中概互联ETF", "513500": "标普500ETF",
+}
+
+
+def get_etf_list() -> list[dict]:
+    """获取全部ETF列表（从 bulk ETF 数据中提取）
+
+    Returns:
+        [{"code": "510050", "name": "上证50ETF"}, ...]
+    """
+    try:
+        from data.fetcher import get_bulk_etf_day
+        df = get_bulk_etf_day()
+        if not df.empty:
+            unique = sorted(df["code"].dropna().unique())
+            return [
+                {"code": c, "name": _ETF_NAMES.get(c, c)}
+                for c in unique
+            ]
+        return []
+    except Exception as e:
+        print(f"获取ETF列表失败: {e}")
+        return []
+
+
+def get_all_securities(include_etf: bool = True) -> list[dict]:
+    """获取全部可交易品种（股票+ETF）"""
+    stocks = get_all_stocks()
+    result = [{"code": s["code"], "name": s["name"], "type": "stock"} for s in stocks]
+    if include_etf:
+        for e in get_etf_list():
+            result.append({"code": e["code"], "name": e["name"], "type": "etf"})
+    return result
+
+
+def batch_stocks(stocks: list, batch_size: int = 100):
+    it = iter(stocks)
+    while True:
+        batch = list(islice(it, batch_size))
+        if not batch:
+            break
+        yield batch
