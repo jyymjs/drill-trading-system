@@ -5,8 +5,8 @@ import pandas as pd
 from prettytable import PrettyTable
 
 from config.settings import OUTPUT_DIR
-from analysis.indicators import all_indicators
 from data.fetcher import get_daily_kline
+from risk.capital import max_risk_per_trade, calc_lots
 
 try:
     import mplfinance as mpf
@@ -69,8 +69,7 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
         trigger = r.get("触发价", 0)
         stop = r.get("止损价", 0)
         risk_per = r.get("每股风险", 0)
-        # 手数 = 150 / 每股风险 / 100 → 取整（最小1手）
-        lots = max(1, int(150 / risk_per / 100)) if risk_per > 0 else 0
+        lots = calc_lots(risk_per) if risk_per > 0 else 0
         table.add_row([
             grade,
             r["code"],
@@ -83,7 +82,8 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
         ])
 
     print(f"\n=== 预突破候选 ({len(results)} 只) ===\n")
-    print(f"       条件单参数: 风险=¥150 | 触发=TY上沿 | 止损=TY下沿")
+    from risk.capital import max_risk_per_trade as _mr
+    print(f"       条件单参数: 风险=¥{_mr():.0f} | 触发=TY上沿 | 止损=TY下沿")
     print(f"       晚间挂单 → 次日盘中自动触发 → 同步挂止损单\n")
     print(table)
 

@@ -33,7 +33,7 @@ def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
 
 
 def rsi(close: pd.Series, n: int = 14) -> pd.Series:
-    """相对强弱指标 RSI"""
+    """相对强弱指标 RSI（Cutler's RSI — SMA 平滑，非 Wilder 递归平滑）"""
     diff = close.diff()
     gain = diff.clip(lower=0)
     loss = -diff.clip(upper=0)
@@ -93,7 +93,7 @@ def ma_cross(short_ma: pd.Series, long_ma: pd.Series) -> pd.Series:
         1 = 金叉（上穿）, -1 = 死叉（下穿）, 0 = 无信号
     """
     signal = pd.Series(0, index=short_ma.index)
-    cross = (short_ma > long_ma).astype(int)
+    cross = (short_ma > long_ma).fillna(False).astype(int)
     diff = cross.diff()
     signal[diff == 1] = 1    # 金叉
     signal[diff == -1] = -1  # 死叉
@@ -150,11 +150,12 @@ def consecutive_count(series: pd.Series, condition) -> int:
     return int(rev_mask.iloc[:pos].sum())
 
 
-def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int = 3) -> int:
+def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int = 5) -> int:
     """平台位测试次数计数（PT 维度核心）
 
     统计价格对同一水平位的反复测试次数。
-    两次测试间隔 < min_gap 根K线算同一次。
+    2024年修正：两次测试间隔 < min_gap 根K线算同一次。
+    过高点（创新高后回落>2%）不计入有效测试。
 
     Args:
         df: K线DataFrame
@@ -169,24 +170,37 @@ def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int 
 
     close = df["收盘"].values
     high = df["最高"].values
-    low = df["最低"].values
 
-    # 取最近60根K线的主要价格水平（用均值聚类）
+    # 取最近60根K线
     n = min(60, len(df))
     prices = close[-n:]
+    highs_window = high[-n:]
 
-    # 用简单方法：找价格反复触及的区域
-    # 计算每个价格水平附近的触及次数
+    # 检测过高点位置（创新高后回落>2%）
+    overshoot_positions = set()
+    for i in range(10, n - 5):
+        # 局部最高点
+        if (highs_window[i] > highs_window[i-1]
+                and highs_window[i] >= highs_window[i-2]
+                and highs_window[i] > highs_window[i+1]
+                and highs_window[i] > highs_window[i+2]):
+            # 检查是否回落超过2%
+            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
+                overshoot_positions.add(i)
+
     levels = []
     counts = []
-    last_touch = []  # 记录每次测试的位置
+    last_touch = []
 
     for i in range(len(prices)):
+        # 跳过过高点位置
+        if i in overshoot_positions:
+            continue
         p = prices[i]
         matched = False
         for j, lv in enumerate(levels):
             if abs(p - lv) / (lv + 1e-8) <= tolerance:
-                # 检查间隔
+                # 检查间隔：间隔太近算同一次
                 if last_touch and i - last_touch[j] < min_gap:
                     last_touch[j] = i
                     matched = True
@@ -257,7 +271,7 @@ def retracement_detect(df: pd.DataFrame, lookback: int = 15) -> dict:
     # 完整回踩：先升(前段高点高) → 降(中段低点低) → 再升(后段高点>前段高点)
     if (second_half_high > first_half_high * 0.98
             and first_half_low < second_half_low * 1.02
-            and first_half_high > first_half_high * 0.95):
+            and second_half_high > first_half_high * 0.95):
         return {"has_retracement": True, "quality": "good"}
 
     # 微弱回踩
@@ -265,6 +279,270 @@ def retracement_detect(df: pd.DataFrame, lookback: int = 15) -> dict:
         return {"has_retracement": True, "quality": "weak"}
 
     return {"has_retracement": False, "quality": "none"}
+
+
+def pixelation_score(df: pd.DataFrame, window: int = 30) -> float:
+    """像素感评分（0~1，越低越像素化=越差）
+
+    老师："像素感直接pass掉，交投清淡不是真实意愿"
+
+    综合三个维度：
+    1) 影线占比 — 长影线多=像素感强
+    2) K线连续性 — 同向K线比例低=像素感强
+    3) 振幅一致性 — 单根异常振幅=像素感强
+
+    Returns:
+        0.0(严重像素感) ~ 1.0(完全正常)
+    """
+    if len(df) < window:
+        return 0.5
+
+    recent = df.tail(window)
+    high = recent["最高"].values
+    low = recent["最低"].values
+    op = recent["开盘"].values
+    cl = recent["收盘"].values
+
+    # 1) 影线占比（实体 / 波幅）
+    hl = high - low
+    body = np.abs(cl - op)
+    body_ratio = np.divide(body, hl, out=np.ones_like(body), where=hl > 0)
+    body_ratio = np.clip(body_ratio, 0.0, 1.0)
+    shadow_score = float(np.mean(body_ratio))  # 高=实体多=好
+
+    # 2) K线连续性（连续同向比例）
+    same_dir = 0
+    for i in range(2, len(cl)):
+        if (cl[i] >= cl[i - 1]) == (cl[i - 1] >= cl[i - 2]):
+            same_dir += 1
+    continuity = same_dir / max(len(cl) - 2, 1)
+    # 太高或太低都不好，0.3~0.7 最佳（横盘整理）
+    continuity_score = 1.0 - abs(continuity - 0.5) * 2
+    continuity_score = max(0.0, continuity_score)
+
+    # 3) 振幅一致性（异常振幅惩罚）
+    ranges = hl
+    mean_range = np.mean(ranges)
+    if mean_range > 0:
+        anomalies = np.sum(ranges > mean_range * 3) / len(ranges)
+    else:
+        anomalies = 0
+    range_score = 1.0 - min(anomalies * 3, 1.0)  # 异常振幅越多分越低
+
+    return float(shadow_score * 0.5 + continuity_score * 0.3 + range_score * 0.2)
+
+
+def step_down_trace(df: pd.DataFrame, lookback: int = 20) -> dict:
+    """向下踩的轨迹检测
+
+    老师："无论依托还是回踩，必须有一个向下踩的动作"
+    "向下踩到平台位后，下一根K线立即往上冲，速度快"
+
+    检测模式：长下影线 → 紧接着阳线反弹
+
+    Returns:
+        {"has_trace": bool, "depth_pct": float, "rebound_pct": float, "quality": str}
+    """
+    if len(df) < 10:
+        return {"has_trace": False, "depth_pct": 0, "rebound_pct": 0, "quality": "none"}
+
+    recent = df.tail(lookback)
+    op = recent["开盘"].values
+    cl = recent["收盘"].values
+    high = recent["最高"].values
+    low = recent["最低"].values
+
+    best_quality = 0.0
+    best_result = {"has_trace": False, "depth_pct": 0, "rebound_pct": 0, "quality": "none"}
+
+    for i in range(len(recent) - 1):
+        body = abs(cl[i] - op[i])
+        lower_shadow = min(op[i], cl[i]) - low[i]
+        upper_shadow = high[i] - max(op[i], cl[i])
+
+        # 长下影线：下影线 > 实体 × 1.5 且下影线 > 上影线 × 2
+        if body > 0 and lower_shadow > body * 1.5 and lower_shadow > upper_shadow * 2:
+            # 找到"踩"的动作
+            depth_pct = lower_shadow / max(body, 0.001)
+
+            # 下一根必须是阳线反弹
+            next_body = abs(cl[i + 1] - op[i + 1])
+            next_is_yang = cl[i + 1] > op[i + 1]
+            next_hl = high[i + 1] - low[i + 1]
+
+            if next_is_yang and next_hl > 0:
+                rebound_pct = (cl[i + 1] - low[i + 1]) / next_hl  # 收盘靠近高点的程度
+            else:
+                rebound_pct = 0.3
+
+            quality = depth_pct * 0.5 + rebound_pct * 0.5
+            if quality > best_quality:
+                best_quality = quality
+                q_str = "good" if quality > 1.0 else ("weak" if quality > 0.5 else "none")
+                best_result = {"has_trace": quality > 0.5, "depth_pct": round(depth_pct, 2),
+                               "rebound_pct": round(rebound_pct, 2), "quality": q_str}
+
+    return best_result
+
+
+def conflict_zscore(df: pd.DataFrame, dn_start_idx: int | None = None,
+                    consolidation_window: int = 20) -> float:
+    """启动K线冲突感 z-score（量化"露头"判断）
+
+    老师方法："把启动K线实体copy到调整结构末尾，看是否露头"
+
+    量化：启动K实体 vs 调整结构K线实体的z-score
+    z > 2.0 = 明显露头(S级冲突感)
+    z > 1.5 = 露头(A级)
+    z > 1.0 = 勉强露头(B级)
+    z ≤ 1.0 = 不露头(C级)
+
+    Returns:
+        z-score 值
+    """
+    n = len(df)
+    if n < consolidation_window + 3:
+        return 0.0
+
+    if dn_start_idx is None:
+        dn_start_idx = n - 1  # 默认最后一根
+
+    # 调整结构区域：DN启动前的K线
+    cons_start = max(0, dn_start_idx - consolidation_window)
+    cons_end = max(cons_start + 1, dn_start_idx)
+
+    cons = df.iloc[cons_start:cons_end]
+    cons_hl = cons["最高"].values - cons["最低"].values
+    cons_body = np.abs(cons["收盘"].values - cons["开盘"].values)
+    cons_ratio = np.divide(cons_body, cons_hl, out=np.ones_like(cons_body), where=cons_hl > 0)
+
+    if len(cons_ratio) < 5 or np.std(cons_ratio) == 0:
+        return 0.0
+
+    cons_mean = np.mean(cons_ratio)
+    cons_std = np.std(cons_ratio)
+
+    # 启动K线（DN起始+后续最多3根合并）
+    dn_bars = df.iloc[dn_start_idx:min(dn_start_idx + 3, n)]
+    dn_hl = dn_bars["最高"].values - dn_bars["最低"].values
+    dn_body = np.abs(dn_bars["收盘"].values - dn_bars["开盘"].values)
+    dn_ratio = np.divide(dn_body, dn_hl, out=np.ones_like(dn_body), where=dn_hl > 0)
+    dn_max_ratio = np.max(dn_ratio) if len(dn_ratio) > 0 else 0
+
+    z = (dn_max_ratio - cons_mean) / cons_std
+    return round(float(z), 2)
+
+
+def flatness_score(df: pd.DataFrame, window: int = 20) -> float:
+    """横盘感评分（0~1，越高越横盘）
+
+    老师："要有横盘感，斜率过高/凌厉直接pass"
+
+    综合：
+    1) 斜率 — 线性回归斜率(‰)，越小越好
+    2) 离散度 — MAD/均价，越小越密集
+
+    Returns:
+        0.0(凌厉斜面) ~ 1.0(完美横盘)
+    """
+    if len(df) < window:
+        return 0.5
+
+    recent = df.tail(window)
+    cl = recent["收盘"].values
+    mid = (recent["最高"].values + recent["最低"].values) / 2
+
+    # 1) 斜率评分
+    x = np.arange(len(cl))
+    try:
+        slope = np.polyfit(x, mid, 1)[0]
+        slope_abs = abs(slope)
+    except Exception:
+        slope_abs = 0.01
+
+    avg_price = np.mean(mid)
+    slope_permille = (slope_abs / avg_price * 1000) if avg_price > 0 else 0
+    # <5‰=S, <10‰=A, <15‰=B
+    if slope_permille < 5:
+        slope_score = 1.0
+    elif slope_permille < 10:
+        slope_score = 0.7
+    elif slope_permille < 15:
+        slope_score = 0.4
+    else:
+        slope_score = 0.1
+
+    # 2) 离散度评分
+    mad_val = np.mean(np.abs(mid - np.mean(mid)))
+    dispersion = mad_val / avg_price if avg_price > 0 else 1.0
+    # <0.3%=S, <0.5%=A, <0.8%=B
+    if dispersion < 0.003:
+        dispersion_score = 1.0
+    elif dispersion < 0.005:
+        dispersion_score = 0.7
+    elif dispersion < 0.008:
+        dispersion_score = 0.4
+    else:
+        dispersion_score = 0.1
+
+    return float(slope_score * 0.5 + dispersion_score * 0.5)
+
+
+def reaction_quality(df: pd.DataFrame, lookback: int = 15) -> dict:
+    """明显反应质量检测
+
+    老师："真正的强反应：向下踩到平台位后，下一根K线立即往上冲，速度快"
+    "碰一下慢慢蹭上去不算强特征"
+
+    Returns:
+        {"has_reaction": bool, "speed": float, "coverage": float, "quality": str}
+    """
+    if len(df) < 8:
+        return {"has_reaction": False, "speed": 0, "coverage": 0, "quality": "none"}
+
+    recent = df.tail(lookback)
+    cl = recent["收盘"].values
+    op = recent["开盘"].values
+    high = recent["最高"].values
+    low = recent["最低"].values
+
+    for i in range(len(recent) - 3):
+        # 找到回踩低点：下影线 + 收盘低于前一根
+        body_i = abs(cl[i] - op[i])
+        lower_shadow = min(op[i], cl[i]) - low[i]
+        hl_i = high[i] - low[i]
+
+        is_dip = (lower_shadow > body_i * 0.5 and cl[i] < cl[i - 1]
+                  if i > 0 and hl_i > 0 else False)
+
+        if not is_dip:
+            continue
+
+        # 看后续反弹：最多3根K线内的反应
+        for j in range(i + 1, min(i + 4, len(recent))):
+            rebound = cl[j] - cl[i]  # 从低点收盘的反弹
+            hl_j = high[j] - low[j]
+            body_j = abs(cl[j] - op[j])
+
+            if rebound <= 0:
+                continue
+
+            # 反弹速度 = 反弹幅度 / 回调幅度
+            dip_depth = high[max(0, i - 3):i + 1].max() - low[i]
+            speed = rebound / dip_depth if dip_depth > 0 else 0
+
+            # 反弹覆盖率 = 阳线实体 / 波幅
+            coverage = body_j / hl_j if hl_j > 0 else 0
+
+            # 综合质量
+            quality_val = speed * 0.4 + coverage * 0.6
+
+            if quality_val > 0.3:
+                q_str = "good" if quality_val > 0.6 else ("weak" if quality_val > 0.4 else "none")
+                return {"has_reaction": True, "speed": round(speed, 2),
+                        "coverage": round(coverage, 2), "quality": q_str}
+
+    return {"has_reaction": False, "speed": 0, "coverage": 0, "quality": "none"}
 
 
 def channel_detect(df: pd.DataFrame, n: int = 8) -> dict:
@@ -447,19 +725,14 @@ def r_squared(high: pd.Series, low: pd.Series, n: int = 20) -> pd.Series:
     """线性回归 R²（通道感量化）
 
     >0.7 = 强烈通道感，应降级或排除。
-    对应: 通道上涨检测（替代原有 channel_detect 函数）
+    对应: 通道上涨检测。一元线性回归 R² = [corr(x,y)]²，避免逐窗口 polyfit。
     """
     x = np.arange(n)
-    x_mean = x.mean()
 
     def calc_rsq(y):
-        if len(y) < n:
+        if len(y) < n or np.std(y) == 0:
             return np.nan
-        coefs = np.polyfit(x, y, 1)
-        preds = np.polyval(coefs, x)
-        ss_res = np.sum((y - preds) ** 2)
-        ss_tot = np.sum((y - y.mean()) ** 2)
-        return 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        return np.corrcoef(x, y)[0, 1] ** 2
 
     mid = (high + low) / 2
     return mid.rolling(window=n).apply(calc_rsq, raw=True)

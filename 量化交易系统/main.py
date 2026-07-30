@@ -98,6 +98,14 @@ def cmd_scan(args):
     else:
         print("\n当前没有符合条件的股票")
 
+    # 纪律报告（每次scan自动输出）
+    try:
+        from risk.trade_guardian import discipline_report
+        print()
+        print(discipline_report())
+    except ImportError:
+        pass
+
 
 def cmd_diagnose(args):
     """单只股票诊断：逐步检测策略条件"""
@@ -118,13 +126,13 @@ def cmd_diagnose(args):
         print(f"❌ 未获取到 {code} 的数据")
         return
 
-    print(f"📊 数据: {len(df)} 行 (最新: {df.iloc[-1]['日期']})")
-    print(f"💰 收盘: {df.iloc[-1]['收盘']:.2f}")
+    print(f"  数据: {len(df)} 行 (最新: {df.iloc[-1]['日期']})")
+    print(f"  收盘: {df.iloc[-1]['收盘']:.2f}")
     print()
 
     # 预过滤
     pre = strategy.quick_prefilter(df)
-    print(f"【预过滤】{'✅ 通过' if pre else '❌ 未通过'}")
+    print(f"【预过滤】{'通过' if pre else '未通过'}")
     if not pre:
         print("  说明: 快速预过滤已排除此股票（基础条件不满足）")
         return
@@ -135,11 +143,11 @@ def cmd_diagnose(args):
     df = all_indicators(df, needed_cols=needed)
     result = strategy.debug_filter(df)
 
-    print(f"【最终结果】{'✅ 符合条件' if result['match'] else '❌ 不符合条件'}")
+    print(f"【最终结果】{'符合条件' if result['match'] else '不符合条件'}")
     print(f"{'-' * 50}")
     for step_name, detail in result.get("steps", {}).items():
-        icon = "✅" if detail.get("passed") else "❌"
-        print(f"  {icon} {step_name}")
+        icon = "+" if detail.get("passed") else "-"
+        print(f"  [{icon}] {step_name}")
         print(f"    {detail.get('reason', '')}")
     print()
 
@@ -150,6 +158,143 @@ def cmd_diagnose(args):
     print(f"  量比: {latest.get('VOL_RATIO', 'N/A'):.2f}" if "VOL_RATIO" in df.columns else "")
     if "RSI" in df.columns:
         print(f"  RSI: {latest['RSI']:.1f}")
+
+    # 止损价（层面1）
+    if result.get("match") and hasattr(strategy, 'prebreak_grade'):
+        pr = strategy.prebreak_grade(df)
+        if pr.get("match"):
+            print(f"  TY区间: {pr.get('ty_high',0):.2f}~{pr.get('ty_low',0):.2f}")
+            print(f"  建议止损: {pr.get('stop_loss',0):.2f}")
+            print(f"  每股风险: {pr.get('risk_per_share',0):.2f}")
+            from risk.capital import calc_lots as _cl
+            print(f"  建议手数: {_cl(pr.get('risk_per_share',1))}")
+
+
+def cmd_track(args):
+    """交易记录管理"""
+    from tracker.trade_journal import get_all_trades, trade_stats, format_stats
+    from tracker.equity_curve import plot_equity_curve
+    from tracker.monte_carlo import simulate, plot_simulation
+
+    import numpy as np
+
+    if args.action == "list":
+        trades = get_all_trades()
+        if not trades:
+            print("\n暂无交易记录")
+            return
+        stats = trade_stats(trades)
+        print(f"\n=== 交易记录 ({len(trades)} 笔) ===\n")
+        for t in trades:
+            print(f"  {t.get('trade_id','?')} | {t.get('symbol','')} {t.get('name','')} "
+                  f"| {t.get('direction','')} | R={t.get('r_multiple','?')} | {t.get('exit_reason','')}")
+        print(f"\n{format_stats(stats)}")
+
+    elif args.action == "add":
+        # 交互式录入
+        print("\n=== 录入交易记录 ===\n")
+        import uuid
+        from datetime import datetime
+        from risk.position import TradeRecord
+
+        trade_id = str(uuid.uuid4())[:8]
+        symbol = input("代码: ").strip()
+        name = input("名称: ").strip()
+        direction = input("方向(long/short): ").strip() or "long"
+        entry_price = float(input("进场价: ").strip())
+        exit_price = float(input("离场价: ").strip())
+        volume = int(input("股数: ").strip())
+        stop_loss = float(input("止损价: ").strip())
+        grade = input("进场评级(S/A/B/C): ").strip() or "?"
+        exit_reason = input("离场原因: ").strip() or "手动"
+
+        # 价格合理性校验（拉取缓存中的最近收盘价对比）
+        try:
+            from data.fetcher import get_daily_kline as _gdk
+            _ref_df = _gdk(symbol, use_cache=True)
+            if not _ref_df.empty:
+                _ref_close = _ref_df["收盘"].iloc[-1]
+                for _name, _price in [("进场价", entry_price), ("离场价", exit_price), ("止损价", stop_loss)]:
+                    if _price > _ref_close * 1.5 or _price < _ref_close * 0.5:
+                        print(f"  [警告] {_name} {_price} 偏离最近收盘价{_ref_close:.2f}超过50%，请确认")
+                        if input("  继续?(y/n): ").strip().lower() != 'y':
+                            print("  已取消")
+                            return
+        except ImportError:
+            pass
+
+        risk_per = abs(entry_price - stop_loss)
+        r_mul = (exit_price - entry_price) / risk_per if risk_per > 0 else 0
+
+        # 计算交易成本
+        from risk.capital import calc_trade_fee
+        is_etf = symbol.startswith(("51", "15", "16"))
+        fee_entry = calc_trade_fee(entry_price * volume, is_etf)
+        fee_exit = calc_trade_fee(exit_price * volume, is_etf)
+        total_fee = fee_entry + fee_exit
+        pnl_real = (exit_price - entry_price) * volume - total_fee
+        r_mul_real = pnl_real / risk_per / volume if risk_per > 0 else 0
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        trade = TradeRecord(
+            trade_id=trade_id, symbol=symbol, name=name,
+            direction=direction, entry_date=today, exit_date=today,
+            entry_price=entry_price, exit_price=exit_price,
+            volume=volume, stop_loss=stop_loss,
+            r_multiple=round(r_mul_real, 2),
+            pnl=round(pnl_real, 2),
+            grade_at_entry=grade, exit_reason=exit_reason,
+        )
+        from tracker.trade_journal import add_trade as _add
+        _add(trade)
+        print(f"\n已记录: {symbol} {round(r_mul_real,2)}R (含手续费¥{total_fee:.1f})")
+
+    elif args.action == "equity":
+        path = plot_equity_curve(save=True)
+        if path:
+            trades = get_all_trades()
+            stats = trade_stats(trades)
+            print(f"\n=== 资金曲线 ===\n")
+            print(f"  图片已保存: {path}")
+            print(f"\n{format_stats(stats)}")
+        else:
+            print("\n暂无交易记录")
+
+    elif args.action == "monte-carlo":
+        from tracker.trade_journal import get_all_trades
+        trades = get_all_trades()
+        result = simulate(trades, n_simulations=args.simulations)
+        if "error" in result:
+            print(f"\n{result['error']}")
+            return
+        path = plot_simulation(result, save=True)
+        print(f"\n=== 蒙特卡洛模拟 ===\n")
+        print(f"  模拟次数: {result['n_simulations']}")
+        print(f"  基于 {result['n_trades']} 笔历史交易")
+        print(f"  平均R: {result['avg_r']:.3f}")
+        print(f"  R标准差: {result['std_r']:.2f}")
+        print(f"  盈利概率: {result['prob_profit']:.1%}")
+        fin = result['final_equities']
+        print(f"  95%置信区间: {np.percentile(fin, 2.5):.1f}R ~ {np.percentile(fin, 97.5):.1f}R")
+        print(f"  图片已保存: {path}")
+
+
+def cmd_capital(args):
+    """资金管理"""
+    from risk.capital import get_capital, set_capital, max_risk_per_trade
+    if args.action == "show":
+        cap = get_capital()
+        risk = max_risk_per_trade()
+        print(f"\n=== 资金状况 ===\n")
+        print(f"  总资金: ¥{cap:.0f}")
+        print(f"  单笔风险比例: 1.5%")
+        print(f"  单笔最大风险: ¥{risk:.0f}")
+        print(f"  建议修改: python main.py capital set <金额>")
+    elif args.action == "set" and args.amount:
+        set_capital(args.amount)
+        risk = max_risk_per_trade()
+        print(f"\n资金已更新为 ¥{args.amount:.0f}")
+        print(f"  单笔最大风险: ¥{risk:.0f}")
 
 
 def main():
@@ -194,6 +339,21 @@ def main():
     diag_parser.add_argument("--strategy", type=str, default="zuanqian_strategy",
                            help="策略模块名 (默认: zuanqian_strategy)")
 
+    # track
+    track_parser = subparsers.add_parser("track", help="交易记录管理")
+    track_parser.add_argument("action", type=str, nargs="?",
+                            choices=["list", "add", "equity", "monte-carlo"],
+                            default="list", help="操作")
+    track_parser.add_argument("--simulations", type=int, default=10000,
+                            help="蒙特卡洛模拟次数")
+
+    # capital
+    cap_parser = subparsers.add_parser("capital", help="资金管理")
+    cap_parser.add_argument("action", type=str, nargs="?",
+                          choices=["show", "set"], default="show", help="操作")
+    cap_parser.add_argument("amount", type=float, nargs="?", default=0,
+                          help="设置资金金额")
+
     args = parser.parse_args()
 
     if args.command == "list":
@@ -204,9 +364,20 @@ def main():
         cmd_scan(args)
     elif args.command == "diagnose":
         cmd_diagnose(args)
+    elif args.command == "track":
+        cmd_track(args)
+    elif args.command == "capital":
+        cmd_capital(args)
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
+    # Windows GBK 终端编码保护
+    import sys as _sys
+    if hasattr(_sys.stdout, 'reconfigure'):
+        try:
+            _sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
     main()

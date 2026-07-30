@@ -21,7 +21,7 @@
 │       ├── demo_strategy.py    # 示例策略（均线金叉+放量）
 │       └── zuanqian_strategy.py # 钻潜评级策略 V2（唯一主策略）
 ├── analysis/
-│   ├── indicators.py           # 技术指标（MA/MACD/RSI/KDJ/BOLL/ATR + 12 Alpha因子 + PT/LK/回踩/通道/过高点检测）
+│   ├── indicators.py           # 技术指标（MA/MACD/RSI/KDJ/BOLL/ATR + 12 Alpha因子 + PT/LK/回踩/通道/像素感/冲突感/横盘感/过高点）
 │   ├── scanner.py              # 全市场扫描器（5线程并发，normal/prebreak双模式）
 │   ├── reporter.py             # 结果报告（表格/CSV/K线图，双模式表格）
 │   └── factor_eval.py          # 因子评估（Alphalens IC分析 + 快检）
@@ -64,8 +64,10 @@
 - 全市场扫描速度：~7分钟（normal）/ ~8分钟（prebreak）
 
 ### 知识库
-- 53份知识文档：30节课程 + 23份市场扫描录屏
-- 13个 Claude 记忆文件：标准模式6条件、意图模式、离场规则、K线形态、市场结构、成交量、心理、资金管理等
+- 103份知识文档：30节课程 + 23份市场扫描录屏 + 50份周会/周课堂
+- 25个 Claude 记忆文件（2026-07-30 周会学习+视觉量化完成后新增7个）：
+  - 新增7个：周会学习总结、策略优化差距、视觉识别评级原则、经验型模式规则、出场六层体系、品种筛选排除清单、最新会话变更
+- 69份周会/周课堂/扫盘文档已完成系统性学习（覆盖2021-2024），120+知识点增量
 
 ### 前端
 - **已废弃**。Streamlit Web 前端（app.py/web/pages/）已删除，全部操作通过 CLI 完成

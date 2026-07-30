@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 import pandas as pd
 
-from data.fetcher import get_daily_kline, _fetch_by_pytdx
+from data.fetcher import get_daily_kline, _fetch_by_pytdx, _fetch_by_baostock, _fetch_by_akshare
 from data.cache import cache_path, read_cache, write_cache
 from config.settings import KLINE_YEARS
 
@@ -106,8 +106,15 @@ def update_all_stocks(
                 write_cache(code, df)
                 return code, name, "updated"
 
-            # fallback baostock
-            df = get_daily_kline(code, use_cache=False)
+            # fallback: 直接走 baostock（跳过 get_daily_kline 的 pytdx 重试）
+            start_str = f"{datetime.now().year - KLINE_YEARS}0101"
+            end_str = datetime.now().strftime("%Y%m%d")
+            df = _fetch_by_baostock(code, start_str, end_str)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, name, "updated"
+            # 最后备选 akshare
+            df = _fetch_by_akshare(code, start_str, end_str)
             if df is not None and not df.empty:
                 write_cache(code, df)
                 return code, name, "updated"
@@ -187,8 +194,14 @@ def incremental_update(
             if df is not None and not df.empty:
                 write_cache(code, df)
                 return code, "updated"
-            # fallback
-            df = get_daily_kline(code, use_cache=False)
+            # fallback: 直接走 baostock（跳过 pytdx 重试）
+            start_str = f"{datetime.now().year - KLINE_YEARS}0101"
+            end_str = datetime.now().strftime("%Y%m%d")
+            df = _fetch_by_baostock(code, start_str, end_str)
+            if df is not None and not df.empty:
+                write_cache(code, df)
+                return code, "updated"
+            df = _fetch_by_akshare(code, start_str, end_str)
             if df is not None and not df.empty:
                 write_cache(code, df)
                 return code, "updated"

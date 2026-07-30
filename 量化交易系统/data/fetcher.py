@@ -1,9 +1,13 @@
 """数据获取 - pytdx(通达信直连) + baostock + akshare 三数据源
 
 数据源优先级：
-  1. pytdx（通达信协议直连，最快 ~0.1-0.3秒/只，推荐）
-  2. baostock（~2-3秒/只，fallback）
-  3. akshare（最慢，最后备选）
+  1. pytdx（通达信协议直连，最快 ~0.1-0.3秒/只，推荐）→ 不复权数据
+  2. baostock（~2-3秒/只，fallback）→ 前复权(adjustflag=2)
+  3. akshare（最慢，最后备选）→ 前复权(qfq)
+
+注意：三数据源复权方式不一致（pytdx不复权/baostock前复权/akshare前复权）。
+技术形态识别（DL/PT/LK/TY）对复权不敏感，但均线/价格阈值可能有轻微偏差。
+若需要精确复权一致性，建议统一使用前复权并关闭 pytdx fallback。
 """
 from datetime import datetime, timedelta
 import pandas as pd
@@ -59,7 +63,8 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
 
     market = _get_market_code(symbol)
     # 估算需要多少条数据（一年约 250 交易日）
-    count = max(years * 250, 800)
+    # 注意：pytdx 单次最多返回约 800 条，超过 3 年数据可能截断
+    count = min(max(years * 250, 800), 800)
 
     last_err = None
     for host, port in TDX_SERVERS:
@@ -162,7 +167,13 @@ def _fetch_by_baostock(symbol: str, start: str, end: str) -> pd.DataFrame | None
                               (df["最高"] - df["最低"]) / df["最低"] * 100, 0)
         df["涨跌额"] = df["收盘"].diff()
         return df
+    except ImportError:
+        return None
     except Exception:
+        try:
+            bs.logout()
+        except (NameError, AttributeError):
+            pass
         return None
 
 
@@ -227,12 +238,12 @@ def get_daily_kline(
                 mask = (cached["日期"] >= start_dt) & (cached["日期"] <= end_dt)
                 return cached[mask].reset_index(drop=True)
 
-    # 1) 尝试 pytdx（最快）
+    # 1) 尝试 pytdx（最快）——先缓存全量再过滤，提高后续命中率
     df = _fetch_by_pytdx(symbol)
     if df is not None and not df.empty:
-        _apply_date_filter(df, start, end)
         if use_cache:
             write_cache(symbol, df)
+        _apply_date_filter(df, start, end)
         return df
 
     # 2) 尝试 baostock

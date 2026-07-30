@@ -21,7 +21,9 @@ import numpy as np
 from strategy.base import BaseStrategy
 from analysis.indicators import (
     platform_test_count, profile_compactness,
-    retracement_detect, channel_detect, overshoot_detect
+    retracement_detect, channel_detect, overshoot_detect,
+    pixelation_score, step_down_trace, conflict_zscore,
+    flatness_score, reaction_quality
 )
 
 
@@ -53,21 +55,43 @@ class ZuanQianStrategy(BaseStrategy):
     LK_A = 0.40    # 中等
     LK_B = 0.30    # 松散边缘
 
-    # TY 统一区间
-    TY_S = 5       # 最少K线
-    TY_A = 4
-    TY_B = 3
+    # TY 统一区间（2024年修正：3根=不足C级，非瑕疵B级）
+    TY_S = 5       # 最少K线 — 优秀
+    TY_A = 4       # 最少K线 — 达标
+    TY_B = 4       # 最少K线 — 正常（3根是不足C）
     TY_RANGE_S = 0.03
     TY_RANGE_A = 0.05
     TY_RANGE_B = 0.08
 
-    # DN 动能（量比, 实体比）
-    DN_S = (2.5, 0.05)
-    DN_A = (1.8, 0.04)
-    DN_B = (1.5, 0.03)
+    # DN 动能（量比, 实体比）——基于至多3根合并规则
+    # 1根单K达标=S(强突破), 2根合并达标=A(良好), 3根合并达标=B(边缘)
+    DN_S = (2.5, 0.05)   # 单根→强冲突感
+    DN_A = (1.5, 0.04)   # 2根合并→中等
+    DN_B = (1.1, 0.03)   # 3根合并→偏弱
 
     # SF 释放级别（涨幅阈值）
     SF_FULL_RELEASE = 0.40  # 完全释放排除阈值
+
+    # ── 量化阈值（视觉概念→数值） ──
+    # 像素感（影线占比，越高越好）
+    PX_S = 0.55
+    PX_A = 0.45
+    PX_B = 0.35
+
+    # 冲突感（z-score）
+    CZ_S = 2.0
+    CZ_A = 1.5
+    CZ_B = 1.0
+
+    # 横盘感（综合评分 0~1）
+    FL_S = 0.60
+    FL_A = 0.45
+    FL_B = 0.30
+
+    # 明显反应（覆盖率）
+    RQ_S = 0.60
+    RQ_A = 0.45
+    RQ_B = 0.30
 
     def get_params(self) -> dict:
         return {
@@ -90,17 +114,17 @@ class ZuanQianStrategy(BaseStrategy):
 
     # ── Tier 0：一票否决 ──
 
-    def _tier0_reject(self, df: pd.DataFrame) -> str | None:
-        """Tier 0 检查：任一条件不满足直接淘汰
+    def _tier0_reject(self, df: pd.DataFrame, check_retracement: bool = True) -> str | None:
+        """Tier 0 一票否决：结构太小 / 完全释放 / 无回踩(可选)
 
-        Returns:
-            None = 通过，字符串 = 淘汰原因
+        Args:
+            check_retracement: True=标准模式（检查回踩），False=预突破模式（跳过）
         """
         n = len(df)
         close = df["收盘"].values
         low = df["最低"].values
 
-        # 1. 结构太小（K线数<60）
+        # 1. 结构太小
         if n < 60:
             return f"结构太小(仅{n}根)"
 
@@ -109,36 +133,28 @@ class ZuanQianStrategy(BaseStrategy):
         if low_60 > 0 and (close[-1] - low_60) / low_60 > self.SF_FULL_RELEASE:
             return f"完全释放({(close[-1]-low_60)/low_60:.1%}>40%)"
 
-        # 3. 无回踩轨迹——直接往上冲
-        retrace = retracement_detect(df)
-        if not retrace["has_retracement"]:
-            # 检查最近是否在上涨
-            if len(df) >= 10:
+        # 3. 通道感检测（2024年扫盘最高频排除条件）
+        ch = channel_detect(df)
+        if ch["is_channel"]:
+            return f"通道上涨(R²={ch['strength']:.2f})"
+
+        # 4. 向下踩的轨迹 + 明显反应——仅标准模式检查（量化版）
+        if check_retracement:
+            # 4a. 向下踩轨迹（下影线+阳线反弹模式）
+            trace = step_down_trace(df)
+            if not trace["has_trace"]:
+                # 无向下踩 → 可能是"直接往上冲"
                 recent_close = close[-10:]
-                if all(recent_close[i] <= recent_close[i + 1] for i in range(min(5, len(recent_close) - 1))):
-                    return "直接上涨无回踩"
+                direct_rush = all(recent_close[i] <= recent_close[i + 1]
+                                  for i in range(min(5, len(recent_close) - 1)))
+                if direct_rush:
+                    return "直接上涨无回踩轨迹"
 
-        return None
-
-    # ── 各条件评级 ──
-
-    def _tier0_prebreak(self, df: pd.DataFrame) -> str | None:
-        """Tier 0 预突破专用——比标准模式宽松
-
-        预突破模式不卡"回踩轨迹"和"通道上涨"——这个阶段股票还在盘整中，
-        尚未突破，回踩/通道是突破后才需要判断的。
-        只检查：结构太小 + 完全释放
-        """
-        n = len(df)
-        close = df["收盘"].values
-        low = df["最低"].values
-
-        if n < 60:
-            return f"结构太小(仅{n}根)"
-
-        low_60 = low[-60:].min()
-        if low_60 > 0 and (close[-1] - low_60) / low_60 > self.SF_FULL_RELEASE:
-            return f"完全释放({(close[-1]-low_60)/low_60:.1%}>40%)"
+            # 4b. 明显反应质量（踩了之后反弹的速度和幅度）
+            react = reaction_quality(df)
+            if trace["has_trace"] and not react["has_reaction"]:
+                # 有踩但没有明显反应 → 碰一下慢慢蹭上去不算
+                pass  # 不直接否决，但在评分中降级
 
         return None
 
@@ -198,28 +214,33 @@ class ZuanQianStrategy(BaseStrategy):
     def _grade_lk(self, df: pd.DataFrame) -> tuple[str, str]:
         """轮廓质量评级：S/A/B/C
 
-        基于K线实体占比（紧凑度）+ 像素感检测。
+        量化三个维度（2024年新增）：
+        1) 像素感评分（影线占比+连续性+振幅一致性）
+        2) 横盘感评分（斜率+MAD离散度）
+        3) 紧凑度（实体占比，原始指标）
         """
         compactness = profile_compactness(df, window=20)
+        px = pixelation_score(df, window=30)
+        fl = flatness_score(df, window=20)
 
-        # 像素感检测：连续同向K线占比
-        close = df["收盘"].values[-30:]
-        same_dir = 0
-        for i in range(1, len(close)):
-            if (close[i] >= close[i - 1]) == (close[i - 1] >= close[i - 2]) if i >= 2 else True:
-                same_dir += 1
-        continuity_ratio = same_dir / max(len(close) - 1, 1)
+        # 综合评分（紧凑度权重最高，像素感+横盘感辅助）
+        score = compactness * 0.45 + px * 0.25 + fl * 0.30
 
-        # 综合评分
-        score = compactness * 0.6 + continuity_ratio * 0.4
+        # 像素感严重 → 硬降级
+        if px < self.PX_B:
+            return 'C', f"像素感严重(px={px:.2f}, 紧凑{compactness:.2f})"
+
+        # 横盘感极差 → 硬降级
+        if fl < self.FL_B:
+            return 'C', f"无横盘感(fl={fl:.2f}, 斜率过大)"
 
         if score >= self.LK_S and compactness >= 0.45:
-            return 'S', f"紧凑(实体比{compactness:.2f}, 连续性{continuity_ratio:.2f})"
+            return 'S', f"优质(紧凑{compactness:.2f}, px{px:.2f}, fl{fl:.2f})"
         elif score >= self.LK_A:
-            return 'A', f"中等(实体比{compactness:.2f}, 连续性{continuity_ratio:.2f})"
+            return 'A', f"中等(紧凑{compactness:.2f}, px{px:.2f}, fl{fl:.2f})"
         elif score >= self.LK_B:
-            return 'B', f"松散(实体比{compactness:.2f}, 连续性{continuity_ratio:.2f})"
-        return 'C', f"像素感强(实体比{compactness:.2f}, 连续性{continuity_ratio:.2f})"
+            return 'B', f"松散(紧凑{compactness:.2f}, px{px:.2f}, fl{fl:.2f})"
+        return 'C', f"轮廓差(紧凑{compactness:.2f}, px{px:.2f}, fl{fl:.2f})"
 
     def _grade_ty(self, df: pd.DataFrame) -> tuple[str, str]:
         """统一区间评级：S/A/B/C"""
@@ -229,8 +250,8 @@ class ZuanQianStrategy(BaseStrategy):
         body_ratios = self._body_pct_series(high, low, op, cl)
         ma20 = df["MA20"].values if "MA20" in df.columns else None
 
-        # 最少K线数要求
-        thresholds = [(5, 0.03, 'S'), (4, 0.05, 'A'), (3, 0.08, 'B')]
+        # 最少K线数要求（2024修正：3根=不足C级，非瑕疵）
+        thresholds = [(5, 0.03, 'S'), (4, 0.05, 'A'), (4, 0.08, 'B')]
         for bars, max_range, grade in thresholds:
             if n < bars + 5:
                 continue
@@ -245,7 +266,11 @@ class ZuanQianStrategy(BaseStrategy):
                 if ma20 is not None and (ma20[end] == 0 or pd.isna(ma20[end])):
                     continue
 
-                seg_range = seg_hl / (ma20[end] if ma20 is not None else cl[end]) if max(cl[end], 1) else 0
+                # 统一区间波幅 = 区间振幅 / 基准价（MA20 优先，否则收盘价）
+                denom = ma20[end] if ma20 is not None else cl[end]
+                if denom <= 0:
+                    continue
+                seg_range = seg_hl / denom
                 if seg_range > max_range:
                     continue
                 price_chg = abs(cl[end] - cl[start]) / cl[start] if cl[start] > 0 else 0
@@ -255,34 +280,127 @@ class ZuanQianStrategy(BaseStrategy):
         return 'C', "未发现窄幅整理或K线不足"
 
     def _grade_dn(self, df: pd.DataFrame) -> tuple[str, str]:
-        """动能评级：S/A/B/C
+        """动能评级：S/A/B/C（基于至多3根合并规则 + 冲突感量化）
 
-        含通道感惩罚——有通道感则降一级。
+        三个维度综合判定：
+        1) 量比+实体（原始数值）
+        2) 冲突感z-score（启动K vs 调整结构的"露头"程度）
+        3) 动能坚决度（连续阳线+影线少）
+
+        降级规则：通道感 / TY-DN间隔>1根
         """
-        latest = df.iloc[-1]
-        vol = latest.get("VOL_RATIO", 0)
-        body = abs(latest["收盘"] - latest["开盘"]) / latest["收盘"] if latest["收盘"] > 0 else 0
-
         # 通道感检测
         ch = channel_detect(df)
         channel_penalty = ch["is_channel"]
 
-        base_grade = 'C'
-        base_reason = f"量比{vol:.2f}x, 实体{body:.1%}"
+        # 启动K与TY间隔检测
+        ty_end_idx = self._find_last_ty_index(df)
 
-        for (v_min, b_min), grade in [(self.DN_S, 'S'), (self.DN_A, 'A'), (self.DN_B, 'B')]:
+        # 冲突感z-score（量化"露头"）
+        n_total = len(df)
+        conflict_z = 0.0
+
+        # 尝试不同合并根数：1根→S, 2根→A, 3根→B
+        specs = [(1, self.DN_S, 'S'), (2, self.DN_A, 'A'), (3, self.DN_B, 'B')]
+        for n, (v_min, b_min), grade in specs:
+            if n_total < n:
+                continue
+            window = df.tail(n)
+            dn_start_idx = n_total - n
+
+            # 合并量比
+            vol_ratios = window["VOL_RATIO"].dropna().values if "VOL_RATIO" in df.columns else [0]
+            vol = vol_ratios.mean() if len(vol_ratios) > 0 else 0
+
+            # 合并实体
+            first_open = window["开盘"].iloc[0]
+            last_close = window["收盘"].iloc[-1]
+            body = abs(last_close - first_open) / last_close if last_close > 0 else 0
+
+            # 冲突感z-score
+            conflict_z = conflict_zscore(df, dn_start_idx)
+
+            # 动能坚决度：合并K线中阳线占比 + 影线少
+            decisive = 0.5  # 默认
+            try:
+                hl = window["最高"].values - window["最低"].values
+                yang_count = sum(1 for i in range(len(window))
+                                 if window["收盘"].iloc[i] > window["开盘"].iloc[i])
+                yang_ratio = yang_count / len(window)
+                shadow_ratios = np.divide(
+                    np.abs(window["收盘"].values - window["开盘"].values),
+                    hl, out=np.ones(len(window)), where=hl > 0
+                )
+                decisive = float(yang_ratio * 0.5 + np.mean(shadow_ratios) * 0.5)
+            except Exception:
+                pass
+
+            # 三个维度都达标才算通过
             if vol >= v_min and body >= b_min:
                 base_grade = grade
-                base_reason = f"量比{vol:.2f}x, 实体{body:.1%}"
-                break
+                base_reason = f"量比{vol:.2f}x, 实体{body:.1%}(并{n}根), z={conflict_z:.1f}"
 
-        if channel_penalty and base_grade in ('S', 'A'):
-            # 有通道感降一级
-            downgrade = {'S': 'A', 'A': 'B', 'B': 'C'}
-            base_grade = downgrade.get(base_grade, base_grade)
-            base_reason += ", 通道感降级"
+                # 冲突感加分/降级
+                if conflict_z >= self.CZ_S and base_grade != 'S':
+                    base_reason += ", 冲突感强→提级"
+                elif conflict_z < self.CZ_B and base_grade in ('S', 'A'):
+                    base_grade = {'S': 'A', 'A': 'B'}.get(base_grade, base_grade)
+                    base_reason += ", 冲突感不足→降级"
 
-        return base_grade, base_reason
+                # 坚决度降级
+                if decisive < 0.4 and base_grade in ('S', 'A'):
+                    base_grade = {'S': 'A', 'A': 'B'}.get(base_grade, base_grade)
+                    base_reason += f", 不坚决(决{decisive:.2f})→降级"
+
+                # 降级规则（通道感 / TY-DN间隔）
+                downgrades = []
+                if channel_penalty:
+                    downgrades.append("通道感")
+                ty_gap = None
+                if ty_end_idx is not None and ty_end_idx >= 0:
+                    ty_gap = dn_start_idx - ty_end_idx
+                if ty_gap is not None and ty_gap > 1:
+                    downgrades.append(f"TY-DN间隔{ty_gap}根")
+
+                if downgrades:
+                    for d in downgrades:
+                        base_grade = {'S': 'A', 'A': 'B', 'B': 'C'}.get(base_grade, base_grade)
+                    base_reason += ", " + "/".join(downgrades) + "降级"
+
+                return base_grade, base_reason
+
+        return 'C', f"量比{vol_ratios.mean():.2f}x, 实体{body:.1%}, z={conflict_z:.1f}(不达标)"
+
+    def _find_last_ty_index(self, df: pd.DataFrame) -> int | None:
+        """查找最后一个统一区间的结束位置
+
+        Returns:
+            TY最后一根K线的索引（0-based），未找到返回None
+        """
+        n = len(df)
+        high, low = df["最高"].values, df["最低"].values
+        op, cl = df["开盘"].values, df["收盘"].values
+        body_ratios = self._body_pct_series(high, low, op, cl)
+        ma20 = df["MA20"].values if "MA20" in df.columns else None
+
+        for bars in [5, 4]:
+            if n < bars + 5:
+                continue
+            for end in range(n - 1, max(0, n - 30) - 1, -1):
+                start = end - bars + 1
+                if start < 0:
+                    continue
+                seg_body = body_ratios[start:end + 1]
+                if seg_body.mean() > 0.6:
+                    continue
+                seg_hl = (high[start:end + 1].max() - low[start:end + 1].min())
+                denom = ma20[end] if ma20 is not None and not pd.isna(ma20[end]) else cl[end]
+                if denom <= 0:
+                    continue
+                seg_range = seg_hl / denom
+                if seg_range <= 0.05:
+                    return end
+        return None
 
     def _grade_sf(self, df: pd.DataFrame, dl_start: int | None) -> tuple[str, str]:
         """释放级别评级：1st=S, 2nd=A, 3rd=C"""
@@ -391,21 +509,38 @@ class ZuanQianStrategy(BaseStrategy):
                 sf_g, sf_r = self._grade_sf(df, dl_start)
             else:
                 sf_g, sf_r = 'C', "未找到独立结构"
-        except Exception:
-            sf_g, sf_r = 'C', "计算异常"
+        except (KeyError, ValueError, IndexError, TypeError) as e:
+            sf_g, sf_r = 'C', f"计算异常:{e}"
         scores["SF释放级别"] = (sf_g, sf_r)
 
         # ── Tier 3：加减分 ──
         # 通道感、像素感已在 LK 和 DN 中处理
         # 过高点已在 DL 中处理
+        # 回踩轨迹和反应质量作为加分项
+
+        trace = step_down_trace(df)
+        react = reaction_quality(df)
+        bonus = 0  # 加分累计
+
+        if trace["quality"] == "good":
+            bonus += 1
+            scores["回踩轨迹"] = ('S', f"深{trace['depth_pct']:.1f}x, 反弹{trace['rebound_pct']:.0%}")
+        elif trace["has_trace"]:
+            scores["回踩轨迹"] = ('A', f"深{trace['depth_pct']:.1f}x")
+
+        if react["quality"] == "good":
+            bonus += 1
+            scores["明显反应"] = ('S', f"速度{react['speed']:.1%}, 覆盖{react['coverage']:.0%}")
+        elif react["has_reaction"]:
+            scores["明显反应"] = ('A', f"覆盖{react['coverage']:.0%}")
 
         # ── 综合评级 ──
-        grade = self._calculate_overall_grade(scores)
+        grade = self._calculate_overall_grade(scores, bonus)
         match = grade in ('S', 'A', 'B')
 
         return {"grade": grade, "scores": scores, "dl_start": dl_start, "match": match}
 
-    def _calculate_overall_grade(self, scores: dict) -> str:
+    def _calculate_overall_grade(self, scores: dict, bonus: int = 0) -> str:
         """根据各条件评级计算综合评级
 
         优先级逻辑：
@@ -414,6 +549,7 @@ class ZuanQianStrategy(BaseStrategy):
         - S级：全部≥A，且至少3个S
         - A级：全部≥A 或 仅1个B
         - B级：最多3个B
+        - Tier3加分：回踩轨迹好+反应明显，bonus≥2可提一级
         """
         core = ["PT平台测试", "TY统一区间", "DN动能", "DL独立结构", "LK轮廓质量", "SF释放级别"]
         grades = [scores.get(k, ('C', ''))[0] for k in core]
@@ -427,14 +563,17 @@ class ZuanQianStrategy(BaseStrategy):
         tier2 = grades[3:]
         tier2_c = sum(1 for g in tier2 if g == 'C')
         if tier2_c > 0:
-            # Tier 1 不能有B
             if any(g == 'B' for g in tier1):
                 return 'C'
             return 'B'
 
         # 计算各等级数量
         s_count = sum(1 for g in grades if g == 'S')
+        a_count = sum(1 for g in grades if g == 'A')
         b_count = sum(1 for g in grades if g == 'B')
+
+        # 2024年规则修正：全部A级无一S → 降为B（老师不会关注均A交易）
+        all_a_no_s = (s_count == 0 and b_count == 0 and a_count == len(grades))
 
         # S级：全部≥A，且至少3个S
         if s_count >= 3 and b_count == 0:
@@ -442,10 +581,16 @@ class ZuanQianStrategy(BaseStrategy):
 
         # A级：全部≥A 或 仅1个B
         if b_count <= 1:
+            if all_a_no_s:
+                # 均A但有回踩+反应双优 → 恢复为A
+                return 'A' if bonus >= 2 else 'B'
             return 'A'
 
         # B级：最多3个B
         if b_count <= 3:
+            # 有加分且B少 → 可提为A
+            if bonus >= 2 and b_count <= 1:
+                return 'A'
             return 'B'
 
         return 'C'
@@ -503,8 +648,8 @@ class ZuanQianStrategy(BaseStrategy):
                     "trigger_price": 0, "stop_loss": 0, "risk_per_share": 0,
                     "ty_high": 0, "ty_low": 0, "match": False}
 
-        # Tier 0 一票否决（预突破专用——比正常模式宽松，不卡回踩）
-        reject = self._tier0_prebreak(df)
+        # Tier 0 一票否决（预突破模式——不卡回踩）
+        reject = self._tier0_reject(df, check_retracement=False)
         if reject:
             return {"grade": "C", "scores": {"Tier0": ("C", reject)},
                     "trigger_price": 0, "stop_loss": 0, "risk_per_share": 0,
@@ -539,8 +684,8 @@ class ZuanQianStrategy(BaseStrategy):
                 sf_g, sf_r = self._grade_sf(df, dl_start)
             else:
                 sf_g, sf_r = 'C', "未找到独立结构"
-        except Exception:
-            sf_g, sf_r = 'C', "计算异常"
+        except (KeyError, ValueError, IndexError, TypeError) as e:
+            sf_g, sf_r = 'C', f"计算异常:{e}"
         scores["SF释放级别"] = (sf_g, sf_r)
 
         # 综合评级（5条件，不含DN）

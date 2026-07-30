@@ -108,9 +108,11 @@ def quick_factor_check(code: str, factor_col: str = "VOL_RATIO") -> dict:
     if df.empty:
         return {"error": "无数据"}
 
-    df = all_indicators(df, needed_cols=[factor_col] if factor_col in [
-        "VOL_RATIO", "BODY_RATIO", "ROC10", "STD20", "BIAS5", "MAD20", "KLEN"
-    ] else None)
+    # 已知的按需因子列（避免触发全量计算）
+    _KNOWN_FACTORS = {"VOL_RATIO", "BODY_RATIO", "ROC10", "STD20", "VSTD10",
+                       "MAXPOS20", "KLEN", "WVMA20", "CORR10", "RSQR20",
+                       "BIAS5", "MAD20", "ATR", "VOLATILITY"}
+    df = all_indicators(df, needed_cols=[factor_col] if factor_col in _KNOWN_FACTORS else None)
 
     if factor_col not in df.columns:
         return {"error": f"因子 {factor_col} 未计算"}

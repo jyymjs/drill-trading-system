@@ -91,7 +91,7 @@ def scan_single_stock(
             if attempt < SCAN_RETRY - 1:
                 time.sleep(0.5)
                 continue
-            logger.debug("扫描 %s(%s) 失败: %s", name, code, e)
+            logger.debug("扫描 %s(%s) 失败: %s", name, code, e, exc_info=True)
             return None
 
 
@@ -147,7 +147,7 @@ def scan(
 
         for i, future in enumerate(iterator):
             try:
-                result = future.result()
+                result = future.result(timeout=30)  # 30秒超时，防止单只股票永久挂起
                 if result:
                     results.append(result)
             except Exception:

@@ -13,18 +13,12 @@ OUTPUT_DIR = ROOT_DIR / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 股票池配置 ---
-STOCK_POOL = "all"          # "all"=全A股, "hs300"=沪深300, 或自定义列表文件路径
 STOCK_LIST_CACHE_DAYS = 1   # 股票列表缓存天数
-INCLUDE_ETF = True          # 是否包含ETF
-
-# --- ETF 配置 ---
-ETF_LIST_CACHE_DAYS = 1     # ETF列表缓存天数
 
 # --- K线配置 ---
-KLINE_PERIOD = "daily"      # daily / weekly / monthly
-KLINE_ADJUST = "qfq"        # ""=不复权, "qfq"=前复权, "hfq"=后复权
-KLINE_CACHE_DAYS = 1        # K线缓存天数（>1可减少请求）
-KLINE_YEARS = 3             # 默认拉取几年数据
+KLINE_ADJUST = "qfq"        # akshare复权方式: ""=不复权, "qfq"=前复权, "hfq"=后复权
+KLINE_CACHE_DAYS = 1        # K线缓存有效期（天）
+KLINE_YEARS = 3             # 拉取年数（pytdx上限约800条≈3年，超过无效）
 
 # --- 技术指标默认参数 ---
 MA_SHORT = 5                # 短期均线

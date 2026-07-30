@@ -4,18 +4,8 @@ from data.fetcher import get_stock_list
 
 
 def get_all_stocks(use_cache: bool = True) -> list[dict]:
-    """获取全部A股列表（通过 bulk API，最稳定）"""
-    try:
-        from data.fetcher import get_bulk_a_stock_day
-        df = get_bulk_a_stock_day()
-        if not df.empty:
-            unique = sorted(df["code"].dropna().unique())
-            # 过滤掉ETF代码 (51xxx/15xxx/16xxx)
-            unique = [c for c in unique if not (c.startswith("51") or c.startswith("15") or c.startswith("16"))]
-            return [{"code": c, "name": c} for c in unique]
-        return get_stock_list(use_cache=use_cache)
-    except Exception:
-        return get_stock_list(use_cache=use_cache)
+    """获取全部A股列表"""
+    return get_stock_list(use_cache=use_cache)
 
 
 def get_stock_codes(use_cache: bool = True) -> list[str]:
@@ -35,7 +25,7 @@ _ETF_NAMES = {
     "515050": "5GETF", "515880": "通信ETF", "515030": "新能源车ETF",
     "516160": "新能源ETF", "517050": "互联网ETF",
     "159915": "创业板ETF", "159949": "创业板50ETF",
-    "159845": "中证1000ETF", "159766": "旅游ETF",
+    "159845": "中证1000ETF",
     "159928": "消费ETF", "159865": "养殖ETF",
     "159870": "化工ETF", "159766": "旅游ETF",
     "518880": "黄金ETF", "513100": "纳指ETF",

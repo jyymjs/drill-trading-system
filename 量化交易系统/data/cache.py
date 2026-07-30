@@ -31,10 +31,12 @@ def read_cache(symbol: str, max_days: int = 1) -> pd.DataFrame | None:
 
 
 def write_cache(symbol: str, df: pd.DataFrame) -> None:
-    """写入缓存"""
+    """写入缓存（原子操作：先写临时文件再 rename，防止中断时 CSV 截断）"""
     if df is not None and not df.empty:
         path = cache_path(symbol)
-        df.to_csv(path, index=False)
+        tmp = path + ".tmp"
+        df.to_csv(tmp, index=False)
+        os.replace(tmp, path)
 
 
 def clear_cache() -> None:
