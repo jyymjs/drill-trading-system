@@ -1,0 +1,6 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 浏览器测试临时文件
+.playwright-mcp/

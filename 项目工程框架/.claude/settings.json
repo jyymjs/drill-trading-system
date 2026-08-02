@@ -1,0 +1,30 @@
+{
+  "customCommands": [
+    {
+      "name": "优化",
+      "description": "立即唤醒优化者审计框架",
+      "prompt": "请唤醒优化者角色，对框架进行一次全面审计。"
+    },
+    {
+      "name": "深度优化",
+      "description": "深度审计框架（两周一检级别）",
+      "prompt": "请唤醒优化者角色执行深度审计。先检查距上次深度审计是否≥14天（对照 docs/changelog.md 中的深度审计记录），未到则向用户说明原因并询问是否仍要执行。"
+    }
+  ],
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/guard/task-counter.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
