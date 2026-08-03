@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# 日志
+*.log
+log_*.txt
+pid_*.txt
+streamlit.log
+
+# 临时文件
+temp/
+nohup_batch.sh
+run.ps1
+shell.bat
+master_batch.bat
+start_*.bat
+finish_*.bat
+run_last2.bat
+
+# 重跑脚本
+reprocess_ab.py
+rerun_*.py
+rerun_*.txt
+
+# 浏览器测试
+.playwright-mcp/
+
+# Claude 配置
+.agents/
+skills-lock.json
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 量化交易系统缓存（相对本目录）
+output/*.csv
+output/*.png
+data/cache/
+
+# 本地密钥配置（不提交）
+scripts/config.local.json
+
+output/backtest/
+
+# 知识库转写稿（raw 素材不入库，量大）
+知识库/**/raw/

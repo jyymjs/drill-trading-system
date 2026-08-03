@@ -1,7 +1,0 @@
-# whisper-vulkan 大文件不入库（模型/二进制/源码/输出均可由本地重建）
-bin/
-models/
-tmp/
-output/
-whisper.cpp-src/
-transcribe.log

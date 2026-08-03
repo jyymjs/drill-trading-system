@@ -1,0 +1,46 @@
+{
+  "start": "20250601",
+  "end": "20260101",
+  "strategy": "zuanqian_strategy",
+  "mode": "both",
+  "interval": 5,
+  "holds": [
+    5,
+    10,
+    20
+  ],
+  "grades": [
+    "A",
+    "B",
+    "S"
+  ],
+  "codes": [
+    "000001",
+    "600000",
+    "000858",
+    "601398"
+  ],
+  "max_workers": 5,
+  "output_dir": null,
+  "verify_samples": 9,
+  "recompute_each_window": false,
+  "run_id": "20260803_211121",
+  "grid_anchor": 249,
+  "methodology": {
+    "normal_stop": "止损价 = 进场价 - max(2×ATR14, 2%×进场价)",
+    "entry_time": "信号日T收盘（prebreak=触发价，首根最高≥trigger才进场）",
+    "prebreak_untracked": "未触发计信号数/触发率，不参与胜率/平均R/回撤",
+    "exit_simplified": "v1 仅 止损 + hold到期收盘 两种出场"
+  },
+  "strategy_info": {
+    "name": "zuanqian_strategy",
+    "params": {
+      "评级体系": "S/A/B/C (课程标准)",
+      "6条件": "DL独立结构 / PT平台测试 / LK轮廓质量 / TY统一区间 / DN动能 / SF释放级别",
+      "优先级": "Tier0一票否决 → Tier1核心三要素 → Tier2质量分级 → Tier3加减分",
+      "S级需满足": "全部≥A且至少3个S",
+      "A级需满足": "全部≥A或仅1个B",
+      "B级需满足": "最多3个B"
+    }
+  }
+}

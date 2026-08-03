@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 浏览器测试临时文件
+.playwright-mcp/
+
+# 媒体文件（视频/音频不入库）
+*.mp4
+*.mp3
+
+# whisper 资产（2026-08-04 子模块转普通目录：源码树/构建产物不入库）
+whisper.cpp-src/
+whisper.cpp-windows-vulkan/
