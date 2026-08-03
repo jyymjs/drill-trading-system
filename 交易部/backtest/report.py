@@ -1,0 +1,181 @@
+"""输出渲染：signals.csv（utf-8-sig，无时间戳列）+ report.md + params.json
+
+可复现纪律：固定浮点格式（%.4f）、稳定列序、文件无时间戳列；
+同参数连跑两次 diff signals.csv 应零差异。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from backtest.params import BacktestParams
+from backtest.stats import StatBlock, merge_monthly, mode_stats
+from backtest.tracking import TrackedRecord
+
+# 六条件顺序（信号 CSV 与报告统一）
+SCORE_KEYS = ("PT平台测试", "TY统一区间", "DN动能", "DL独立结构", "LK轮廓质量", "SF释放级别")
+SCORE_SHORT = {"PT平台测试": "PT", "TY统一区间": "TY", "DN动能": "DN",
+               "DL独立结构": "DL", "LK轮廓质量": "LK", "SF释放级别": "SF"}
+
+
+def signals_to_frame(records: list[TrackedRecord], holds: list[int]) -> pd.DataFrame:
+    """信号主表 → DataFrame（每信号一行，hold 结果动态列）"""
+    rows = []
+    for rec in records:
+        sig = rec.signal
+        row = {
+            "mode": sig.mode,
+            "code": sig.code,
+            "date": sig.date.strftime("%Y-%m-%d"),
+            "grade": sig.grade,
+        }
+        for key in SCORE_KEYS:
+            row[SCORE_SHORT[key]] = sig.score_grade(key)
+        row["close"] = sig.close
+        row["trigger"] = sig.trigger
+        row["stop"] = sig.stop
+        row["risk"] = sig.risk
+        for hold in holds:
+            oc = rec.outcomes[hold]
+            row[f"triggered_{hold}d"] = int(oc.triggered)
+            row[f"entry_{hold}d"] = oc.entry_price
+            row[f"exit_{hold}d"] = oc.exit_price
+            row[f"exit_date_{hold}d"] = oc.exit_date.strftime("%Y-%m-%d") if oc.exit_date is not None else ""
+            row[f"stopped_{hold}d"] = int(oc.stopped)
+            row[f"r_{hold}d"] = oc.r
+        rows.append(row)
+    # 稳定排序：mode → date → code → grade（可复现）
+    rows.sort(key=lambda r: (r["mode"], r["date"], r["code"], r["grade"]))
+    return pd.DataFrame(rows, columns=[c for c in rows[0]] if rows else [])
+
+
+def write_signals_csv(path: Path, records: list[TrackedRecord], holds: list[int]) -> None:
+    """写 signals.csv（utf-8-sig + BOM，Excel 直接打开；固定浮点格式）"""
+    df = signals_to_frame(records, holds)
+    if df.empty:
+        pd.DataFrame(columns=["mode", "code", "date", "grade"]).to_csv(path, index=False, encoding="utf-8-sig")
+        return
+    df.to_csv(path, index=False, encoding="utf-8-sig", float_format="%.4f")
+
+
+def _fmt_rate(v: float) -> str:
+    return f"{v:.1%}" if 0 <= v <= 1 else f"{v:.4f}"
+
+
+def _grade_table(buckets: dict[str, StatBlock], mode: str, holds: list[int]) -> str:
+    """S/A/B 分列 × hold 统计表（markdown）"""
+    lines = ["| 评级 | hold | 信号数 | 触发率 | 参与 | 胜率 | 平均R | 累计R | 最大回撤 |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for grade in ("S", "A", "B"):
+        for hold in holds:
+            b = buckets.get(f"{mode}|{grade}|{hold}")
+            if b is None:
+                continue
+            lines.append(
+                f"| {grade} | {hold}d | {b.n_signals} | {_fmt_rate(b.trigger_rate)} | "
+                f"{b.n_participate} | {_fmt_rate(b.win_rate)} | {b.avg_r:.4f} | "
+                f"{b.total_r:.4f} | {b.max_drawdown:.4f} |"
+            )
+    return "\n".join(lines)
+
+
+def _monthly_table(monthly: dict) -> str:
+    if not monthly:
+        return "_（无信号）_"
+    lines = ["| 月份 | 信号数 |", "|---|---|"]
+    for month, count in monthly.items():
+        lines.append(f"| {month} | {count} |")
+    return "\n".join(lines)
+
+
+def _mode_section(records: list[TrackedRecord], buckets: dict[str, StatBlock],
+                  mode: str, holds: list[int]) -> str:
+    label = {"normal": "6条件已突破", "prebreak": "5条件预突破"}[mode]
+    m = mode_stats(records, mode, holds)
+    monthly = merge_monthly(buckets, mode)
+    n_signals = len({(rec.signal.code, str(rec.signal.date))
+                     for rec in records if rec.signal.mode == mode})
+    lines = [
+        f"### {mode}（{label}）",
+        "",
+        f"- 信号数：**{n_signals}** 笔（×{len(holds)} 个观察窗 = 统计组合 {m['n_signals']} 笔）",
+        f"- 触发率（prebreak）：**{_fmt_rate(m['trigger_rate'])}**（{m['n_triggered']}/{m['n_signals']}）"
+        if mode == "prebreak" else f"- 进场：信号日 T 收盘价成交，全部参与统计",
+        f"- 参与统计：{m['n_participate']} 笔",
+        f"- 胜率（R>0）：**{_fmt_rate(m['win_rate'])}**（{m['n_win']}/{m['n_participate']}）",
+        f"- 平均R：**{m['avg_r']:.4f}**　累计R：{m['total_r']:.4f}",
+        f"- 最大回撤（累计R曲线）：**{m['max_drawdown']:.4f}R**",
+        "",
+        "#### S/A/B 分列",
+        "",
+        _grade_table(buckets, mode, holds),
+        "",
+        "#### 月度分布（信号集中度）",
+        "",
+        _monthly_table(monthly),
+    ]
+    return "\n".join(lines)
+
+
+def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
+    """normal vs prebreak 对比段"""
+    lines = ["| 指标 | normal | prebreak |", "|---|---|---|"]
+    for mode in ("normal", "prebreak"):
+        m = mode_stats(records, mode, holds)
+        if mode == "normal":
+            normal = m
+        else:
+            pre = m
+            lines.append(f"| 信号数 | {normal['n_signals']} | {pre['n_signals']} |")
+            lines.append(f"| 触发率 | - | {_fmt_rate(pre['trigger_rate'])} |")
+            lines.append(f"| 参与统计 | {normal['n_participate']} | {pre['n_participate']} |")
+            lines.append(f"| 胜率 | {_fmt_rate(normal['win_rate'])} | {_fmt_rate(pre['win_rate'])} |")
+            lines.append(f"| 平均R | {normal['avg_r']:.4f} | {pre['avg_r']:.4f} |")
+            lines.append(f"| 累计R | {normal['total_r']:.4f} | {pre['total_r']:.4f} |")
+            lines.append(f"| 最大回撤 | {normal['max_drawdown']:.4f} | {pre['max_drawdown']:.4f} |")
+    return "\n".join(lines)
+
+
+def write_report(path: Path, records: list[TrackedRecord],
+                 buckets: dict[str, StatBlock], params: BacktestParams,
+                 meta: dict | None = None) -> None:
+    """写 report.md（含数据与样本口径说明，满足风险提示要求）"""
+    holds = params.holds
+    modes = sorted({rec.signal.mode for rec in records} | {"normal", "prebreak"})
+    meta = meta or {}
+
+    lines = [
+        "# 回测报告（策略 V2 历史验证 · 时光机）",
+        "",
+        f"- 运行区间：`{params.start or '缓存起点'} ~ {params.end or '缓存终点'}`（--start/--end 只过滤信号记录，不改网格）",
+        f"- 策略：{params.strategy}（钻潜评级策略 V2，同源复用 grade()/prebreak_grade()，零逻辑重写）",
+        f"- 模式：{params.mode}　步长：{params.interval} 交易日　观察窗：{'/'.join(str(h) for h in holds)}d",
+        f"- 信号评级：{'/'.join(params.grades)}　并发：{params.max_workers} 线程",
+        f"- 股票数：{meta.get('processed', '?')} 只（跳过 {meta.get('skipped', 0)}）",
+        "",
+        "## 数据与样本口径说明（重要）",
+        "",
+        "- **数据源**：`data/cache/` CSV 直读（pytdx 优先，baostock/akshare 兜底缓存），pytdx 不复权、其余前复权，长期窗口价格可能失真（复权不一致）。",
+        "- **区间限制**：缓存单只 ≤800 根 ≈ 3 年；深历史（>3 年）回测列为二期。",
+        "- **样本口径**：股票池为当前存活标的，退市/ST 退市股不在池内，胜率会**系统性高估**；结论只用于相对比较（S vs A vs B、normal vs prebreak），不作绝对胜率承诺。",
+        "- **成交简化**：v1 按信号日 T 收盘价成交（prebreak=触发价），未模拟涨跌停无法买入、滑点、手续费——胜率偏乐观。",
+        "- **出场简化**：v1 仅「止损 + hold 到期收盘」两种出场；出场六层体系留后续版本。",
+        "- **止损口径**：normal = max(2×ATR14, 2%×进场价)；prebreak = 策略原生 trigger/stop（同源）。",
+        "- **无前视**：评级窗口一律 `df.iloc[:t+1]` 先截断后评级；指标全序列一次向量化（向后看算子，等价性由单测证明）。",
+        "",
+        f"## 总览（信号 {sum(b.n_signals for b in buckets.values())} 笔）",
+        "",
+    ]
+
+    for mode in modes:
+        lines.append(_mode_section(records, buckets, mode, holds))
+        lines.append("")
+
+    if "normal" in modes and "prebreak" in modes:
+        lines += ["## normal vs prebreak 对比", "", _compare_table(records, holds), ""]
+
+    lines += ["---", "", "_本报告由 backtest/main.py run 生成；参数快照见 params.json；仅做验证，不做寻优，任何参数调整须经老板书面同意。_"]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines), encoding="utf-8")
