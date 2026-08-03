@@ -1,0 +1,90 @@
+[     250ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://bailian.console.aliyun.com/?apiKey=1:140
+[     252ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://g.alicdn.com/isipfe/efm-fe/3.5.642/url-mapping.js:0
+[     254ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://g.alicdn.com/isipfe/efm-fe/3.5.646/bootstrap.js:0
+[     256ms] [LOG] ██╗  ██╗██╗                                     
+██║  ██║██║                                     
+███████║██║                                     
+██╔══██║██║                                     
+██║  ██║██║▄█╗                                  
+╚═╝  ╚═╝╚═╝╚═╝                                  
+                                                
+██████╗  █████╗ ██╗██╗     ██╗ █████╗ ███╗   ██╗
+██╔══██╗██╔══██╗██║██║     ██║██╔══██╗████╗  ██║
+██████╔╝███████║██║██║     ██║███████║██╔██╗ ██║
+██╔══██╗██╔══██║██║██║     ██║██╔══██║██║╚██╗██║
+██████╔╝██║  ██║██║███████╗██║██║  ██║██║ ╚████║
+╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
+                                                 @ https://g.alicdn.com/isipfe/efm-fe/3.4.232/noopconsole.js:0
+[    4413ms] [WARNING] var __dworker_1785757084071__={};
+__dworker_1785757084071__.default=function(e,t){for(var n in t){var r=t[n],o=!1;if("[object Array]"===Object.prototype.toString.call(r))for(var i=0;i<r.length;i++){var a=r[i];for(var u in a)if("customInfo"!==u){var c=a[u];switch(Object.prototype.toString.call(c)){case"[object RegExp]":o=c.test(e[u]);break;case"[object String]":o=c===e[u];break;default:o=e[u]===c}if(!o)break}if(o)return[n,a.customInfo]}}return[]};
+
+(function M(e,t,n){e.addEventListener("message",(function(r){var o=r.data;try{var i=o.id;if("RPC"!==o.type||null==i)return;if(o.method){var a=t[o.method];null==a?e.postMessage({type:"RPC",id:i,error:"NO_SUCH_METHOD"}):Promise.resolve().then((function(){return a.apply(null,o.params)})).then((function(t){e.postMessage({type:"RPC",id:i,result:t})})).catch((function(t){e.postMessage({type:"RPC",id:i,error:""+t})}))}else{var u=n[i];if(null==u)throw Error("Unknown callback ".concat(i));delete n[i],o.error?u[1](Error(o.error)):u[0](o.result)}}catch(e){console.error("worker addEventListener error",e)}}))})(self,__dworker_1785757084071__,{}); @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5153ms] [WARNING] var __dworker_1785757084811__={};
+__dworker_1785757084811__.default=function(e,t){for(var n in t){var r=t[n],o=!1;if("[object Array]"===Object.prototype.toString.call(r))for(var i=0;i<r.length;i++){var a=r[i];for(var u in a)if("customInfo"!==u){var c=a[u];switch(Object.prototype.toString.call(c)){case"[object RegExp]":o=c.test(e[u]);break;case"[object String]":o=c===e[u];break;default:o=e[u]===c}if(!o)break}if(o)return[n,a.customInfo]}}return[]};
+
+(function M(e,t,n){e.addEventListener("message",(function(r){var o=r.data;try{var i=o.id;if("RPC"!==o.type||null==i)return;if(o.method){var a=t[o.method];null==a?e.postMessage({type:"RPC",id:i,error:"NO_SUCH_METHOD"}):Promise.resolve().then((function(){return a.apply(null,o.params)})).then((function(t){e.postMessage({type:"RPC",id:i,result:t})})).catch((function(t){e.postMessage({type:"RPC",id:i,error:""+t})}))}else{var u=n[i];if(null==u)throw Error("Unknown callback ".concat(i));delete n[i],o.error?u[1](Error(o.error)):u[0](o.result)}}catch(e){console.error("worker addEventListener error",e)}}))})(self,__dworker_1785757084811__,{}); @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5261ms] [WARNING] [AES] 未监测到Aplus SDK @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5271ms] [LOG] null @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:17
+[    5309ms] [WARNING] var __dworker_1785757084968__={};
+__dworker_1785757084968__.default=function(e,t){for(var n in t){var r=t[n],o=!1;if("[object Array]"===Object.prototype.toString.call(r))for(var i=0;i<r.length;i++){var a=r[i];for(var u in a)if("customInfo"!==u){var c=a[u];switch(Object.prototype.toString.call(c)){case"[object RegExp]":o=c.test(e[u]);break;case"[object String]":o=c===e[u];break;default:o=e[u]===c}if(!o)break}if(o)return[n,a.customInfo]}}return[]};
+
+(function M(e,t,n){e.addEventListener("message",(function(r){var o=r.data;try{var i=o.id;if("RPC"!==o.type||null==i)return;if(o.method){var a=t[o.method];null==a?e.postMessage({type:"RPC",id:i,error:"NO_SUCH_METHOD"}):Promise.resolve().then((function(){return a.apply(null,o.params)})).then((function(t){e.postMessage({type:"RPC",id:i,result:t})})).catch((function(t){e.postMessage({type:"RPC",id:i,error:""+t})}))}else{var u=n[i];if(null==u)throw Error("Unknown callback ".concat(i));delete n[i],o.error?u[1](Error(o.error)):u[0](o.result)}}catch(e){console.error("worker addEventListener error",e)}}))})(self,__dworker_1785757084968__,{}); @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5352ms] [WARNING] var __dworker_1785757085011__={};
+__dworker_1785757085011__.default=function(e,t){for(var n in t){var r=t[n],o=!1;if("[object Array]"===Object.prototype.toString.call(r))for(var i=0;i<r.length;i++){var a=r[i];for(var u in a)if("customInfo"!==u){var c=a[u];switch(Object.prototype.toString.call(c)){case"[object RegExp]":o=c.test(e[u]);break;case"[object String]":o=c===e[u];break;default:o=e[u]===c}if(!o)break}if(o)return[n,a.customInfo]}}return[]};
+
+(function M(e,t,n){e.addEventListener("message",(function(r){var o=r.data;try{var i=o.id;if("RPC"!==o.type||null==i)return;if(o.method){var a=t[o.method];null==a?e.postMessage({type:"RPC",id:i,error:"NO_SUCH_METHOD"}):Promise.resolve().then((function(){return a.apply(null,o.params)})).then((function(t){e.postMessage({type:"RPC",id:i,result:t})})).catch((function(t){e.postMessage({type:"RPC",id:i,error:""+t})}))}else{var u=n[i];if(null==u)throw Error("Unknown callback ".concat(i));delete n[i],o.error?u[1](Error(o.error)):u[0](o.result)}}catch(e){console.error("worker addEventListener error",e)}}))})(self,__dworker_1785757085011__,{}); @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5409ms] [WARNING] [AES] 未监测到Aplus SDK @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5409ms] [LOG] goldlogReport page_show EXP {refererHost: undefined, refererHostValid: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    5434ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    5479ms] [WARNING] [AES] 未监测到Aplus SDK @ https://o.alicdn.com/dawn/dawn-tracker-aliyun/index.umd.js:0
+[    5479ms] [LOG] goldlogReport page_show EXP {refererHost: undefined, refererHostValid: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    5502ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    5503ms] [LOG] goldlogReport passkey.page.view CLK undefined @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    5637ms] [LOG] Mon Aug 03 2026 19:38:05 GMT+0800 (中国标准时间) @ https://g.alicdn.com/AWSC/et/1.83.41/et_f.js:1
+[    5665ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ https://passport.aliyun.com/havanaone/login/login.htm?lang=zh_CN&appName=aliyun&appEntrance=aliyun_pc_pwd&styleType=vertical&bizParams=&notLoadSsoView=true&notKeepLogin=true&isMobile=false&targetId=alibaba-login-iframe&redirectType=iframeRedirect&returnUrl=https%3A%2F%2Faccount.aliyun.com%2Flogin%2Flogin_aliyun%3FresType%3Dhtml%26boxEntrance%3Dmini%26loginScene%3DfastLogin%26oauth_callback%3Dhttps%3A%2F%2Fbailian.console.aliyun.com%2Fcn-beijing%3FapiKey%3D1%23%2Fapi-key%26log_channel%3Ddialog%26log_platform%3Dpc%26login_log_entrance%3Dofficial%26login_method%3Dpwd_login%26log_biz%3Daliyun%26bizPassParams%3D%257B%2522tenantName%2522%253A%2522website%2522%252C%2522isDialogReg%2522%253Atrue%252C%2522action%2522%253A%2522login%2522%257D&cssUrl=&regUrl=https://account.aliyun.com/register/qr_register.htm?oauth_callback=https%3A%2F%2Fbailian.console.aliyun.com%2Fcn-beijing%3FapiKey%3D1%23%2Fapi-key&bizPassParams=%7B%22tenantName%22%3A%22website%22%2C%22isDialogReg%22%3Atrue%2C%22action%22%3A%22login%22%7D&rnd=0.7352131509773665:0
+[    5690ms] [LOG] null @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:17
+[    5800ms] [LOG] Mon Aug 03 2026 19:38:05 GMT+0800 (中国标准时间) @ https://g.alicdn.com/AWSC/et/1.83.41/et_f.js:1
+[    5870ms] [LOG] Mon Aug 03 2026 19:38:05 GMT+0800 (中国标准时间) @ https://g.alicdn.com/AWSC/et/1.83.41/et_f.js:1
+[    6084ms] [ERROR] Permissions policy violation: accelerometer is not allowed in this document. @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6084ms] [WARNING] The deviceorientation events are blocked by permissions policy. See https://github.com/w3c/webappsec-permissions-policy/blob/master/features.md#sensor-features @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6109ms] [ERROR] Permissions policy violation: accelerometer is not allowed in this document. @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6109ms] [WARNING] The deviceorientation events are blocked by permissions policy. See https://github.com/w3c/webappsec-permissions-policy/blob/master/features.md#sensor-features @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6146ms] [ERROR] Permissions policy violation: accelerometer is not allowed in this document. @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6146ms] [WARNING] The deviceorientation events are blocked by permissions policy. See https://github.com/w3c/webappsec-permissions-policy/blob/master/features.md#sensor-features @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    6407ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    6408ms] [LOG] resize {action: resizeIframe, height: 168, width: 400} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    6408ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    6469ms] [LOG] Mon Aug 03 2026 19:38:06 GMT+0800 (中国标准时间) @ https://g.alicdn.com/AWSC/et/1.83.41/et_f.js:1
+[    6535ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    6535ms] [LOG] resize {action: resizeIframe, height: 168, width: 400} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    6536ms] [LOG] goldlogReport postMessage OTHER {url: https%3A%2F%2Faccount.aliyun.com%2F, isWhiteList: undefined} @ https://g.alicdn.com/aliyun-havana/havana-nlogin/0.9.61/index.js:0
+[    8610ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[    8610ms] [WARNING] The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet) @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[   18756ms] [ERROR] undefined @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:16
+[   18756ms] [LOG] {"phone":"13530364394","token":"sm2_q5tpiqi88ndkikrs0sxivifef6d3spgk","time":1785757098416} @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:17
+[   18756ms] [LOG] {"phone":"13530364394","token":"sm2_q5tpiqi88ndkikrs0sxivifef6d3spgk","time":1785757098416} @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:17
+[   37239ms] [ERROR] undefined @ https://g.alicdn.com/aliyun-havana/fe-account-login-reg/0.0.17/umi.js:16
+[   37861ms] [WARNING] The PerformanceObserver does not support buffered flag with the entryTypes argument. @ https://g.alicdn.com/??code/lib/rax/1.2.2/rax.min.umd.js,mtb/lib-promise/3.1.3/polyfillB.js,ali-lib/appear-polyfill/0.1.2/index.js,mtb/lib-windvane/3.0.7/windvane.js,mtb/lib-mtop/2.6.1/mtop.js,mtb/lib-login/2.2.0/login.js,jstracker/sdk-assests/5.5.13/index.js:2
+[   37936ms] [LOG] Mon Aug 03 2026 19:38:37 GMT+0800 (中国标准时间) @ https://g.alicdn.com/AWSC/et/1.83.41/et_f.js:1
+[   37959ms] [ERROR] Permissions policy violation: accelerometer is not allowed in this document. @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[   37959ms] [WARNING] The deviceorientation events are blocked by permissions policy. See https://github.com/w3c/webappsec-permissions-policy/blob/master/features.md#sensor-features @ https://g.alicdn.com/AWSC/fireyejs/1.231.69/fireyejs.js:0
+[   38093ms] [LOG] useTheme {} @ https://g.alicdn.com/aliyun-havana/identity-aliyun/0.0.39/js/identity.js:73
+[   38201ms] [LOG] %c [APLUS] -- APLUS INIT SUCCESS background:#3B82FE; padding: 4px; padding-right: 8px; border-radius: 4px; color: #fff; @ :1
+[   41154ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://bailian.console.aliyun.com/cn-beijing?apiKey=1:167
+[   41155ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://g.alicdn.com/isipfe/efm-fe/3.5.642/url-mapping.js:0
+[   41156ms] [WARNING] document.domain mutation is ignored because the surrounding agent cluster is origin-keyed. @ https://g.alicdn.com/isipfe/efm-fe/3.5.646/bootstrap.js:0
+[   41156ms] [LOG] ██╗  ██╗██╗                                     
+██║  ██║██║                                     
+███████║██║                                     
+██╔══██║██║                                     
+██║  ██║██║▄█╗                                  
+╚═╝  ╚═╝╚═╝╚═╝                                  
+                                                
+██████╗  █████╗ ██╗██╗     ██╗ █████╗ ███╗   ██╗
+██╔══██╗██╔══██╗██║██║     ██║██╔══██╗████╗  ██║
+██████╔╝███████║██║██║     ██║███████║██╔██╗ ██║
+██╔══██╗██╔══██║██║██║     ██║██╔══██║██║╚██╗██║
+██████╔╝██║  ██║██║███████╗██║██║  ██║██║ ╚████║
+╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝
+                                                 @ https://g.alicdn.com/isipfe/efm-fe/3.4.232/noopconsole.js:0
+[   74162ms] [WARNING] The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet) @ https://uaction.alicdn.com/AWSC/uab/1.140.0/collina.js:8

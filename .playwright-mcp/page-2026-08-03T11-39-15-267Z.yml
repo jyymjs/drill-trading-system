@@ -1,0 +1,1645 @@
+- generic [ref=f9e1]:
+  - generic [ref=f9e4]:
+    - generic [ref=f9e5]:
+      - generic [ref=f9e6]:
+        - button "展开产品面板" [ref=f9e10]:
+          - button [ref=f9e11] [cursor=pointer]
+        - img "logo" [ref=f9e16] [cursor=pointer]
+      - generic [ref=f9e17]:
+        - generic [ref=f9e18] [cursor=pointer]: 模型
+        - generic [ref=f9e20] [cursor=pointer]: 应用
+        - generic [ref=f9e22] [cursor=pointer]:
+          - generic [ref=f9e23]: 订阅
+          - generic [ref=f9e24]: Token Plan
+        - generic [ref=f9e25] [cursor=pointer]: 体验
+        - generic [ref=f9e27] [cursor=pointer]: 文档
+        - generic [ref=f9e29] [cursor=pointer]: API 参考
+      - generic [ref=f9e31]:
+        - generic [ref=f9e32]:
+          - generic [ref=f9e33] [cursor=pointer]:
+            - img "spark-warningCircle-line" [ref=f9e34]
+            - generic [ref=f9e38]: 部分功能使用受限
+          - separator [ref=f9e40]
+        - generic [ref=f9e41]:
+          - generic [ref=f9e42] [cursor=pointer]:
+            - generic [ref=f9e43]: 华北2（北京）
+            - img "spark-down-line" [ref=f9e44]
+          - generic [ref=f9e48] [cursor=pointer]:
+            - img "spark-spaceManagement-line" [ref=f9e49]
+            - generic [ref=f9e52]: 默认业务空间
+            - img "spark-down-line" [ref=f9e53]
+        - img "spark-setting-line" [ref=f9e57]
+        - generic [ref=f9e63] [cursor=pointer]:
+          - generic [ref=f9e64]:
+            - generic "nick3379742220" [ref=f9e65]
+            - generic [ref=f9e66]: 主账号
+          - img "avatar" [ref=f9e67]
+    - generic [ref=f9e68]:
+      - generic [ref=f9e73]:
+        - generic [ref=f9e74]:
+          - navigation [ref=f9e76]:
+            - list [ref=f9e77]:
+              - listitem [ref=f9e78]:
+                - generic [ref=f9e79]: API Key
+          - radiogroup "segmented control" [ref=f9e81]:
+            - generic [ref=f9e82]:
+              - generic [ref=f9e83] [cursor=pointer]:
+                - radio "API-Key" [checked]
+                - generic "API-Key" [ref=f9e84]
+              - generic [ref=f9e85] [cursor=pointer]:
+                - radio "KMS管理"
+                - generic "KMS管理" [ref=f9e86]
+          - generic [ref=f9e87]:
+            - button "spark-document-line 使用指南" [ref=f9e88] [cursor=pointer]:
+              - img "spark-document-line" [ref=f9e90]
+              - generic [ref=f9e93]: 使用指南
+            - button "spark-plus-line 创建API Key" [ref=f9e94] [cursor=pointer]:
+              - img "spark-plus-line" [ref=f9e96]
+              - generic [ref=f9e100]: 创建API Key
+        - generic [ref=f9e104]:
+          - alert [ref=f9e105]:
+            - img "exclamation-circle" [ref=f9e106]
+            - generic [ref=f9e111]:
+              - generic [ref=f9e112]: API Key 加密存储：新建 API Key 仅在创建后显示一次，供用户复制或下载保存，平台采用不可逆的加密存储技术，用户后续无法在控制台中再次查看明文。现有 API Key 仍然可以正常使用，功能不受影响。
+              - img "spark-up-line" [ref=f9e114] [cursor=pointer]
+          - alert [ref=f9e117]:
+            - img "exclamation-circle" [ref=f9e118]
+            - generic [ref=f9e123]:
+              - generic [ref=f9e124]: 业务空间专属域名：平台为每个业务空间配备独立的推理 API 域名，具备更高并发承载能力与网络隔离性，保障大流量场景下的稳定、低延迟访问体验。
+              - img "spark-up-line" [ref=f9e126] [cursor=pointer]
+          - alert [ref=f9e129]:
+            - img "exclamation-circle" [ref=f9e130]
+            - generic [ref=f9e135]:
+              - generic [ref=f9e136]:
+                - text: Token Plan：
+                - generic [ref=f9e137]: 需要配套专属 Base URL + API Key 才能生效。前往获取 >
+              - img "spark-up-line" [ref=f9e139] [cursor=pointer]
+          - generic [ref=f9e143]:
+            - generic [ref=f9e144]:
+              - generic [ref=f9e145]: OpenAI compatible
+              - generic [ref=f9e146]: https://ws-lgykee82rbzzw694.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+              - img "spark-copy-line" [ref=f9e147] [cursor=pointer]
+            - generic [ref=f9e151]:
+              - generic [ref=f9e152]: Anthropic
+              - generic [ref=f9e153]: https://ws-lgykee82rbzzw694.cn-beijing.maas.aliyuncs.com/apps/anthropic
+              - img "spark-copy-line" [ref=f9e154] [cursor=pointer]
+          - table [ref=f9e166]:
+            - rowgroup [ref=f9e174]:
+              - row [ref=f9e175]:
+                - columnheader "ID" [ref=f9e176]
+                - columnheader "API Key" [ref=f9e177]
+                - columnheader "描述" [ref=f9e178]
+                - columnheader [ref=f9e179]:
+                  - generic [ref=f9e180]:
+                    - text: 归属账号
+                    - img "spark-info-line" [ref=f9e181]
+                - columnheader [ref=f9e186]:
+                  - generic [ref=f9e187] [cursor=pointer]:
+                    - text: 创建时间
+                    - img "spark-sort-line" [ref=f9e188]
+                - columnheader "操作" [ref=f9e191]
+            - rowgroup [ref=f9e192]:
+              - row [ref=f9e193]:
+                - cell "6392826" [ref=f9e194]
+                - cell "sk-ws-H.EIXHYHE****hm62YXM5fuc-zrs" [ref=f9e195]
+                - cell "-" [ref=f9e198]
+                - cell "1985184585102432" [ref=f9e200]
+                - cell "2026-07-31 03:38:11" [ref=f9e201]
+                - cell "禁用 重置 编辑 删除" [ref=f9e202]:
+                  - generic [ref=f9e203]:
+                    - generic [ref=f9e204] [cursor=pointer]: 禁用
+                    - generic [ref=f9e205] [cursor=pointer]: 重置
+                    - generic [ref=f9e206] [cursor=pointer]: 编辑
+                    - generic [ref=f9e207] [cursor=pointer]: 删除
+      - generic [ref=f9e209]:
+        - generic [ref=f9e210]:
+          - button [ref=f9e212] [cursor=pointer]:
+            - img "spark-fee-line" [ref=f9e214]
+          - button [ref=f9e217] [cursor=pointer]:
+            - img "spark-headset-line" [ref=f9e219]
+          - button [ref=f9e224] [cursor=pointer]:
+            - img "spark-document-line" [ref=f9e226]
+        - button [ref=f9e230] [cursor=pointer]:
+          - img "spark-right-line" [ref=f9e232]
+  - iframe [ref=f9e235]:
+    
+  - iframe [ref=f9e236]:
+    
+  - dialog "展开产品面板":
+    - generic [ref=f9e237]:
+      - navigation "产品与服务" [ref=f9e238]:
+        - generic [ref=f9e239]:
+          - generic "我的资源" [ref=f9e240] [cursor=pointer]:
+            - generic [ref=f9e241]:
+              - generic [ref=f9e242]: 
+              - generic [ref=f9e244]: 我的资源
+          - generic "我的收藏" [ref=f9e245] [cursor=pointer]:
+            - generic [ref=f9e246]:
+              - generic [ref=f9e247]: 
+              - generic [ref=f9e249]: 我的收藏
+          - generic "产品与服务" [ref=f9e250] [cursor=pointer]:
+            - generic [ref=f9e251]:
+              - generic [ref=f9e252]: 
+              - generic [ref=f9e254]: 产品与服务
+          - generic [ref=f9e255]:
+            - button "全部" [ref=f9e256] [cursor=pointer]
+            - button "人工智能与机器学习" [ref=f9e257] [cursor=pointer]
+            - button "计算" [ref=f9e258] [cursor=pointer]
+            - button "容器" [ref=f9e259] [cursor=pointer]
+            - button "存储" [ref=f9e260] [cursor=pointer]
+            - button "网络与CDN" [ref=f9e261] [cursor=pointer]
+            - button "安全" [ref=f9e262] [cursor=pointer]
+            - button "中间件" [ref=f9e263] [cursor=pointer]
+            - button "数据库" [ref=f9e264] [cursor=pointer]
+            - button "大数据计算" [ref=f9e265] [cursor=pointer]
+            - button "媒体服务" [ref=f9e266] [cursor=pointer]
+            - button "企业服务与云通信" [ref=f9e267] [cursor=pointer]
+            - button "域名与网站" [ref=f9e268] [cursor=pointer]
+            - button "终端用户计算" [ref=f9e269] [cursor=pointer]
+            - button "物联网" [ref=f9e270] [cursor=pointer]
+            - button "开发工具" [ref=f9e271] [cursor=pointer]
+            - button "迁移与运维管理" [ref=f9e272] [cursor=pointer]
+            - button "云市场" [ref=f9e273] [cursor=pointer]
+            - button "支持与服务" [ref=f9e274] [cursor=pointer]
+      - main "我的资源" [ref=f9e275]:
+        - generic [ref=f9e276]:
+          - generic [ref=f9e277]: 产品与服务
+          - generic [ref=f9e278]:
+            - generic [ref=f9e279]: 
+            - textbox "请输入关键词" [ref=f9e282]
+          - generic [ref=f9e283]:
+            - generic [ref=f9e284]:
+              - generic [ref=f9e285]: 人工智能与机器学习
+              - generic [ref=f9e286]:
+                - generic [ref=f9e287]:
+                  - generic [ref=f9e288]: 人工智能平台
+                  - link "人工智能平台 PAI 加入收藏" [ref=f9e289] [cursor=pointer]:
+                    - /url: //pai.console.aliyun.com
+                    - generic "人工智能平台 PAI" [ref=f9e290]
+                    - button "加入收藏" [ref=f9e291]:
+                      - generic [ref=f9e292]: 
+                  - link "智能计算灵骏 公测中 加入收藏" [ref=f9e293] [cursor=pointer]:
+                    - /url: //lingjun.console.aliyun.com
+                    - generic "智能计算灵骏" [ref=f9e294]
+                    - generic [ref=f9e295]: 公测中
+                    - button "加入收藏" [ref=f9e298]:
+                      - generic [ref=f9e299]: 
+                - generic [ref=f9e300]:
+                  - generic [ref=f9e301]: 模型平台与服务
+                  - link "千问AI平台 加入收藏" [ref=f9e302] [cursor=pointer]:
+                    - /url: https://platform.qianwenai.com/home
+                    - generic "千问AI平台" [ref=f9e303]
+                    - button "加入收藏" [ref=f9e304]:
+                      - generic [ref=f9e305]: 
+                  - link "向量检索服务 DashVector 加入收藏" [ref=f9e306] [cursor=pointer]:
+                    - /url: //dashvector.console.aliyun.com
+                    - generic "向量检索服务 DashVector" [ref=f9e307]
+                    - button "加入收藏" [ref=f9e308]:
+                      - generic [ref=f9e309]: 
+                  - link "大模型服务平台百炼 加入收藏" [ref=f9e310] [cursor=pointer]:
+                    - /url: //bailian.console.aliyun.com
+                    - generic "大模型服务平台百炼" [ref=f9e311]
+                    - button "加入收藏" [ref=f9e312]:
+                      - generic [ref=f9e313]: 
+                - generic [ref=f9e314]:
+                  - generic [ref=f9e315]: 智能搜索与推荐
+                  - link "智能开放搜索 OpenSearch 加入收藏" [ref=f9e316] [cursor=pointer]:
+                    - /url: //opensearch.console.aliyun.com
+                    - generic "智能开放搜索 OpenSearch" [ref=f9e317]
+                    - button "加入收藏" [ref=f9e318]:
+                      - generic [ref=f9e319]: 
+                  - link "智能推荐 AIRec 加入收藏" [ref=f9e320] [cursor=pointer]:
+                    - /url: //airec.console.aliyun.com
+                    - generic "智能推荐 AIRec" [ref=f9e321]
+                    - button "加入收藏" [ref=f9e322]:
+                      - generic [ref=f9e323]: 
+                - generic [ref=f9e324]:
+                  - generic [ref=f9e325]: 视觉智能
+                  - link "视觉智能开放平台 加入收藏" [ref=f9e326] [cursor=pointer]:
+                    - /url: //vision.console.aliyun.com
+                    - generic "视觉智能开放平台" [ref=f9e327]
+                    - button "加入收藏" [ref=f9e328]:
+                      - generic [ref=f9e329]: 
+                  - link "图像搜索 加入收藏" [ref=f9e330] [cursor=pointer]:
+                    - /url: //imagesearch.console.aliyun.com
+                    - generic "图像搜索" [ref=f9e331]
+                    - button "加入收藏" [ref=f9e332]:
+                      - generic [ref=f9e333]: 
+                  - link "视觉计算服务 加入收藏" [ref=f9e334] [cursor=pointer]:
+                    - /url: //vcs.console.aliyun.com
+                    - generic "视觉计算服务" [ref=f9e335]
+                    - button "加入收藏" [ref=f9e336]:
+                      - generic [ref=f9e337]: 
+                  - link "文字识别 OCR 加入收藏" [ref=f9e338] [cursor=pointer]:
+                    - /url: //ocr.console.aliyun.com
+                    - generic "文字识别 OCR" [ref=f9e339]
+                    - button "加入收藏" [ref=f9e340]:
+                      - generic [ref=f9e341]: 
+                - generic [ref=f9e342]:
+                  - generic [ref=f9e343]: 自然语言处理
+                  - link "自然语言处理 NLP 加入收藏" [ref=f9e344] [cursor=pointer]:
+                    - /url: //alinlp.console.aliyun.com
+                    - generic "自然语言处理 NLP" [ref=f9e345]
+                    - button "加入收藏" [ref=f9e346]:
+                      - generic [ref=f9e347]: 
+                  - link "地址标准化 加入收藏" [ref=f9e348] [cursor=pointer]:
+                    - /url: //addrp.console.aliyun.com
+                    - generic "地址标准化" [ref=f9e349]
+                    - button "加入收藏" [ref=f9e350]:
+                      - generic [ref=f9e351]: 
+                  - link "机器翻译 加入收藏" [ref=f9e352] [cursor=pointer]:
+                    - /url: //mt.console.aliyun.com
+                    - generic "机器翻译" [ref=f9e353]
+                    - button "加入收藏" [ref=f9e354]:
+                      - generic [ref=f9e355]: 
+                  - link "文档智能 公测中 加入收藏" [ref=f9e356] [cursor=pointer]:
+                    - /url: https://docmind.console.aliyun.com/doc-overview
+                    - generic "文档智能" [ref=f9e357]
+                    - generic [ref=f9e358]: 公测中
+                    - button "加入收藏" [ref=f9e361]:
+                      - generic [ref=f9e362]: 
+                - generic [ref=f9e363]:
+                  - generic [ref=f9e364]: 智能语音交互
+                  - link "智能语音交互 加入收藏" [ref=f9e365] [cursor=pointer]:
+                    - /url: //nls-portal.console.aliyun.com
+                    - generic "智能语音交互" [ref=f9e366]
+                    - button "加入收藏" [ref=f9e367]:
+                      - generic [ref=f9e368]: 
+                - generic [ref=f9e369]:
+                  - generic [ref=f9e370]: 决策智能
+                  - link "优化求解器 加入收藏" [ref=f9e371] [cursor=pointer]:
+                    - /url: //opt.console.aliyun.com
+                    - generic "优化求解器" [ref=f9e372]
+                    - button "加入收藏" [ref=f9e373]:
+                      - generic [ref=f9e374]: 
+                - generic [ref=f9e375]:
+                  - generic [ref=f9e376]: AI应用
+                  - link "数知地球 AI Earth 加入收藏" [ref=f9e377] [cursor=pointer]:
+                    - /url: //rsimganalys.console.aliyun.com
+                    - generic "数知地球 AI Earth" [ref=f9e378]
+                    - button "加入收藏" [ref=f9e379]:
+                      - generic [ref=f9e380]: 
+                  - link "三维空间重建 加入收藏" [ref=f9e381] [cursor=pointer]:
+                    - /url: //tdsr.console.aliyun.com
+                    - generic "三维空间重建" [ref=f9e382]
+                    - button "加入收藏" [ref=f9e383]:
+                      - generic [ref=f9e384]: 
+                  - link "虚拟数字人 加入收藏" [ref=f9e385] [cursor=pointer]:
+                    - /url: //avatar.console.aliyun.com
+                    - generic "虚拟数字人" [ref=f9e386]
+                    - button "加入收藏" [ref=f9e387]:
+                      - generic [ref=f9e388]: 
+                  - link "企业 Agent 应用平台 公测中 加入收藏" [ref=f9e389] [cursor=pointer]:
+                    - /url: https://agentone.console.aliyun.com/ui/agent_store/trial/InstanceManagement
+                    - generic "企业 Agent 应用平台" [ref=f9e390]
+                    - generic [ref=f9e391]: 公测中
+                    - button "加入收藏" [ref=f9e394]:
+                      - generic [ref=f9e395]: 
+                  - link "服务数字员工 加入收藏" [ref=f9e396] [cursor=pointer]:
+                    - /url: //aiemployee.console.aliyun.com/overview
+                    - generic "服务数字员工" [ref=f9e397]
+                    - button "加入收藏" [ref=f9e398]:
+                      - generic [ref=f9e399]: 
+                  - link "AI 翻译数字员工 加入收藏" [ref=f9e400] [cursor=pointer]:
+                    - /url: //rta.console.aliyun.com
+                    - generic "AI 翻译数字员工" [ref=f9e401]
+                    - button "加入收藏" [ref=f9e402]:
+                      - generic [ref=f9e403]: 
+                - generic [ref=f9e404]:
+                  - generic [ref=f9e405]: 行业智能
+                  - link "自动驾驶云开发平台 加入收藏" [ref=f9e406] [cursor=pointer]:
+                    - /url: //iovcc.console.aliyun.com
+                    - generic "自动驾驶云开发平台" [ref=f9e407]
+                    - button "加入收藏" [ref=f9e408]:
+                      - generic [ref=f9e409]: 
+                  - link "基因分析平台 公测中 加入收藏" [ref=f9e410] [cursor=pointer]:
+                    - /url: //easygene.console.aliyun.com
+                    - generic "基因分析平台" [ref=f9e411]
+                    - generic [ref=f9e412]: 公测中
+                    - button "加入收藏" [ref=f9e415]:
+                      - generic [ref=f9e416]: 
+                - generic [ref=f9e417]:
+                  - generic [ref=f9e418]: 智能客服
+                  - link "云联络中心 加入收藏" [ref=f9e419] [cursor=pointer]:
+                    - /url: //ccc.console.aliyun.com
+                    - generic "云联络中心" [ref=f9e420]
+                    - button "加入收藏" [ref=f9e421]:
+                      - generic [ref=f9e422]: 
+                  - link "智能对话机器人 加入收藏" [ref=f9e423] [cursor=pointer]:
+                    - /url: //chatbot.console.aliyun.com
+                    - generic "智能对话机器人" [ref=f9e424]
+                    - button "加入收藏" [ref=f9e425]:
+                      - generic [ref=f9e426]: 
+                  - link "客服工作台 加入收藏" [ref=f9e427] [cursor=pointer]:
+                    - /url: //alime.console.aliyun.com
+                    - generic "客服工作台" [ref=f9e428]
+                    - button "加入收藏" [ref=f9e429]:
+                      - generic [ref=f9e430]: 
+                  - link "智能对话分析 加入收藏" [ref=f9e431] [cursor=pointer]:
+                    - /url: //sca.console.aliyun.com
+                    - generic "智能对话分析" [ref=f9e432]
+                    - button "加入收藏" [ref=f9e433]:
+                      - generic [ref=f9e434]: 
+            - generic [ref=f9e435]:
+              - generic [ref=f9e436]: 计算
+              - generic [ref=f9e437]:
+                - generic [ref=f9e438]:
+                  - generic [ref=f9e439]: 云服务器
+                  - link "云服务器 ECS 加入收藏" [ref=f9e440] [cursor=pointer]:
+                    - /url: //ecs.console.aliyun.com
+                    - generic "云服务器 ECS" [ref=f9e441]
+                    - button "加入收藏" [ref=f9e442]:
+                      - generic [ref=f9e443]: 
+                  - link "轻量应用服务器 加入收藏" [ref=f9e444] [cursor=pointer]:
+                    - /url: //swasnext.console.aliyun.com
+                    - generic "轻量应用服务器" [ref=f9e445]
+                    - button "加入收藏" [ref=f9e446]:
+                      - generic [ref=f9e447]: 
+                  - link "弹性加速计算实例 加入收藏" [ref=f9e448] [cursor=pointer]:
+                    - /url: //eais.console.aliyun.com
+                    - generic "弹性加速计算实例" [ref=f9e449]
+                    - button "加入收藏" [ref=f9e450]:
+                      - generic [ref=f9e451]: 
+                  - link "弹性伸缩 加入收藏" [ref=f9e452] [cursor=pointer]:
+                    - /url: //ess.console.aliyun.com
+                    - generic "弹性伸缩" [ref=f9e453]
+                    - button "加入收藏" [ref=f9e454]:
+                      - generic [ref=f9e455]: 
+                  - link "云虚拟主机 加入收藏" [ref=f9e456] [cursor=pointer]:
+                    - /url: //netcn.console.aliyun.com/core/host/list2
+                    - generic "云虚拟主机" [ref=f9e457]
+                    - button "加入收藏" [ref=f9e458]:
+                      - generic [ref=f9e459]: 
+                  - link "弹性容器实例 ECI 加入收藏" [ref=f9e460] [cursor=pointer]:
+                    - /url: //eci.console.aliyun.com
+                    - generic "弹性容器实例 ECI" [ref=f9e461]
+                    - button "加入收藏" [ref=f9e462]:
+                      - generic [ref=f9e463]: 
+                  - link "计算巢服务 加入收藏" [ref=f9e464] [cursor=pointer]:
+                    - /url: //computenest.console.aliyun.com
+                    - generic "计算巢服务" [ref=f9e465]
+                    - button "加入收藏" [ref=f9e466]:
+                      - generic [ref=f9e467]: 
+                  - link "VMware服务 加入收藏" [ref=f9e468] [cursor=pointer]:
+                    - /url: //acvs.console.aliyun.com
+                    - generic "VMware服务" [ref=f9e469]
+                    - button "加入收藏" [ref=f9e470]:
+                      - generic [ref=f9e471]: 
+                  - link "Alibaba Cloud Linux 加入收藏" [ref=f9e472] [cursor=pointer]:
+                    - /url: //alinux.console.aliyun.com/
+                    - generic "Alibaba Cloud Linux" [ref=f9e473]
+                    - button "加入收藏" [ref=f9e474]:
+                      - generic [ref=f9e475]: 
+                - generic [ref=f9e476]:
+                  - generic [ref=f9e477]: 高性能计算
+                  - link "弹性高性能计算 加入收藏" [ref=f9e478] [cursor=pointer]:
+                    - /url: //ehpcnext.console.aliyun.com
+                    - generic "弹性高性能计算" [ref=f9e479]
+                    - button "加入收藏" [ref=f9e480]:
+                      - generic [ref=f9e481]: 
+                  - link "批量计算 加入收藏" [ref=f9e482] [cursor=pointer]:
+                    - /url: //batchcompute.console.aliyun.com
+                    - generic "批量计算" [ref=f9e483]
+                    - button "加入收藏" [ref=f9e484]:
+                      - generic [ref=f9e485]: 
+                - generic [ref=f9e486]:
+                  - generic [ref=f9e487]: Serverless
+                  - link "函数计算 FC 加入收藏" [ref=f9e488] [cursor=pointer]:
+                    - /url: //fcnext.console.aliyun.com
+                    - generic "函数计算 FC" [ref=f9e489]
+                    - button "加入收藏" [ref=f9e490]:
+                      - generic [ref=f9e491]: 
+                  - link "云工作流 CloudFlow 加入收藏" [ref=f9e492] [cursor=pointer]:
+                    - /url: //fnf.console.aliyun.com
+                    - generic "云工作流 CloudFlow" [ref=f9e493]
+                    - button "加入收藏" [ref=f9e494]:
+                      - generic [ref=f9e495]: 
+                  - link "Serverless 应用引擎 SAE 加入收藏" [ref=f9e496] [cursor=pointer]:
+                    - /url: //saenext.console.aliyun.com
+                    - generic "Serverless 应用引擎 SAE" [ref=f9e497]
+                    - button "加入收藏" [ref=f9e498]:
+                      - generic [ref=f9e499]: 
+                  - link "云原生应用开发平台 CAP 公测中 加入收藏" [ref=f9e500] [cursor=pointer]:
+                    - /url: //cap.console.aliyun.com
+                    - generic "云原生应用开发平台 CAP" [ref=f9e501]
+                    - generic [ref=f9e502]: 公测中
+                    - button "加入收藏" [ref=f9e505]:
+                      - generic [ref=f9e506]: 
+                - generic [ref=f9e507]:
+                  - generic [ref=f9e508]: 无影
+                  - link "无影 Agent 开发套件 AgentBay 公测中 加入收藏" [ref=f9e509] [cursor=pointer]:
+                    - /url: //agentbay.console.aliyun.com
+                    - generic "无影 Agent 开发套件 AgentBay" [ref=f9e510]
+                    - generic [ref=f9e511]: 公测中
+                    - button "加入收藏" [ref=f9e514]:
+                      - generic [ref=f9e515]: 
+                - generic [ref=f9e516]:
+                  - generic [ref=f9e517]: 边缘计算
+                  - link "边缘节点服务 ENS 加入收藏" [ref=f9e518] [cursor=pointer]:
+                    - /url: //ens.console.aliyun.com
+                    - generic "边缘节点服务 ENS" [ref=f9e519]
+                    - button "加入收藏" [ref=f9e520]:
+                      - generic [ref=f9e521]: 
+                  - link "边缘网络加速 ENA 加入收藏" [ref=f9e522] [cursor=pointer]:
+                    - /url: //ena.console.aliyun.com
+                    - generic "边缘网络加速 ENA" [ref=f9e523]
+                    - button "加入收藏" [ref=f9e524]:
+                      - generic [ref=f9e525]: 
+                  - link "视图计算 加入收藏" [ref=f9e526] [cursor=pointer]:
+                    - /url: //vs.console.aliyun.com
+                    - generic "视图计算" [ref=f9e527]
+                    - button "加入收藏" [ref=f9e528]:
+                      - generic [ref=f9e529]: 
+            - generic [ref=f9e530]:
+              - generic [ref=f9e531]: 容器
+              - generic [ref=f9e533]:
+                - generic [ref=f9e534]: 容器服务
+                - link "容器镜像服务 加入收藏" [ref=f9e535] [cursor=pointer]:
+                  - /url: //cr.console.aliyun.com
+                  - generic "容器镜像服务" [ref=f9e536]
+                  - button "加入收藏" [ref=f9e537]:
+                    - generic [ref=f9e538]: 
+                - link "容器服务 Kubernetes 版 ACK 加入收藏" [ref=f9e539] [cursor=pointer]:
+                  - /url: //cs.console.aliyun.com/#/k8s
+                  - generic "容器服务 Kubernetes 版 ACK" [ref=f9e540]
+                  - button "加入收藏" [ref=f9e541]:
+                    - generic [ref=f9e542]: 
+                - link "服务网格 ASM 加入收藏" [ref=f9e543] [cursor=pointer]:
+                  - /url: //servicemesh.console.aliyun.com
+                  - generic "服务网格 ASM" [ref=f9e544]
+                  - button "加入收藏" [ref=f9e545]:
+                    - generic [ref=f9e546]: 
+                - link "分布式云容器平台 ACK One 加入收藏" [ref=f9e547] [cursor=pointer]:
+                  - /url: //cs.console.aliyun.com/one
+                  - generic "分布式云容器平台 ACK One" [ref=f9e548]
+                  - button "加入收藏" [ref=f9e549]:
+                    - generic [ref=f9e550]: 
+                - link "容器计算服务 ACS 加入收藏" [ref=f9e551] [cursor=pointer]:
+                  - /url: //acs.console.aliyun.com
+                  - generic "容器计算服务 ACS" [ref=f9e552]
+                  - button "加入收藏" [ref=f9e553]:
+                    - generic [ref=f9e554]: 
+            - generic [ref=f9e555]:
+              - generic [ref=f9e556]: 存储
+              - generic [ref=f9e557]:
+                - generic [ref=f9e558]:
+                  - generic [ref=f9e559]: 基础存储服务
+                  - link "对象存储 OSS 加入收藏" [ref=f9e560] [cursor=pointer]:
+                    - /url: //oss.console.aliyun.com
+                    - generic "对象存储 OSS" [ref=f9e561]
+                    - button "加入收藏" [ref=f9e562]:
+                      - generic [ref=f9e563]: 
+                  - link "文件存储 NAS 加入收藏" [ref=f9e564] [cursor=pointer]:
+                    - /url: //nas.console.aliyun.com
+                    - generic "文件存储 NAS" [ref=f9e565]
+                    - button "加入收藏" [ref=f9e566]:
+                      - generic [ref=f9e567]: 
+                  - link "表格存储 加入收藏" [ref=f9e568] [cursor=pointer]:
+                    - /url: //otsnext.console.aliyun.com
+                    - generic "表格存储" [ref=f9e569]
+                    - button "加入收藏" [ref=f9e570]:
+                      - generic [ref=f9e571]: 
+                  - link "文件存储HDFS版 公测中 加入收藏" [ref=f9e572] [cursor=pointer]:
+                    - /url: //dfs.console.aliyun.com
+                    - generic "文件存储HDFS版" [ref=f9e573]
+                    - generic [ref=f9e574]: 公测中
+                    - button "加入收藏" [ref=f9e577]:
+                      - generic [ref=f9e578]: 
+                  - link "数据库文件存储 DBFS 加入收藏" [ref=f9e579] [cursor=pointer]:
+                    - /url: //dbfs.console.aliyun.com
+                    - generic "数据库文件存储 DBFS" [ref=f9e580]
+                    - button "加入收藏" [ref=f9e581]:
+                      - generic [ref=f9e582]: 
+                  - link "块存储 EBS 加入收藏" [ref=f9e583] [cursor=pointer]:
+                    - /url: //ebs.console.aliyun.com
+                    - generic "块存储 EBS" [ref=f9e584]
+                    - button "加入收藏" [ref=f9e585]:
+                      - generic [ref=f9e586]: 
+                - generic [ref=f9e587]:
+                  - generic [ref=f9e588]: 存储数据服务
+                  - link "智能媒体管理 加入收藏" [ref=f9e589] [cursor=pointer]:
+                    - /url: //imm.console.aliyun.com
+                    - generic "智能媒体管理" [ref=f9e590]
+                    - button "加入收藏" [ref=f9e591]:
+                      - generic [ref=f9e592]: 
+                  - link "网盘与相册服务 PDS 加入收藏" [ref=f9e593] [cursor=pointer]:
+                    - /url: //pds.console.aliyun.com
+                    - generic "网盘与相册服务 PDS" [ref=f9e594]
+                    - button "加入收藏" [ref=f9e595]:
+                      - generic [ref=f9e596]: 
+                  - link "日志服务 SLS 加入收藏" [ref=f9e597] [cursor=pointer]:
+                    - /url: //sls.console.aliyun.com
+                    - generic "日志服务 SLS" [ref=f9e598]
+                    - button "加入收藏" [ref=f9e599]:
+                      - generic [ref=f9e600]: 
+                  - link "云备份 Cloud Backup 加入收藏" [ref=f9e601] [cursor=pointer]:
+                    - /url: //hbr.console.aliyun.com
+                    - generic "云备份 Cloud Backup" [ref=f9e602]
+                    - button "加入收藏" [ref=f9e603]:
+                      - generic [ref=f9e604]: 
+                  - link "数据灾备中心 BDRC 加入收藏" [ref=f9e605] [cursor=pointer]:
+                    - /url: //bdrc.console.aliyun.com
+                    - generic "数据灾备中心 BDRC" [ref=f9e606]
+                    - button "加入收藏" [ref=f9e607]:
+                      - generic [ref=f9e608]: 
+                - generic [ref=f9e609]:
+                  - generic [ref=f9e610]: 数据迁移与工具
+                  - link "云存储网关 加入收藏" [ref=f9e611] [cursor=pointer]:
+                    - /url: //sgwnew.console.aliyun.com
+                    - generic "云存储网关" [ref=f9e612]
+                    - button "加入收藏" [ref=f9e613]:
+                      - generic [ref=f9e614]: 
+                  - link "闪电立方 Data Transport 加入收藏" [ref=f9e615] [cursor=pointer]:
+                    - /url: https://mgwnext.console.aliyun.com/offline-mg-task
+                    - generic "闪电立方 Data Transport" [ref=f9e616]
+                    - button "加入收藏" [ref=f9e617]:
+                      - generic [ref=f9e618]: 
+                - generic [ref=f9e619]:
+                  - generic [ref=f9e620]: 混合云存储
+                  - link "混合云容灾服务 HDR 加入收藏" [ref=f9e621] [cursor=pointer]:
+                    - /url: //hdr.console.aliyun.com
+                    - generic "混合云容灾服务 HDR" [ref=f9e622]
+                    - button "加入收藏" [ref=f9e623]:
+                      - generic [ref=f9e624]: 
+                  - link "混合云存储 加入收藏" [ref=f9e625] [cursor=pointer]:
+                    - /url: //hgw.console.aliyun.com
+                    - generic "混合云存储" [ref=f9e626]
+                    - button "加入收藏" [ref=f9e627]:
+                      - generic [ref=f9e628]: 
+            - generic [ref=f9e629]:
+              - generic [ref=f9e630]: 网络与CDN
+              - generic [ref=f9e631]:
+                - generic [ref=f9e632]:
+                  - generic [ref=f9e633]: 云上网络
+                  - link "专有网络VPC 加入收藏" [ref=f9e634] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com
+                    - generic "专有网络VPC" [ref=f9e635]
+                    - button "加入收藏" [ref=f9e636]:
+                      - generic [ref=f9e637]: 
+                  - link "负载均衡 加入收藏" [ref=f9e638] [cursor=pointer]:
+                    - /url: //slb.console.aliyun.com
+                    - generic "负载均衡" [ref=f9e639]
+                    - button "加入收藏" [ref=f9e640]:
+                      - generic [ref=f9e641]: 
+                  - link "NAT网关 加入收藏" [ref=f9e642] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/nat
+                    - generic "NAT网关" [ref=f9e643]
+                    - button "加入收藏" [ref=f9e644]:
+                      - generic [ref=f9e645]: 
+                  - link "弹性公网IP 加入收藏" [ref=f9e646] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/eip
+                    - generic "弹性公网IP" [ref=f9e647]
+                    - button "加入收藏" [ref=f9e648]:
+                      - generic [ref=f9e649]: 
+                  - link "云数据传输 加入收藏" [ref=f9e650] [cursor=pointer]:
+                    - /url: //cdt.console.aliyun.com
+                    - generic "云数据传输" [ref=f9e651]
+                    - button "加入收藏" [ref=f9e652]:
+                      - generic [ref=f9e653]: 
+                  - link "共享带宽 加入收藏" [ref=f9e654] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/cbwp
+                    - generic "共享带宽" [ref=f9e655]
+                    - button "加入收藏" [ref=f9e656]:
+                      - generic [ref=f9e657]: 
+                  - link "私网连接 加入收藏" [ref=f9e658] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/endpoint
+                    - generic "私网连接" [ref=f9e659]
+                    - button "加入收藏" [ref=f9e660]:
+                      - generic [ref=f9e661]: 
+                  - link "IPv6转换服务 加入收藏" [ref=f9e662] [cursor=pointer]:
+                    - /url: //ipv6trans.console.aliyun.com
+                    - generic "IPv6转换服务" [ref=f9e663]
+                    - button "加入收藏" [ref=f9e664]:
+                      - generic [ref=f9e665]: 
+                  - link "云解析 PrivateZone 加入收藏" [ref=f9e666] [cursor=pointer]:
+                    - /url: //dnsnext.console.aliyun.com/privateDNS
+                    - generic "云解析 PrivateZone" [ref=f9e667]
+                    - button "加入收藏" [ref=f9e668]:
+                      - generic [ref=f9e669]: 
+                  - link "共享流量包 加入收藏" [ref=f9e670] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/stp
+                    - generic "共享流量包" [ref=f9e671]
+                    - button "加入收藏" [ref=f9e672]:
+                      - generic [ref=f9e673]: 
+                  - link "网络智能服务 公测中 加入收藏" [ref=f9e674] [cursor=pointer]:
+                    - /url: //nis.console.aliyun.com
+                    - generic "网络智能服务" [ref=f9e675]
+                    - generic [ref=f9e676]: 公测中
+                    - button "加入收藏" [ref=f9e679]:
+                      - generic [ref=f9e680]: 
+                  - link "IP地址管理 加入收藏" [ref=f9e681] [cursor=pointer]:
+                    - /url: //ipam.console.aliyun.com
+                    - generic "IP地址管理" [ref=f9e682]
+                    - button "加入收藏" [ref=f9e683]:
+                      - generic [ref=f9e684]: 
+                - generic [ref=f9e685]:
+                  - generic [ref=f9e686]: 跨地域网络
+                  - link "云企业网 加入收藏" [ref=f9e687] [cursor=pointer]:
+                    - /url: //cen.console.aliyun.com
+                    - generic "云企业网" [ref=f9e688]
+                    - button "加入收藏" [ref=f9e689]:
+                      - generic [ref=f9e690]: 
+                  - link "全球加速 加入收藏" [ref=f9e691] [cursor=pointer]:
+                    - /url: //ga.console.aliyun.com
+                    - generic "全球加速" [ref=f9e692]
+                    - button "加入收藏" [ref=f9e693]:
+                      - generic [ref=f9e694]: 
+                - generic [ref=f9e695]:
+                  - generic [ref=f9e696]: 混合云网络
+                  - link "VPN网关 加入收藏" [ref=f9e697] [cursor=pointer]:
+                    - /url: //vpc.console.aliyun.com/vpn
+                    - generic "VPN网关" [ref=f9e698]
+                    - button "加入收藏" [ref=f9e699]:
+                      - generic [ref=f9e700]: 
+                  - link "智能接入网关 加入收藏" [ref=f9e701] [cursor=pointer]:
+                    - /url: //smartag.console.aliyun.com
+                    - generic "智能接入网关" [ref=f9e702]
+                    - button "加入收藏" [ref=f9e703]:
+                      - generic [ref=f9e704]: 
+                  - link "高速通道 加入收藏" [ref=f9e705] [cursor=pointer]:
+                    - /url: //expressconnect.console.aliyun.com
+                    - generic "高速通道" [ref=f9e706]
+                    - button "加入收藏" [ref=f9e707]:
+                      - generic [ref=f9e708]: 
+                  - link "云连接器 加入收藏" [ref=f9e709] [cursor=pointer]:
+                    - /url: //cc.console.aliyun.com/
+                    - generic "云连接器" [ref=f9e710]
+                    - button "加入收藏" [ref=f9e711]:
+                      - generic [ref=f9e712]: 
+                - generic [ref=f9e713]:
+                  - generic [ref=f9e714]: CDN
+                  - link "边缘安全加速 ESA 加入收藏" [ref=f9e715] [cursor=pointer]:
+                    - /url: //esa.console.aliyun.com
+                    - generic "边缘安全加速 ESA" [ref=f9e716]
+                    - button "加入收藏" [ref=f9e717]:
+                      - generic [ref=f9e718]: 
+                  - link "CDN 加入收藏" [ref=f9e719] [cursor=pointer]:
+                    - /url: //cdn.console.aliyun.com
+                    - generic "CDN" [ref=f9e720]
+                    - button "加入收藏" [ref=f9e721]:
+                      - generic [ref=f9e722]: 
+                  - link "PCDN 加入收藏" [ref=f9e723] [cursor=pointer]:
+                    - /url: //pcdn.console.aliyun.com
+                    - generic "PCDN" [ref=f9e724]
+                    - button "加入收藏" [ref=f9e725]:
+                      - generic [ref=f9e726]: 
+            - generic [ref=f9e727]:
+              - generic [ref=f9e728]: 安全
+              - generic [ref=f9e729]:
+                - generic [ref=f9e730]:
+                  - generic [ref=f9e731]: 云安全
+                  - link "云盾 加入收藏" [ref=f9e732] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com
+                    - generic "云盾" [ref=f9e733]
+                    - button "加入收藏" [ref=f9e734]:
+                      - generic [ref=f9e735]: 
+                  - link "DDoS 防护 加入收藏" [ref=f9e736] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=ddos
+                    - generic "DDoS 防护" [ref=f9e737]
+                    - button "加入收藏" [ref=f9e738]:
+                      - generic [ref=f9e739]: 
+                  - link "DDoS 高防 加入收藏" [ref=f9e740] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=ddoscoo
+                    - generic "DDoS 高防" [ref=f9e741]
+                    - button "加入收藏" [ref=f9e742]:
+                      - generic [ref=f9e743]: 
+                  - link "Web应用防火墙 WAF 加入收藏" [ref=f9e744] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=wafnext
+                    - generic "Web应用防火墙 WAF" [ref=f9e745]
+                    - button "加入收藏" [ref=f9e746]:
+                      - generic [ref=f9e747]: 
+                  - link "云安全中心 加入收藏" [ref=f9e748] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=sas
+                    - generic "云安全中心" [ref=f9e749]
+                    - button "加入收藏" [ref=f9e750]:
+                      - generic [ref=f9e751]: 
+                  - link "办公安全平台 SASE 加入收藏" [ref=f9e752] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=csas
+                    - generic "办公安全平台 SASE" [ref=f9e753]
+                    - button "加入收藏" [ref=f9e754]:
+                      - generic [ref=f9e755]: 
+                  - link "云防火墙 加入收藏" [ref=f9e756] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/cfw
+                    - generic "云防火墙" [ref=f9e757]
+                    - button "加入收藏" [ref=f9e758]:
+                      - generic [ref=f9e759]: 
+                  - link "运维安全中心（堡垒机） 加入收藏" [ref=f9e760] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=bastion
+                    - generic "运维安全中心（堡垒机）" [ref=f9e761]
+                    - button "加入收藏" [ref=f9e762]:
+                      - generic [ref=f9e763]: 
+                - generic [ref=f9e764]:
+                  - generic [ref=f9e765]: 数据安全
+                  - link "数据安全中心（含数据库审计） 加入收藏" [ref=f9e766] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=sddp
+                    - generic "数据安全中心（含数据库审计）" [ref=f9e767]
+                    - button "加入收藏" [ref=f9e768]:
+                      - generic [ref=f9e769]: 
+                  - link "加密服务 加入收藏" [ref=f9e770] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=hsm
+                    - generic "加密服务" [ref=f9e771]
+                    - button "加入收藏" [ref=f9e772]:
+                      - generic [ref=f9e773]: 
+                  - link "密钥管理服务 加入收藏" [ref=f9e774] [cursor=pointer]:
+                    - /url: https://yundun.console.aliyun.com/?p=kms
+                    - generic "密钥管理服务" [ref=f9e775]
+                    - button "加入收藏" [ref=f9e776]:
+                      - generic [ref=f9e777]: 
+                  - link "数字证书管理服务（原SSL证书） 加入收藏" [ref=f9e778] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cas
+                    - generic "数字证书管理服务（原SSL证书）" [ref=f9e779]
+                    - button "加入收藏" [ref=f9e780]:
+                      - generic [ref=f9e781]: 
+                - generic [ref=f9e782]:
+                  - generic [ref=f9e783]: 身份安全
+                  - link "应用身份服务 (IDaaS) 加入收藏" [ref=f9e784] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=idaas
+                    - generic "应用身份服务 (IDaaS)" [ref=f9e785]
+                    - button "加入收藏" [ref=f9e786]:
+                      - generic [ref=f9e787]: 
+                - generic [ref=f9e788]:
+                  - generic [ref=f9e789]: 业务安全
+                  - link "内容安全 加入收藏" [ref=f9e790] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cts
+                    - generic "内容安全" [ref=f9e791]
+                    - button "加入收藏" [ref=f9e792]:
+                      - generic [ref=f9e793]: 
+                  - link "风险识别 加入收藏" [ref=f9e794] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=saf
+                    - generic "风险识别" [ref=f9e795]
+                    - button "加入收藏" [ref=f9e796]:
+                      - generic [ref=f9e797]: 
+                  - link "实人认证 加入收藏" [ref=f9e798] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cloudauth
+                    - generic "实人认证" [ref=f9e799]
+                    - button "加入收藏" [ref=f9e800]:
+                      - generic [ref=f9e801]: 
+                  - link "智能核身 加入收藏" [ref=f9e802] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cloudauth&commodityCode=cloudauth_smart
+                    - generic "智能核身" [ref=f9e803]
+                    - button "加入收藏" [ref=f9e804]:
+                      - generic [ref=f9e805]: 
+                  - link "验证码 加入收藏" [ref=f9e806] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=captcha
+                    - generic "验证码" [ref=f9e807]
+                    - button "加入收藏" [ref=f9e808]:
+                      - generic [ref=f9e809]: 
+                  - link "区块链服务 加入收藏" [ref=f9e810] [cursor=pointer]:
+                    - /url: //baas.console.aliyun.com
+                    - generic "区块链服务" [ref=f9e811]
+                    - button "加入收藏" [ref=f9e812]:
+                      - generic [ref=f9e813]: 
+                  - link "金融级实人认证 加入收藏" [ref=f9e814] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cloudauth&commodityCode=cloudauth_fin
+                    - generic "金融级实人认证" [ref=f9e815]
+                    - button "加入收藏" [ref=f9e816]:
+                      - generic [ref=f9e817]: 
+                  - link "信息核验 加入收藏" [ref=f9e818] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=cloudinfo
+                    - generic "信息核验" [ref=f9e819]
+                    - button "加入收藏" [ref=f9e820]:
+                      - generic [ref=f9e821]: 
+                - generic [ref=f9e822]:
+                  - generic [ref=f9e823]: 安全服务
+                  - link "安全管家服务 加入收藏" [ref=f9e824] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=mss
+                    - generic "安全管家服务" [ref=f9e825]
+                    - button "加入收藏" [ref=f9e826]:
+                      - generic [ref=f9e827]: 
+                  - link "安全众测 加入收藏" [ref=f9e828] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=xz
+                    - generic "安全众测" [ref=f9e829]
+                    - button "加入收藏" [ref=f9e830]:
+                      - generic [ref=f9e831]: 
+                  - link "威胁情报 加入收藏" [ref=f9e832] [cursor=pointer]:
+                    - /url: //yundun.console.aliyun.com/?p=sasti
+                    - generic "威胁情报" [ref=f9e833]
+                    - button "加入收藏" [ref=f9e834]:
+                      - generic [ref=f9e835]: 
+            - generic [ref=f9e836]:
+              - generic [ref=f9e837]: 中间件
+              - generic [ref=f9e838]:
+                - generic [ref=f9e839]:
+                  - generic [ref=f9e840]: 微服务工具与平台
+                  - link "微服务引擎 MSE 加入收藏" [ref=f9e841] [cursor=pointer]:
+                    - /url: //mse.console.aliyun.com
+                    - generic "微服务引擎 MSE" [ref=f9e842]
+                    - button "加入收藏" [ref=f9e843]:
+                      - generic [ref=f9e844]: 
+                  - link "分布式任务调度 SchedulerX 加入收藏" [ref=f9e845] [cursor=pointer]:
+                    - /url: //schedulerx2.console.aliyun.com
+                    - generic "分布式任务调度 SchedulerX" [ref=f9e846]
+                    - button "加入收藏" [ref=f9e847]:
+                      - generic [ref=f9e848]: 
+                  - link "企业级分布式应用服务 EDAS 加入收藏" [ref=f9e849] [cursor=pointer]:
+                    - /url: //edas.console.aliyun.com
+                    - generic "企业级分布式应用服务 EDAS" [ref=f9e850]
+                    - button "加入收藏" [ref=f9e851]:
+                      - generic [ref=f9e852]: 
+                  - link "应用高可用服务 AHAS 加入收藏" [ref=f9e853] [cursor=pointer]:
+                    - /url: //ahas.console.aliyun.com
+                    - generic "应用高可用服务 AHAS" [ref=f9e854]
+                    - button "加入收藏" [ref=f9e855]:
+                      - generic [ref=f9e856]: 
+                  - link "金融分布式架构 加入收藏" [ref=f9e857] [cursor=pointer]:
+                    - /url: //sofa.console.aliyun.com
+                    - generic "金融分布式架构" [ref=f9e858]
+                    - button "加入收藏" [ref=f9e859]:
+                      - generic [ref=f9e860]: 
+                - generic [ref=f9e861]:
+                  - generic [ref=f9e862]: 云消息队列
+                  - link "云消息队列 RocketMQ 版 加入收藏" [ref=f9e863] [cursor=pointer]:
+                    - /url: //ons.console.aliyun.com
+                    - generic "云消息队列 RocketMQ 版" [ref=f9e864]
+                    - button "加入收藏" [ref=f9e865]:
+                      - generic [ref=f9e866]: 
+                  - link "云消息队列 Kafka 版 加入收藏" [ref=f9e867] [cursor=pointer]:
+                    - /url: //kafka.console.aliyun.com
+                    - generic "云消息队列 Kafka 版" [ref=f9e868]
+                    - button "加入收藏" [ref=f9e869]:
+                      - generic [ref=f9e870]: 
+                  - link "云消息队列 RabbitMQ 版 加入收藏" [ref=f9e871] [cursor=pointer]:
+                    - /url: //amqp.console.aliyun.com
+                    - generic "云消息队列 RabbitMQ 版" [ref=f9e872]
+                    - button "加入收藏" [ref=f9e873]:
+                      - generic [ref=f9e874]: 
+                  - link "云消息队列 MQTT 版 加入收藏" [ref=f9e875] [cursor=pointer]:
+                    - /url: //mqtt.console.aliyun.com
+                    - generic "云消息队列 MQTT 版" [ref=f9e876]
+                    - button "加入收藏" [ref=f9e877]:
+                      - generic [ref=f9e878]: 
+                  - link "轻量消息队列（原 MNS） 加入收藏" [ref=f9e879] [cursor=pointer]:
+                    - /url: //mns.console.aliyun.com
+                    - generic "轻量消息队列（原 MNS）" [ref=f9e880]
+                    - button "加入收藏" [ref=f9e881]:
+                      - generic [ref=f9e882]: 
+                - generic [ref=f9e883]:
+                  - generic [ref=f9e884]: 应用集成
+                  - link "API 网关 加入收藏" [ref=f9e885] [cursor=pointer]:
+                    - /url: //apigateway.console.aliyun.com
+                    - generic "API 网关" [ref=f9e886]
+                    - button "加入收藏" [ref=f9e887]:
+                      - generic [ref=f9e888]: 
+                  - link "事件总线 EventBridge 加入收藏" [ref=f9e889] [cursor=pointer]:
+                    - /url: //eventbridge.console.aliyun.com
+                    - generic "事件总线 EventBridge" [ref=f9e890]
+                    - button "加入收藏" [ref=f9e891]:
+                      - generic [ref=f9e892]: 
+                  - link "云原生API网关 加入收藏" [ref=f9e893] [cursor=pointer]:
+                    - /url: //apig.console.aliyun.com
+                    - generic "云原生API网关" [ref=f9e894]
+                    - button "加入收藏" [ref=f9e895]:
+                      - generic [ref=f9e896]: 
+                  - link "AI网关 加入收藏" [ref=f9e897] [cursor=pointer]:
+                    - /url: //apig.console.aliyun.com/#/ai-gateway-overview
+                    - generic "AI网关" [ref=f9e898]
+                    - button "加入收藏" [ref=f9e899]:
+                      - generic [ref=f9e900]: 
+                  - link "多智能体治理与协作平台 AgentTeams 加入收藏" [ref=f9e901] [cursor=pointer]:
+                    - /url: //agentteams.console.aliyun.com
+                    - generic "多智能体治理与协作平台 AgentTeams" [ref=f9e902]
+                    - button "加入收藏" [ref=f9e903]:
+                      - generic [ref=f9e904]: 
+                - generic [ref=f9e905]:
+                  - generic [ref=f9e906]: 云原生可观测
+                  - link "性能测试 加入收藏" [ref=f9e907] [cursor=pointer]:
+                    - /url: //pts.console.aliyun.com
+                    - generic "性能测试" [ref=f9e908]
+                    - button "加入收藏" [ref=f9e909]:
+                      - generic [ref=f9e910]: 
+                  - link "应用实时监控服务 ARMS 加入收藏" [ref=f9e911] [cursor=pointer]:
+                    - /url: //arms.console.aliyun.com
+                    - generic "应用实时监控服务 ARMS" [ref=f9e912]
+                    - button "加入收藏" [ref=f9e913]:
+                      - generic [ref=f9e914]: 
+                  - link "可观测链路 OpenTelemetry 版 加入收藏" [ref=f9e915] [cursor=pointer]:
+                    - /url: //trace.console.aliyun.com
+                    - generic "可观测链路 OpenTelemetry 版" [ref=f9e916]
+                    - button "加入收藏" [ref=f9e917]:
+                      - generic [ref=f9e918]: 
+                  - link "可观测监控 Prometheus 版 加入收藏" [ref=f9e919] [cursor=pointer]:
+                    - /url: //cms.console.aliyun.com/prom/instances
+                    - generic "可观测监控 Prometheus 版" [ref=f9e920]
+                    - button "加入收藏" [ref=f9e921]:
+                      - generic [ref=f9e922]: 
+                  - link "可观测可视化 Grafana 版 加入收藏" [ref=f9e923] [cursor=pointer]:
+                    - /url: //ags.console.aliyun.com/#/grafana/workspace
+                    - generic "可观测可视化 Grafana 版" [ref=f9e924]
+                    - button "加入收藏" [ref=f9e925]:
+                      - generic [ref=f9e926]: 
+                  - link "Agent 观测与优化 AgentLoop 加入收藏" [ref=f9e927] [cursor=pointer]:
+                    - /url: //agentloop.console.aliyun.com
+                    - generic "Agent 观测与优化 AgentLoop" [ref=f9e928]
+                    - button "加入收藏" [ref=f9e929]:
+                      - generic [ref=f9e930]: 
+            - generic [ref=f9e931]:
+              - generic [ref=f9e932]: 数据库
+              - generic [ref=f9e933]:
+                - generic [ref=f9e934]:
+                  - generic [ref=f9e935]: 关系型数据库
+                  - link "云原生数据库 PolarDB 加入收藏" [ref=f9e936] [cursor=pointer]:
+                    - /url: //yaochi.console.aliyun.com/overview?selectMenuProducts=polardb
+                    - generic "云原生数据库 PolarDB" [ref=f9e937]
+                    - button "加入收藏" [ref=f9e938]:
+                      - generic [ref=f9e939]: 
+                  - link "云原生分布式数据库 PolarDB-X 加入收藏" [ref=f9e940] [cursor=pointer]:
+                    - /url: //polardb-x.console.aliyun.com
+                    - generic "云原生分布式数据库 PolarDB-X" [ref=f9e941]
+                    - button "加入收藏" [ref=f9e942]:
+                      - generic [ref=f9e943]: 
+                  - link "云数据库 RDS 加入收藏" [ref=f9e944] [cursor=pointer]:
+                    - /url: //rdsnext.console.aliyun.com
+                    - generic "云数据库 RDS" [ref=f9e945]
+                    - button "加入收藏" [ref=f9e946]:
+                      - generic [ref=f9e947]: 
+                  - link "云数据库 OceanBase 版 加入收藏" [ref=f9e948] [cursor=pointer]:
+                    - /url: //oceanbasenext.console.aliyun.com
+                    - generic "云数据库 OceanBase 版" [ref=f9e949]
+                    - button "加入收藏" [ref=f9e950]:
+                      - generic [ref=f9e951]: 
+                  - link "阿里云数据库（瑶池） 加入收藏" [ref=f9e952] [cursor=pointer]:
+                    - /url: //yaochi.console.aliyun.com/overview
+                    - generic "阿里云数据库（瑶池）" [ref=f9e953]
+                    - button "加入收藏" [ref=f9e954]:
+                      - generic [ref=f9e955]: 
+                - generic [ref=f9e956]:
+                  - generic [ref=f9e957]: AI 原生数据库
+                  - link "AI 原生数据库服务 公测中 加入收藏" [ref=f9e958] [cursor=pointer]:
+                    - /url: //aidbs.console.aliyun.com
+                    - generic "AI 原生数据库服务" [ref=f9e959]
+                    - generic [ref=f9e960]: 公测中
+                    - button "加入收藏" [ref=f9e963]:
+                      - generic [ref=f9e964]: 
+                - generic [ref=f9e965]:
+                  - generic [ref=f9e966]: NoSQL 数据库
+                  - link "云数据库 Tair（兼容 Redis） 加入收藏" [ref=f9e967] [cursor=pointer]:
+                    - /url: //kvstore.console.aliyun.com
+                    - generic "云数据库 Tair（兼容 Redis）" [ref=f9e968]
+                    - button "加入收藏" [ref=f9e969]:
+                      - generic [ref=f9e970]: 
+                  - link "云原生多模数据库 Lindorm 加入收藏" [ref=f9e971] [cursor=pointer]:
+                    - /url: //lindorm.console.aliyun.com
+                    - generic "云原生多模数据库 Lindorm" [ref=f9e972]
+                    - button "加入收藏" [ref=f9e973]:
+                      - generic [ref=f9e974]: 
+                  - link "云数据库 MongoDB 版 加入收藏" [ref=f9e975] [cursor=pointer]:
+                    - /url: //mongodb.console.aliyun.com
+                    - generic "云数据库 MongoDB 版" [ref=f9e976]
+                    - button "加入收藏" [ref=f9e977]:
+                      - generic [ref=f9e978]: 
+                  - link "云数据库HBase版 加入收藏" [ref=f9e979] [cursor=pointer]:
+                    - /url: //hbase.console.aliyun.com
+                    - generic "云数据库HBase版" [ref=f9e980]
+                    - button "加入收藏" [ref=f9e981]:
+                      - generic [ref=f9e982]: 
+                  - link "时序时空数据库TSDB 加入收藏" [ref=f9e983] [cursor=pointer]:
+                    - /url: //tsdb.console.aliyun.com
+                    - generic "时序时空数据库TSDB" [ref=f9e984]
+                    - button "加入收藏" [ref=f9e985]:
+                      - generic [ref=f9e986]: 
+                  - link "图数据库 加入收藏" [ref=f9e987] [cursor=pointer]:
+                    - /url: //gdb.console.aliyun.com
+                    - generic "图数据库" [ref=f9e988]
+                    - button "加入收藏" [ref=f9e989]:
+                      - generic [ref=f9e990]: 
+                  - link "云数据库 Memcache 版 加入收藏" [ref=f9e991] [cursor=pointer]:
+                    - /url: //kvstore.console.aliyun.com/?instanceType=Memcache
+                    - generic "云数据库 Memcache 版" [ref=f9e992]
+                    - button "加入收藏" [ref=f9e993]:
+                      - generic [ref=f9e994]: 
+                - generic [ref=f9e995]:
+                  - generic [ref=f9e996]: 数据库平台与服务
+                  - link "数据库专家服务 加入收藏" [ref=f9e997] [cursor=pointer]:
+                    - /url: //dbes.console.aliyun.com
+                    - generic "数据库专家服务" [ref=f9e998]
+                    - button "加入收藏" [ref=f9e999]:
+                      - generic [ref=f9e1000]: 
+                  - link "云数据库专属集群 加入收藏" [ref=f9e1001] [cursor=pointer]:
+                    - /url: //cddc.console.aliyun.com
+                    - generic "云数据库专属集群" [ref=f9e1002]
+                    - button "加入收藏" [ref=f9e1003]:
+                      - generic [ref=f9e1004]: 
+                - generic [ref=f9e1005]:
+                  - generic [ref=f9e1006]: 数据仓库
+                  - link "云原生数据仓库AnalyticDB MySQL版 加入收藏" [ref=f9e1007] [cursor=pointer]:
+                    - /url: //adb.console.aliyun.com
+                    - generic "云原生数据仓库AnalyticDB MySQL版" [ref=f9e1008]
+                    - button "加入收藏" [ref=f9e1009]:
+                      - generic [ref=f9e1010]: 
+                  - link "云原生数据仓库 AnalyticDB PostgreSQL版 加入收藏" [ref=f9e1011] [cursor=pointer]:
+                    - /url: //gpdbnext.console.aliyun.com
+                    - generic "云原生数据仓库 AnalyticDB PostgreSQL版" [ref=f9e1012]
+                    - button "加入收藏" [ref=f9e1013]:
+                      - generic [ref=f9e1014]: 
+                  - link "云数据库 ClickHouse 加入收藏" [ref=f9e1015] [cursor=pointer]:
+                    - /url: //clickhouse.console.aliyun.com
+                    - generic "云数据库 ClickHouse" [ref=f9e1016]
+                    - button "加入收藏" [ref=f9e1017]:
+                      - generic [ref=f9e1018]: 
+                  - link "云原生数据湖分析 加入收藏" [ref=f9e1019] [cursor=pointer]:
+                    - /url: //datalakeanalytics.console.aliyun.com
+                    - generic "云原生数据湖分析" [ref=f9e1020]
+                    - button "加入收藏" [ref=f9e1021]:
+                      - generic [ref=f9e1022]: 
+                  - link "云数据库 SelectDB 版 加入收藏" [ref=f9e1023] [cursor=pointer]:
+                    - /url: https://selectdb.console.aliyun.com
+                    - generic "云数据库 SelectDB 版" [ref=f9e1024]
+                    - button "加入收藏" [ref=f9e1025]:
+                      - generic [ref=f9e1026]: 
+                - generic [ref=f9e1027]:
+                  - generic [ref=f9e1028]: 数据库管理工具
+                  - link "数据传输服务 DTS 加入收藏" [ref=f9e1029] [cursor=pointer]:
+                    - /url: //dtsnew.console.aliyun.com
+                    - generic "数据传输服务 DTS" [ref=f9e1030]
+                    - button "加入收藏" [ref=f9e1031]:
+                      - generic [ref=f9e1032]: 
+                  - link "数据管理 DMS 加入收藏" [ref=f9e1033] [cursor=pointer]:
+                    - /url: //dms.aliyun.com
+                    - generic "数据管理 DMS" [ref=f9e1034]
+                    - button "加入收藏" [ref=f9e1035]:
+                      - generic [ref=f9e1036]: 
+                  - link "数据库备份 加入收藏" [ref=f9e1037] [cursor=pointer]:
+                    - /url: //dbs.console.aliyun.com
+                    - generic "数据库备份" [ref=f9e1038]
+                    - button "加入收藏" [ref=f9e1039]:
+                      - generic [ref=f9e1040]: 
+                  - link "数据库自治服务 DAS 加入收藏" [ref=f9e1041] [cursor=pointer]:
+                    - /url: //hdm.console.aliyun.com
+                    - generic "数据库自治服务 DAS" [ref=f9e1042]
+                    - button "加入收藏" [ref=f9e1043]:
+                      - generic [ref=f9e1044]: 
+            - generic [ref=f9e1045]:
+              - generic [ref=f9e1046]: 大数据计算
+              - generic [ref=f9e1047]:
+                - generic [ref=f9e1048]:
+                  - generic [ref=f9e1049]: 数据计算与分析
+                  - link "云原生大数据计算服务 MaxCompute 加入收藏" [ref=f9e1050] [cursor=pointer]:
+                    - /url: //maxcompute.console.aliyun.com
+                    - generic "云原生大数据计算服务 MaxCompute" [ref=f9e1051]
+                    - button "加入收藏" [ref=f9e1052]:
+                      - generic [ref=f9e1053]: 
+                  - link "实时数仓 Hologres 加入收藏" [ref=f9e1054] [cursor=pointer]:
+                    - /url: //hologram.console.aliyun.com
+                    - generic "实时数仓 Hologres" [ref=f9e1055]
+                    - button "加入收藏" [ref=f9e1056]:
+                      - generic [ref=f9e1057]: 
+                  - link "检索分析服务 Elasticsearch 版 加入收藏" [ref=f9e1058] [cursor=pointer]:
+                    - /url: //elasticsearch.console.aliyun.com
+                    - generic "检索分析服务 Elasticsearch 版" [ref=f9e1059]
+                    - button "加入收藏" [ref=f9e1060]:
+                      - generic [ref=f9e1061]: 
+                  - link "实时计算 Flink 版 加入收藏" [ref=f9e1062] [cursor=pointer]:
+                    - /url: //realtime-compute.console.aliyun.com
+                    - generic "实时计算 Flink 版" [ref=f9e1063]
+                    - button "加入收藏" [ref=f9e1064]:
+                      - generic [ref=f9e1065]: 
+                  - link "图计算服务 GraphCompute 加入收藏" [ref=f9e1066] [cursor=pointer]:
+                    - /url: //igraph.console.aliyun.com
+                    - generic "图计算服务 GraphCompute" [ref=f9e1067]
+                    - button "加入收藏" [ref=f9e1068]:
+                      - generic [ref=f9e1069]: 
+                  - link "向量检索服务 Milvus 版 加入收藏" [ref=f9e1070] [cursor=pointer]:
+                    - /url: //milvus.console.aliyun.com
+                    - generic "向量检索服务 Milvus 版" [ref=f9e1071]
+                    - button "加入收藏" [ref=f9e1072]:
+                      - generic [ref=f9e1073]: 
+                - generic [ref=f9e1074]:
+                  - generic [ref=f9e1075]: 数据湖
+                  - link "开源大数据平台 E-MapReduce 加入收藏" [ref=f9e1076] [cursor=pointer]:
+                    - /url: //emr-next.console.aliyun.com
+                    - generic "开源大数据平台 E-MapReduce" [ref=f9e1077]
+                    - button "加入收藏" [ref=f9e1078]:
+                      - generic [ref=f9e1079]: 
+                  - link "数据湖构建 Data Lake Formation 加入收藏" [ref=f9e1080] [cursor=pointer]:
+                    - /url: //dlf-next.console.aliyun.com/
+                    - generic "数据湖构建 Data Lake Formation" [ref=f9e1081]
+                    - button "加入收藏" [ref=f9e1082]:
+                      - generic [ref=f9e1083]: 
+                - generic [ref=f9e1084]:
+                  - generic [ref=f9e1085]: 数据应用与可视化
+                  - link "智能商业分析 Quick BI 加入收藏" [ref=f9e1086] [cursor=pointer]:
+                    - /url: //bi.aliyun.com
+                    - generic "智能商业分析 Quick BI" [ref=f9e1087]
+                    - button "加入收藏" [ref=f9e1088]:
+                      - generic [ref=f9e1089]: 
+                  - link "DataV 数据可视化 加入收藏" [ref=f9e1090] [cursor=pointer]:
+                    - /url: //datav.aliyun.com
+                    - generic "DataV 数据可视化" [ref=f9e1091]
+                    - button "加入收藏" [ref=f9e1092]:
+                      - generic [ref=f9e1093]: 
+                  - link "智能用户增长 Quick Audience 加入收藏" [ref=f9e1094] [cursor=pointer]:
+                    - /url: //retailadvqa.console.aliyun.com
+                    - generic "智能用户增长 Quick Audience" [ref=f9e1095]
+                    - button "加入收藏" [ref=f9e1096]:
+                      - generic [ref=f9e1097]: 
+                  - link "全域采集与增长分析 Quick Tracking 加入收藏" [ref=f9e1098] [cursor=pointer]:
+                    - /url: //quickaplus.console.aliyun.com
+                    - generic "全域采集与增长分析 Quick Tracking" [ref=f9e1099]
+                    - button "加入收藏" [ref=f9e1100]:
+                      - generic [ref=f9e1101]: 
+                - generic [ref=f9e1102]:
+                  - generic [ref=f9e1103]: 数据开发与管理
+                  - link "大数据开发治理平台 DataWorks 加入收藏" [ref=f9e1104] [cursor=pointer]:
+                    - /url: //dataworks.console.aliyun.com/overview
+                    - generic "大数据开发治理平台 DataWorks" [ref=f9e1105]
+                    - button "加入收藏" [ref=f9e1106]:
+                      - generic [ref=f9e1107]: 
+                  - link "智能数据建设与治理 Dataphin 加入收藏" [ref=f9e1108] [cursor=pointer]:
+                    - /url: //dataphin.console.aliyun.com
+                    - generic "智能数据建设与治理 Dataphin" [ref=f9e1109]
+                    - button "加入收藏" [ref=f9e1110]:
+                      - generic [ref=f9e1111]: 
+                  - link "数据集成 Data Integration 加入收藏" [ref=f9e1112] [cursor=pointer]:
+                    - /url: //workbench.shuju.aliyun.com/console
+                    - generic "数据集成 Data Integration" [ref=f9e1113]
+                    - button "加入收藏" [ref=f9e1114]:
+                      - generic [ref=f9e1115]: 
+                  - link "数据总线 DataHub 加入收藏" [ref=f9e1116] [cursor=pointer]:
+                    - /url: //dhsnext.console.aliyun.com
+                    - generic "数据总线 DataHub" [ref=f9e1117]
+                    - button "加入收藏" [ref=f9e1118]:
+                      - generic [ref=f9e1119]: 
+                  - link "数据资源平台 加入收藏" [ref=f9e1120] [cursor=pointer]:
+                    - /url: //dataq.console.aliyun.com
+                    - generic "数据资源平台" [ref=f9e1121]
+                    - button "加入收藏" [ref=f9e1122]:
+                      - generic [ref=f9e1123]: 
+                  - link "大数据专家服务 加入收藏" [ref=f9e1124] [cursor=pointer]:
+                    - /url: //bigdatacst.console.aliyun.com
+                    - generic "大数据专家服务" [ref=f9e1125]
+                    - button "加入收藏" [ref=f9e1126]:
+                      - generic [ref=f9e1127]: 
+            - generic [ref=f9e1128]:
+              - generic [ref=f9e1129]: 媒体服务
+              - generic [ref=f9e1130]:
+                - generic [ref=f9e1131]:
+                  - generic [ref=f9e1132]: 视频服务
+                  - link "视频点播 加入收藏" [ref=f9e1133] [cursor=pointer]:
+                    - /url: //vod.console.aliyun.com
+                    - generic "视频点播" [ref=f9e1134]
+                    - button "加入收藏" [ref=f9e1135]:
+                      - generic [ref=f9e1136]: 
+                  - link "视频直播 加入收藏" [ref=f9e1137] [cursor=pointer]:
+                    - /url: //live.console.aliyun.com
+                    - generic "视频直播" [ref=f9e1138]
+                    - button "加入收藏" [ref=f9e1139]:
+                      - generic [ref=f9e1140]: 
+                  - link "音视频通信 加入收藏" [ref=f9e1141] [cursor=pointer]:
+                    - /url: //rtc.console.aliyun.com
+                    - generic "音视频通信" [ref=f9e1142]
+                    - button "加入收藏" [ref=f9e1143]:
+                      - generic [ref=f9e1144]: 
+                - generic [ref=f9e1145]:
+                  - generic [ref=f9e1146]: 媒体处理与内容生产
+                  - link "媒体处理 加入收藏" [ref=f9e1147] [cursor=pointer]:
+                    - /url: //mps.console.aliyun.com
+                    - generic "媒体处理" [ref=f9e1148]
+                    - button "加入收藏" [ref=f9e1149]:
+                      - generic [ref=f9e1150]: 
+                  - link "智能媒体服务 加入收藏" [ref=f9e1151] [cursor=pointer]:
+                    - /url: //ice.console.aliyun.com
+                    - generic "智能媒体服务" [ref=f9e1152]
+                    - button "加入收藏" [ref=f9e1153]:
+                      - generic [ref=f9e1154]: 
+                - generic [ref=f9e1155]:
+                  - generic [ref=f9e1156]: 媒体服务
+                  - link "音视频终端 SDK 加入收藏" [ref=f9e1157] [cursor=pointer]:
+                    - /url: //imp.console.aliyun.com
+                    - generic "音视频终端 SDK" [ref=f9e1158]
+                    - button "加入收藏" [ref=f9e1159]:
+                      - generic [ref=f9e1160]: 
+            - generic [ref=f9e1161]:
+              - generic [ref=f9e1162]: 企业服务与云通信
+              - generic [ref=f9e1163]:
+                - generic [ref=f9e1164]:
+                  - generic [ref=f9e1165]: 企业云服务
+                  - link "移动研发平台 EMAS 加入收藏" [ref=f9e1166] [cursor=pointer]:
+                    - /url: //emas.console.aliyun.com
+                    - generic "移动研发平台 EMAS" [ref=f9e1167]
+                    - button "加入收藏" [ref=f9e1168]:
+                      - generic [ref=f9e1169]: 
+                  - link "云行情 加入收藏" [ref=f9e1170] [cursor=pointer]:
+                    - /url: //assetservice.console.aliyun.com
+                    - generic "云行情" [ref=f9e1171]
+                    - button "加入收藏" [ref=f9e1172]:
+                      - generic [ref=f9e1173]: 
+                  - link "云原生应用组装平台 BizWorks 加入收藏" [ref=f9e1174] [cursor=pointer]:
+                    - /url: //bizworks.console.aliyun.com
+                    - generic "云原生应用组装平台 BizWorks" [ref=f9e1175]
+                    - button "加入收藏" [ref=f9e1176]:
+                      - generic [ref=f9e1177]: 
+                  - link "Salesforce on Alibaba Cloud 加入收藏" [ref=f9e1178] [cursor=pointer]:
+                    - /url: //salesforce.console.aliyun.com
+                    - generic "Salesforce on Alibaba Cloud" [ref=f9e1179]
+                    - button "加入收藏" [ref=f9e1180]:
+                      - generic [ref=f9e1181]: 
+                  - link "机器人流程自动化 RPA 加入收藏" [ref=f9e1182] [cursor=pointer]:
+                    - /url: https://rpa.console.aliyun.com
+                    - generic "机器人流程自动化 RPA" [ref=f9e1183]
+                    - button "加入收藏" [ref=f9e1184]:
+                      - generic [ref=f9e1185]: 
+                  - link "营销引擎 加入收藏" [ref=f9e1186] [cursor=pointer]:
+                    - /url: //imarketing.console.aliyun.com/
+                    - generic "营销引擎" [ref=f9e1187]
+                    - button "加入收藏" [ref=f9e1188]:
+                      - generic [ref=f9e1189]: 
+                - generic [ref=f9e1190]:
+                  - generic [ref=f9e1191]: 企业基础服务
+                  - link "ICP 备案 加入收藏" [ref=f9e1192] [cursor=pointer]:
+                    - /url: //bsn.console.aliyun.com
+                    - generic "ICP 备案" [ref=f9e1193]
+                    - button "加入收藏" [ref=f9e1194]:
+                      - generic [ref=f9e1195]: 
+                - generic [ref=f9e1196]:
+                  - generic [ref=f9e1197]: 企业办公协同
+                  - link "Teambition 企业协同 加入收藏" [ref=f9e1198] [cursor=pointer]:
+                    - /url: //teambition.console.aliyun.com
+                    - generic "Teambition 企业协同" [ref=f9e1199]
+                    - button "加入收藏" [ref=f9e1200]:
+                      - generic [ref=f9e1201]: 
+                  - link "阿里邮箱 加入收藏" [ref=f9e1202] [cursor=pointer]:
+                    - /url: //alimail.console.aliyun.com
+                    - generic "阿里邮箱" [ref=f9e1203]
+                    - button "加入收藏" [ref=f9e1204]:
+                      - generic [ref=f9e1205]: 
+                  - link "邮件推送 加入收藏" [ref=f9e1206] [cursor=pointer]:
+                    - /url: //dm.console.aliyun.com
+                    - generic "邮件推送" [ref=f9e1207]
+                    - button "加入收藏" [ref=f9e1208]:
+                      - generic [ref=f9e1209]: 
+                  - link "宜搭 加入收藏" [ref=f9e1210] [cursor=pointer]:
+                    - /url: //yida.console.aliyun.com
+                    - generic "宜搭" [ref=f9e1211]
+                    - button "加入收藏" [ref=f9e1212]:
+                      - generic [ref=f9e1213]: 
+                  - link "云会议 加入收藏" [ref=f9e1214] [cursor=pointer]:
+                    - /url: //cvc.console.aliyun.com
+                    - generic "云会议" [ref=f9e1215]
+                    - button "加入收藏" [ref=f9e1216]:
+                      - generic [ref=f9e1217]: 
+                - generic [ref=f9e1218]:
+                  - generic [ref=f9e1219]: 云通信
+                  - link "语音服务 加入收藏" [ref=f9e1220] [cursor=pointer]:
+                    - /url: //dyvms.console.aliyun.com/dyvms.htm
+                    - generic "语音服务" [ref=f9e1221]
+                    - button "加入收藏" [ref=f9e1222]:
+                      - generic [ref=f9e1223]: 
+                  - link "短信服务 加入收藏" [ref=f9e1224] [cursor=pointer]:
+                    - /url: //dysms.console.aliyun.com/dysms.htm
+                    - generic "短信服务" [ref=f9e1225]
+                    - button "加入收藏" [ref=f9e1226]:
+                      - generic [ref=f9e1227]: 
+                  - link "号码隐私保护 加入收藏" [ref=f9e1228] [cursor=pointer]:
+                    - /url: //dyplsnext.console.aliyun.com
+                    - generic "号码隐私保护" [ref=f9e1229]
+                    - button "加入收藏" [ref=f9e1230]:
+                      - generic [ref=f9e1231]: 
+                  - link "号码认证服务 加入收藏" [ref=f9e1232] [cursor=pointer]:
+                    - /url: //dypns.console.aliyun.com
+                    - generic "号码认证服务" [ref=f9e1233]
+                    - button "加入收藏" [ref=f9e1234]:
+                      - generic [ref=f9e1235]: 
+                  - link "智能联络中心 加入收藏" [ref=f9e1236] [cursor=pointer]:
+                    - /url: //aiccs.console.aliyun.com
+                    - generic "智能联络中心" [ref=f9e1237]
+                    - button "加入收藏" [ref=f9e1238]:
+                      - generic [ref=f9e1239]: 
+                  - link "号码百科 加入收藏" [ref=f9e1240] [cursor=pointer]:
+                    - /url: //dytns.console.aliyun.com
+                    - generic "号码百科" [ref=f9e1241]
+                    - button "加入收藏" [ref=f9e1242]:
+                      - generic [ref=f9e1243]: 
+                  - link "5G 互联平台 加入收藏" [ref=f9e1244] [cursor=pointer]:
+                    - /url: //xgip.console.aliyun.com
+                    - generic "5G 互联平台" [ref=f9e1245]
+                    - button "加入收藏" [ref=f9e1246]:
+                      - generic [ref=f9e1247]: 
+                  - link "Chat App 消息服务 加入收藏" [ref=f9e1248] [cursor=pointer]:
+                    - /url: //cams.console.aliyun.com
+                    - generic "Chat App 消息服务" [ref=f9e1249]
+                    - button "加入收藏" [ref=f9e1250]:
+                      - generic [ref=f9e1251]: 
+            - generic [ref=f9e1252]:
+              - generic [ref=f9e1253]: 域名与网站
+              - generic [ref=f9e1254]:
+                - generic [ref=f9e1255]:
+                  - generic [ref=f9e1256]: 域名与备案服务
+                  - link "域名与网站 加入收藏" [ref=f9e1257] [cursor=pointer]:
+                    - /url: //dc.console.aliyun.com/next/index
+                    - generic "域名与网站" [ref=f9e1258]
+                    - button "加入收藏" [ref=f9e1259]:
+                      - generic [ref=f9e1260]: 
+                  - link "备案服务 加入收藏" [ref=f9e1261] [cursor=pointer]:
+                    - /url: //companyreg.console.aliyun.com
+                    - generic "备案服务" [ref=f9e1262]
+                    - button "加入收藏" [ref=f9e1263]:
+                      - generic [ref=f9e1264]: 
+                  - link "云解析DNS 加入收藏" [ref=f9e1265] [cursor=pointer]:
+                    - /url: //dnsnext.console.aliyun.com/authoritative
+                    - generic "云解析DNS" [ref=f9e1266]
+                    - button "加入收藏" [ref=f9e1267]:
+                      - generic [ref=f9e1268]: 
+                - generic [ref=f9e1269]:
+                  - generic [ref=f9e1270]: 知识产权服务
+                  - link "商标服务 加入收藏" [ref=f9e1271] [cursor=pointer]:
+                    - /url: https://tm.console.aliyun.com/#/overview
+                    - generic "商标服务" [ref=f9e1272]
+                    - button "加入收藏" [ref=f9e1273]:
+                      - generic [ref=f9e1274]: 
+                  - link "软件著作权登记服务 加入收藏" [ref=f9e1275] [cursor=pointer]:
+                    - /url: //copyright.console.aliyun.com
+                    - generic "软件著作权登记服务" [ref=f9e1276]
+                    - button "加入收藏" [ref=f9e1277]:
+                      - generic [ref=f9e1278]: 
+            - generic [ref=f9e1279]:
+              - generic [ref=f9e1280]: 终端用户计算
+              - generic [ref=f9e1282]:
+                - generic [ref=f9e1283]: 无影
+                - link "无影云电脑企业版 加入收藏" [ref=f9e1284] [cursor=pointer]:
+                  - /url: //eds.console.aliyun.com
+                  - generic "无影云电脑企业版" [ref=f9e1285]
+                  - button "加入收藏" [ref=f9e1286]:
+                    - generic [ref=f9e1287]: 
+                - link "无影云手机 加入收藏" [ref=f9e1288] [cursor=pointer]:
+                  - /url: //cloudphone.console.aliyun.com
+                  - generic "无影云手机" [ref=f9e1289]
+                  - button "加入收藏" [ref=f9e1290]:
+                    - generic [ref=f9e1291]: 
+                - link "无影云应用 公测中 加入收藏" [ref=f9e1292] [cursor=pointer]:
+                  - /url: //appstreaming.console.aliyun.com
+                  - generic "无影云应用" [ref=f9e1293]
+                  - generic [ref=f9e1294]: 公测中
+                  - button "加入收藏" [ref=f9e1297]:
+                    - generic [ref=f9e1298]: 
+                - link "无影云电脑个人版 加入收藏" [ref=f9e1299] [cursor=pointer]:
+                  - /url: //eds-personal.console.aliyun.com
+                  - generic "无影云电脑个人版" [ref=f9e1300]
+                  - button "加入收藏" [ref=f9e1301]:
+                    - generic [ref=f9e1302]: 
+            - generic [ref=f9e1303]:
+              - generic [ref=f9e1304]: 物联网
+              - generic [ref=f9e1305]:
+                - generic [ref=f9e1306]:
+                  - generic [ref=f9e1307]: 物联网云服务
+                  - link "物联网平台 加入收藏" [ref=f9e1308] [cursor=pointer]:
+                    - /url: //iot.console.aliyun.com
+                    - generic "物联网平台" [ref=f9e1309]
+                    - button "加入收藏" [ref=f9e1310]:
+                      - generic [ref=f9e1311]: 
+                  - link "物联网无线连接服务 加入收藏" [ref=f9e1312] [cursor=pointer]:
+                    - /url: //dyiotnext.console.aliyun.com/overview
+                    - generic "物联网无线连接服务" [ref=f9e1313]
+                    - button "加入收藏" [ref=f9e1314]:
+                      - generic [ref=f9e1315]: 
+                  - link "物联网络管理平台 加入收藏" [ref=f9e1316] [cursor=pointer]:
+                    - /url: //linkwan.console.aliyun.com
+                    - generic "物联网络管理平台" [ref=f9e1317]
+                    - button "加入收藏" [ref=f9e1318]:
+                      - generic [ref=f9e1319]: 
+                  - link "IoT 设备身份认证 加入收藏" [ref=f9e1320] [cursor=pointer]:
+                    - /url: https://iotsec.console.aliyun.com/
+                    - generic "IoT 设备身份认证" [ref=f9e1321]
+                    - button "加入收藏" [ref=f9e1322]:
+                      - generic [ref=f9e1323]: 
+                  - link "IoT安全运营中心 加入收藏" [ref=f9e1324] [cursor=pointer]:
+                    - /url: https://iotsec.console.aliyun.com/
+                    - generic "IoT安全运营中心" [ref=f9e1325]
+                    - button "加入收藏" [ref=f9e1326]:
+                      - generic [ref=f9e1327]: 
+                - generic [ref=f9e1328]:
+                  - generic [ref=f9e1329]: 设备端服务
+                  - link "物联网边缘计算 加入收藏" [ref=f9e1330] [cursor=pointer]:
+                    - /url: //iotedge.console.aliyun.com
+                    - generic "物联网边缘计算" [ref=f9e1331]
+                    - button "加入收藏" [ref=f9e1332]:
+                      - generic [ref=f9e1333]: 
+                - generic [ref=f9e1334]:
+                  - generic [ref=f9e1335]: 行业物联网
+                  - link "云AP 加入收藏" [ref=f9e1336] [cursor=pointer]:
+                    - /url: //cloudap.console.aliyun.com
+                    - generic "云AP" [ref=f9e1337]
+                    - button "加入收藏" [ref=f9e1338]:
+                      - generic [ref=f9e1339]: 
+                  - link "云价签 加入收藏" [ref=f9e1340] [cursor=pointer]:
+                    - /url: //cloudesl.console.aliyun.com
+                    - generic "云价签" [ref=f9e1341]
+                    - button "加入收藏" [ref=f9e1342]:
+                      - generic [ref=f9e1343]: 
+                  - link "云投屏 加入收藏" [ref=f9e1344] [cursor=pointer]:
+                    - /url: https://ls.iot.aliyun.com/
+                    - generic "云投屏" [ref=f9e1345]
+                    - button "加入收藏" [ref=f9e1346]:
+                      - generic [ref=f9e1347]: 
+            - generic [ref=f9e1348]:
+              - generic [ref=f9e1349]: 开发工具
+              - generic [ref=f9e1350]:
+                - generic [ref=f9e1351]:
+                  - generic [ref=f9e1352]: API 与工具
+                  - link "资源编排 加入收藏" [ref=f9e1353] [cursor=pointer]:
+                    - /url: //ros.console.aliyun.com
+                    - generic "资源编排" [ref=f9e1354]
+                    - button "加入收藏" [ref=f9e1355]:
+                      - generic [ref=f9e1356]: 
+                  - link "Node.js 性能平台 加入收藏" [ref=f9e1357] [cursor=pointer]:
+                    - /url: //node.console.aliyun.com
+                    - generic "Node.js 性能平台" [ref=f9e1358]
+                    - button "加入收藏" [ref=f9e1359]:
+                      - generic [ref=f9e1360]: 
+                  - link "移动开发平台 mPaaS 加入收藏" [ref=f9e1361] [cursor=pointer]:
+                    - /url: //mpaas.console.aliyun.com
+                    - generic "移动开发平台 mPaaS" [ref=f9e1362]
+                    - button "加入收藏" [ref=f9e1363]:
+                      - generic [ref=f9e1364]: 
+                  - link "信息查询服务 公测中 加入收藏" [ref=f9e1365] [cursor=pointer]:
+                    - /url: //ipaas.console.aliyun.com/guide
+                    - generic "信息查询服务" [ref=f9e1366]
+                    - generic [ref=f9e1367]: 公测中
+                    - button "加入收藏" [ref=f9e1370]:
+                      - generic [ref=f9e1371]: 
+                - generic [ref=f9e1372]:
+                  - generic [ref=f9e1373]: 云效DevOps
+                  - link "云效 加入收藏" [ref=f9e1374] [cursor=pointer]:
+                    - /url: //devops.console.aliyun.com
+                    - generic "云效" [ref=f9e1375]
+                    - button "加入收藏" [ref=f9e1376]:
+                      - generic [ref=f9e1377]: 
+                - generic [ref=f9e1378]:
+                  - generic [ref=f9e1379]: 开发与运维
+                  - link "多端低代码开发平台魔笔 加入收藏" [ref=f9e1380] [cursor=pointer]:
+                    - /url: //mobinext.console.aliyun.com/welcome
+                    - generic "多端低代码开发平台魔笔" [ref=f9e1381]
+                    - button "加入收藏" [ref=f9e1382]:
+                      - generic [ref=f9e1383]: 
+                  - link "OpenAPI Explorer 加入收藏" [ref=f9e1384] [cursor=pointer]:
+                    - /url: https://api.aliyun.com/
+                    - generic "OpenAPI Explorer" [ref=f9e1385]
+                    - button "加入收藏" [ref=f9e1386]:
+                      - generic [ref=f9e1387]: 
+            - generic [ref=f9e1388]:
+              - generic [ref=f9e1389]: 迁移与运维管理
+              - generic [ref=f9e1390]:
+                - generic [ref=f9e1391]:
+                  - generic [ref=f9e1392]: 运维与监控
+                  - link "云监控 加入收藏" [ref=f9e1393] [cursor=pointer]:
+                    - /url: //cloudmonitornext.console.aliyun.com
+                    - generic "云监控" [ref=f9e1394]
+                    - button "加入收藏" [ref=f9e1395]:
+                      - generic [ref=f9e1396]: 
+                  - link "智能顾问 加入收藏" [ref=f9e1397] [cursor=pointer]:
+                    - /url: //advisor.console.aliyun.com
+                    - generic "智能顾问" [ref=f9e1398]
+                    - button "加入收藏" [ref=f9e1399]:
+                      - generic [ref=f9e1400]: 
+                  - link "系统运维管理 OOS 加入收藏" [ref=f9e1401] [cursor=pointer]:
+                    - /url: //oos.console.aliyun.com
+                    - generic "系统运维管理 OOS" [ref=f9e1402]
+                    - button "加入收藏" [ref=f9e1403]:
+                      - generic [ref=f9e1404]: 
+                  - link "云网管 加入收藏" [ref=f9e1405] [cursor=pointer]:
+                    - /url: //cmn.console.aliyun.com
+                    - generic "云网管" [ref=f9e1406]
+                    - button "加入收藏" [ref=f9e1407]:
+                      - generic [ref=f9e1408]: 
+                  - link "运维事件中心 加入收藏" [ref=f9e1409] [cursor=pointer]:
+                    - /url: //alert.console.aliyun.com
+                    - generic "运维事件中心" [ref=f9e1410]
+                    - button "加入收藏" [ref=f9e1411]:
+                      - generic [ref=f9e1412]: 
+                  - link "网络分析与监控 加入收藏" [ref=f9e1413] [cursor=pointer]:
+                    - /url: //cloudmonitornext.console.aliyun.com/newSite
+                    - generic "网络分析与监控" [ref=f9e1414]
+                    - button "加入收藏" [ref=f9e1415]:
+                      - generic [ref=f9e1416]: 
+                  - link "全域智能运维平台 STAROps 公测中 加入收藏" [ref=f9e1417] [cursor=pointer]:
+                    - /url: //starops.console.aliyun.com
+                    - generic "全域智能运维平台 STAROps" [ref=f9e1418]
+                    - generic [ref=f9e1419]: 公测中
+                    - button "加入收藏" [ref=f9e1422]:
+                      - generic [ref=f9e1423]: 
+                - generic [ref=f9e1424]:
+                  - generic [ref=f9e1425]: 云管理
+                  - link "访问控制 RAM 加入收藏" [ref=f9e1426] [cursor=pointer]:
+                    - /url: //ram.console.aliyun.com
+                    - generic "访问控制 RAM" [ref=f9e1427]
+                    - button "加入收藏" [ref=f9e1428]:
+                      - generic [ref=f9e1429]: 
+                  - link "操作审计 加入收藏" [ref=f9e1430] [cursor=pointer]:
+                    - /url: //actiontrail.console.aliyun.com
+                    - generic "操作审计" [ref=f9e1431]
+                    - button "加入收藏" [ref=f9e1432]:
+                      - generic [ref=f9e1433]: 
+                  - link "资源管理 加入收藏" [ref=f9e1434] [cursor=pointer]:
+                    - /url: //resourcemanager.console.aliyun.com
+                    - generic "资源管理" [ref=f9e1435]
+                    - button "加入收藏" [ref=f9e1436]:
+                      - generic [ref=f9e1437]: 
+                  - link "配置审计 公测中 加入收藏" [ref=f9e1438] [cursor=pointer]:
+                    - /url: //config.console.aliyun.com
+                    - generic "配置审计" [ref=f9e1439]
+                    - generic [ref=f9e1440]: 公测中
+                    - button "加入收藏" [ref=f9e1443]:
+                      - generic [ref=f9e1444]: 
+                  - link "逻辑编排 加入收藏" [ref=f9e1445] [cursor=pointer]:
+                    - /url: //lc.console.aliyun.com
+                    - generic "逻辑编排" [ref=f9e1446]
+                    - button "加入收藏" [ref=f9e1447]:
+                      - generic [ref=f9e1448]: 
+                  - link "配额中心 加入收藏" [ref=f9e1449] [cursor=pointer]:
+                    - /url: //quotas.console.aliyun.com
+                    - generic "配额中心" [ref=f9e1450]
+                    - button "加入收藏" [ref=f9e1451]:
+                      - generic [ref=f9e1452]: 
+                  - link "云速搭 加入收藏" [ref=f9e1453] [cursor=pointer]:
+                    - /url: //bpstudio.console.aliyun.com
+                    - generic "云速搭" [ref=f9e1454]
+                    - button "加入收藏" [ref=f9e1455]:
+                      - generic [ref=f9e1456]: 
+                  - link "云 SSO 加入收藏" [ref=f9e1457] [cursor=pointer]:
+                    - /url: //cloudsso.console.aliyun.com
+                    - generic "云 SSO" [ref=f9e1458]
+                    - button "加入收藏" [ref=f9e1459]:
+                      - generic [ref=f9e1460]: 
+                  - link "云治理中心 加入收藏" [ref=f9e1461] [cursor=pointer]:
+                    - /url: //governance.console.aliyun.com
+                    - generic "云治理中心" [ref=f9e1462]
+                    - button "加入收藏" [ref=f9e1463]:
+                      - generic [ref=f9e1464]: 
+                  - link "服务目录 加入收藏" [ref=f9e1465] [cursor=pointer]:
+                    - /url: //servicecatalog.console.aliyun.com
+                    - generic "服务目录" [ref=f9e1466]
+                    - button "加入收藏" [ref=f9e1467]:
+                      - generic [ref=f9e1468]: 
+                  - link "智能体身份 Agent Identity 加入收藏" [ref=f9e1469] [cursor=pointer]:
+                    - /url: //agentidentity.console.aliyun.com
+                    - generic "智能体身份 Agent Identity" [ref=f9e1470]
+                    - button "加入收藏" [ref=f9e1471]:
+                      - generic [ref=f9e1472]: 
+                - generic [ref=f9e1473]:
+                  - generic [ref=f9e1474]: 备份与迁移
+                  - link "服务器迁移中心 公测中 加入收藏" [ref=f9e1475] [cursor=pointer]:
+                    - /url: //smcnext.console.aliyun.com
+                    - generic "服务器迁移中心" [ref=f9e1476]
+                    - generic [ref=f9e1477]: 公测中
+                    - button "加入收藏" [ref=f9e1480]:
+                      - generic [ref=f9e1481]: 
+                  - link "云迁移中心 公测中 加入收藏" [ref=f9e1482] [cursor=pointer]:
+                    - /url: //apds.console.aliyun.com
+                    - generic "云迁移中心" [ref=f9e1483]
+                    - generic [ref=f9e1484]: 公测中
+                    - button "加入收藏" [ref=f9e1487]:
+                      - generic [ref=f9e1488]: 
+            - generic [ref=f9e1489]:
+              - generic [ref=f9e1490]: 云市场
+              - link "云市场 加入收藏" [ref=f9e1491] [cursor=pointer]:
+                - /url: //marketnext.console.aliyun.com
+                - generic "云市场" [ref=f9e1492]
+                - button "加入收藏" [ref=f9e1493]:
+                  - generic [ref=f9e1494]: 
+            - generic [ref=f9e1495]:
+              - generic [ref=f9e1496]: 支持与服务
+              - link "支持与服务 加入收藏" [ref=f9e1497] [cursor=pointer]:
+                - /url: //spc.console.aliyun.com
+                - generic "支持与服务" [ref=f9e1498]
+                - button "加入收藏" [ref=f9e1499]:
+                  - generic [ref=f9e1500]: 
+        - button "收起产品面板" [ref=f9e1502] [cursor=pointer]:
+          - generic [ref=f9e1503]: 
+    - button "收起产品面板" [ref=f9e1504]
+  - text:       
+  - iframe [ref=f9e1505]:
+    
+  - generic [ref=f9e1534]:
+    - dialog "创建API Key close":
+      - generic [ref=f9e1535]:
+        - generic [ref=f9e1538]:
+          - generic [ref=f9e1539]: 创建API Key
+          - img "close" [ref=f9e1540] [cursor=pointer]
+        - generic [ref=f9e1545]:
+          - generic [ref=f9e1547]:
+            - generic "归属业务空间" [ref=f9e1549]:
+              - text: 归属业务空间
+              - generic [ref=f9e1550]: "*"
+            - generic [ref=f9e1556]:
+              - combobox "归属业务空间 *" [disabled] [ref=f9e1558]
+              - generic "默认业务空间" [ref=f9e1559]
+          - generic [ref=f9e1561]:
+            - generic "描述" [ref=f9e1563]
+            - generic [ref=f9e1567]:
+              - textbox "描述" [ref=f9e1568]:
+                - /placeholder: 请输入描述
+              - generic: 0 / 200
+          - generic [ref=f9e1570]:
+            - generic "权限" [ref=f9e1572]:
+              - text: 权限
+              - generic [ref=f9e1573]: "*"
+            - radiogroup "segmented control" [ref=f9e1577]:
+              - generic [ref=f9e1578]:
+                - generic [ref=f9e1579] [cursor=pointer]:
+                  - radio "全部" [checked]
+                  - generic "全部" [ref=f9e1580]
+                - generic [ref=f9e1581] [cursor=pointer]:
+                  - radio "自定义"
+                  - generic "自定义" [ref=f9e1582]
+        - generic [ref=f9e1583]:
+          - button "取消" [ref=f9e1584] [cursor=pointer]
+          - button "确定" [ref=f9e1586] [cursor=pointer]
