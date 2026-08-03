@@ -20,7 +20,7 @@ echo "✅ rules/"
 cp -r "$FRAMEWORK/agents" "./agents"
 echo "✅ agents/"
 
-# 复制门禁脚本（执行者提审预检 + 框架自检）
+# 复制门禁脚本（工程部提审预检 + 框架自检）
 mkdir -p scripts/guard
 cp "$FRAMEWORK/scripts/guard/gatekeeper.sh" "./scripts/guard/gatekeeper.sh"
 echo "✅ gatekeeper.sh"

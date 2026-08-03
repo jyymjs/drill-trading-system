@@ -25,7 +25,11 @@ echo "--- 角色定义 ---"
 check "$BASE/流程/规划/planner.md"
 check "$BASE/流程/执行/executor.md"
 check "$BASE/流程/测试/reviewer.md"
-check "$BASE/流程/内审/optimizer.md"
+
+echo "--- 优化部门 ---"
+check "$BASE/../优化部门/CLAUDE.md"
+check "$BASE/../优化部门/问题台账.md"
+check "$BASE/../优化部门/审计流程.md"
 
 echo "--- 门禁脚本 ---"
 check "$BASE/支撑/脚本/guard/gatekeeper.sh"
@@ -65,7 +69,7 @@ fi
 echo "--- 角色引用技能验证 ---"
 # 自动解析四个角色目录 md 的"核心：/辅助："行提取技能清单——角色文档为唯一事实源
 ROLE_SKILLS=""
-for f in "$BASE"/流程/规划/*.md "$BASE"/流程/执行/*.md "$BASE"/流程/测试/*.md "$BASE"/流程/内审/*.md; do
+for f in "$BASE"/流程/规划/*.md "$BASE"/流程/执行/*.md "$BASE"/流程/测试/*.md "$BASE"/../优化部门/*.md; do
   [ -f "$f" ] || continue
   role_skills=$(grep -oE "^(核心|辅助)：.*" "$f" | sed 's/^[^：]*：//' | tr '、' '\n' | grep -oE '^[a-z][a-z-]*')
   ROLE_SKILLS="$ROLE_SKILLS $role_skills"
@@ -114,7 +118,7 @@ fi
 
 echo ""
 if [ "$FAIL" -eq 0 ]; then
-  echo "✅ 框架完整 ($ACTUAL_COUNT 技能, 4 角色, 6 规则)"
+  echo "✅ 框架完整 ($ACTUAL_COUNT 技能, 3 角色+优化部门, 6 规则)"
 else
   echo "❌ 存在 $FAIL 项问题，请修复"
   exit 1

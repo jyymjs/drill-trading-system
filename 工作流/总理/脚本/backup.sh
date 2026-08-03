@@ -2,7 +2,7 @@
 # 助理大脑一键备份（借鉴 HanaAgent "Agent 就是文件夹" 理念）
 # 用法: bash scripts/backup.sh
 # 输出: 归档/备份/助理大脑-YYYYMMDD.tar.gz
-# 恢复: tar -xzf 归档/备份/助理大脑-YYYYMMDD.tar.gz （解压回助理系统根目录即可）
+# 恢复: tar -xzf 归档/备份/助理大脑-YYYYMMDD.tar.gz （解压回 总理/ 根目录即可）
 
 cd "$(dirname "$0")/.."
 mkdir -p 归档/备份
