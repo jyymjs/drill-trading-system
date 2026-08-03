@@ -164,7 +164,7 @@ def write_report(path: Path, records: list[TrackedRecord],
         "- **止损口径**：normal = max(2×ATR14, 2%×进场价)；prebreak = 策略原生 trigger/stop（同源）。",
         "- **无前视**：评级窗口一律 `df.iloc[:t+1]` 先截断后评级；指标全序列一次向量化（向后看算子，等价性由单测证明）。",
         "",
-        f"## 总览（信号 {sum(b.n_signals for b in buckets.values())} 笔）",
+        f"## 总览（统计组合 {sum(b.n_signals for b in buckets.values())} 笔 = 信号数 × hold 观察窗；去重信号数见各模式段）",
         "",
     ]
 

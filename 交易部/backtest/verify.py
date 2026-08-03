@@ -1,8 +1,8 @@
 """验收自检：同源抽查 / 收盘价抽查 / 无前视对照
 
-1. 同源抽查：抽 N 只×M 个信号日，用 diagnose 同款调用序列（先截断 → all_indicators 逐窗重算
-   → quick_prefilter → grade()/prebreak_grade()）独立重演，比对评级 + 6 条件分项 100% 一致
-   ——证明回测用的是现行策略，不是另写的一套。
+1. 同源抽查：抽 N 只×M 个信号日，用 scan 同款策略函数序列（quick_prefilter → all_indicators
+   → grade()/prebreak_grade()，与 main.py scan/diagnose 同源函数）独立重演，比对评级 + 6 条件
+   分项 100% 一致——证明回测用的是现行策略，不是另写的一套。
 2. 收盘价抽查：信号日收盘价/出场价与 data/cache 原值逐笔一致（防止时间切片错位）。
 3. 无前视对照：向量化全序列路径与逐窗重算路径评级一致（等价性）。
 """

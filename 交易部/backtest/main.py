@@ -136,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--recompute-each-window", action="store_true",
                        help="严格逐窗重算指标（对照验证慢路径）")
 
-    verify_p = sub.add_parser("verify", help="验收自检（同源/收盘价抽查）")
+    verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")
     verify_p.add_argument("--samples", type=int, default=20, help="抽查行数（默认20）")
     verify_p.add_argument("--seed", type=int, default=42, help="随机种子（默认42）")
