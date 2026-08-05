@@ -35,22 +35,25 @@ WARN = "⚠️"
 
 def participating_r(records: list[TrackedRecord], mode: str | None = None,
                     grade: str | None = None) -> list[tuple[pd.Timestamp, float]]:
-    """参与统计的 (信号日, R) 序列，按信号日升序（normal 全参与；prebreak 仅触发者参与）
+    """参与统计的 (信号日, R) 序列，按 (信号日, code, hold) 升序（normal 全参与；
+    prebreak 仅触发者参与）
 
     与 stats.mode_stats 同一口径：跨 hold 合并的 1R 等权 R 序列。
+    2026-08-06 质检发现：仅按信号日排序时，同日多笔/同股多 hold 的次序仍取决于
+    records 传入顺序（进程池并发下随机），导致下游最大回撤不可复现 → 排序键补全序。
     """
-    pairs: list[tuple[pd.Timestamp, float]] = []
+    pairs: list[tuple[pd.Timestamp, str, int, float]] = []
     for rec in records:
         sig = rec.signal
         if mode is not None and sig.mode != mode:
             continue
         if grade is not None and sig.grade != grade:
             continue
-        for oc in rec.outcomes.values():
+        for hold, oc in rec.outcomes.items():
             if oc.participate():
-                pairs.append((sig.date, oc.r))
-    pairs.sort(key=lambda p: p[0])
-    return pairs
+                pairs.append((sig.date, sig.code, hold, oc.r))
+    pairs.sort(key=lambda p: (p[0], p[1], p[2]))
+    return [(p[0], p[3]) for p in pairs]
 
 
 def span_days(records: list[TrackedRecord], mode: str | None = None) -> float:

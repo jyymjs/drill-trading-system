@@ -2,7 +2,8 @@
 
 口径（计划"待老板确认的默认值"）：
   - 胜 = R>0；normal 全部信号参与统计；prebreak 仅触发者参与（未触发计信号数/触发率）
-  - 最大回撤 = 1R 等权累计 R 曲线的最大回撤（组合口径，不做仓位资金曲线）
+  - 最大回撤 = 1R 等权累计 R 曲线的最大回撤（组合口径，不做仓位资金曲线）；
+    曲线按信号日升序累积，不依赖 records 传入顺序（2026-08-06 质检修复）
   - 月度分布 = 信号日按月计数（信号集中度）
 所有统计为纯函数、结果稳定排序，保证可复现。
 """
@@ -10,6 +11,8 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
+
+import pandas as pd
 
 from 回测系统.tracking import TrackedRecord
 
@@ -77,8 +80,11 @@ def group_stats(records: list[TrackedRecord], holds: list[int]) -> dict[str, Sta
             for hold in sorted(holds):
                 buckets[f"{mode}|{grade}|{hold}"] = StatBlock(mode=mode, grade=grade, hold=hold)
 
-    # 收集每桶的参与 R 序列与月度计数
-    rs: dict[str, list[float]] = {k: [] for k in buckets}
+    # 收集每桶的参与 R 序列（带信号日，算回撤前排序——2026-08-06 质检发现：
+    # 原按 records 传入顺序累积，进程池并发下完成顺序随机，"最大回撤"在并发运行间
+    # 不可复现；修复参照 quality.participating_r 先例）与月度计数
+    # 排序键 (信号日, code)：同日多笔（不同股票）次序也要确定，仅按日期排序仍随机
+    rs: dict[str, list[tuple[pd.Timestamp, str, float]]] = {k: [] for k in buckets}
     for rec in records:
         sig = rec.signal
         for hold, oc in rec.outcomes.items():
@@ -90,14 +96,14 @@ def group_stats(records: list[TrackedRecord], holds: list[int]) -> dict[str, Sta
             if oc.participate():
                 block.n_triggered += 1
                 block.n_participate += 1
-                rs[key].append(oc.r)
+                rs[key].append((sig.date, sig.code, oc.r))
                 if oc.r > 0:
                     block.n_win += 1
 
     for key, block in buckets.items():
         block.trigger_rate = _safe_ratio(block.n_triggered, block.n_signals)
         block.win_rate = _safe_ratio(block.n_win, block.n_participate)
-        r_list = rs[key]
+        r_list = [r for _, _, r in sorted(rs[key], key=lambda p: (p[0], p[1]))]  # 按信号日+code，回撤可复现
         block.total_r = round(sum(r_list), 4)
         block.avg_r = round(sum(r_list) / len(r_list), 4) if r_list else 0.0
         block.max_drawdown = _max_drawdown_from_r(r_list)
@@ -117,19 +123,22 @@ def merge_monthly(buckets: dict[str, StatBlock], mode: str) -> dict[str, int]:
 
 def mode_stats(records: list[TrackedRecord], mode: str, holds: list[int]) -> dict:
     """某模式合计统计（跨等级跨 hold，用真实 R 序列计算 avg_r/max_dd）"""
-    r_list: list[float] = []
+    # 2026-08-06 质检发现：原按传入顺序累积 R 序列，并发乱序下最大回撤不可复现 →
+    # 按 (信号日, code, hold) 排序（同日多笔/同股多 hold 次序也确定，全序可复现）
+    pairs: list[tuple[pd.Timestamp, str, int, float]] = []
     n_sig = n_trig = n_part = n_win = 0
     for rec in records:
         if rec.signal.mode != mode:
             continue
-        for oc in rec.outcomes.values():
+        for hold, oc in rec.outcomes.items():
             n_sig += 1
             if oc.participate():
                 n_trig += 1
                 n_part += 1
-                r_list.append(oc.r)
+                pairs.append((rec.signal.date, rec.signal.code, hold, oc.r))
                 if oc.r > 0:
                     n_win += 1
+    r_list = [r for _, _, _, r in sorted(pairs, key=lambda p: (p[0], p[1], p[2]))]  # 全序，回撤可复现
     return {
         "n_signals": n_sig,
         "n_triggered": n_trig,

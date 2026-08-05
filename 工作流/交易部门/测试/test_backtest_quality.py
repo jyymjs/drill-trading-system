@@ -231,8 +231,9 @@ class TestReportSections:
 
 def test_engine_cost_multiplier_passthrough():
     """引擎 2 倍成本重跑：同信号 R 更小（成本多扣一份+滑点），信号集合不变"""
-    from 分析决策.分析.indicators import all_indicators
     from 回测系统.adapters.base import DataProvider, StrategyProvider
+
+    from 分析决策.分析.indicators import all_indicators
 
     NEEDED = ["VOL_RATIO", "BODY_RATIO", "MA20", "MA5", "ATR"]
 
@@ -313,3 +314,29 @@ def test_participating_r_sorted_and_filtered():
     pairs = participating_r(recs)
     assert [str(d.date()) for d, _ in pairs] == ["2022-01-10", "2023-03-10", "2025-06-10"]
     assert span_days(recs) == pytest.approx((pd.Timestamp("2025-06-10") - pd.Timestamp("2022-01-10")).days)
+
+
+def test_participating_r_same_day_order_independent():
+    """同日多笔（不同股票）次序不依赖 records 传入顺序（2026-08-06 质检发现：
+    仅按日期排序时 Python 稳定排序保留传入顺序，并发乱序下同日多笔次序随机，
+    下游最大回撤不可复现 → 排序键补 (code, hold) 全序）"""
+    recs = [
+        make_rec(make_signal(code="600000", date="2024-01-01"), -2.0),
+        make_rec(make_signal(code="600000", date="2024-01-02"), -2.0),
+        make_rec(make_signal(code="600519", date="2024-01-02"), 0.5),   # 与上一笔同日
+        make_rec(make_signal(code="600000", date="2024-01-03"), 0.5),
+        make_rec(make_signal(code="600519", date="2024-01-04"), -0.5),
+    ]
+    shuffled = [recs[2], recs[0], recs[3], recs[1], recs[4]]
+    p_ok = participating_r(recs)
+    p_shuffled = participating_r(shuffled)
+    # 按 (信号日, code, hold) 排序后的 R：同日两笔 code 序固定（600000 先于 600519）
+    expected = [-2.0, -2.0, 0.5, 0.5, -0.5]
+    assert [r for _, r in p_ok] == [r for _, r in p_shuffled] == expected
+    assert [str(d.date()) for d, _ in p_ok] == ["2024-01-01", "2024-01-02", "2024-01-02",
+                                                "2024-01-03", "2024-01-04"]
+    # 下游 D2 基线最大回撤也一致（4.0 不变；date-only 排序会得 3.5）
+    r_stress = [make_rec(make_signal(code="600519", date="2024-01-05"), -0.2)]
+    dd_ok = check_cost_stress(recs, r_stress, holds=[10])["base"]["max_drawdown"]
+    dd_shuffled = check_cost_stress(shuffled, r_stress, holds=[10])["base"]["max_drawdown"]
+    assert dd_ok == dd_shuffled == pytest.approx(4.0, abs=1e-4)

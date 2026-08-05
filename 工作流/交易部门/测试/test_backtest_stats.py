@@ -165,3 +165,60 @@ class TestDeterminism:
             "prebreak|B|5", "prebreak|B|10", "prebreak|S|5", "prebreak|S|10",
         ]
         assert buckets["normal|A|5"].n_signals == 0
+
+    def test_max_drawdown_order_independent(self):
+        """最大回撤不依赖 records 传入顺序（2026-08-06 质检发现：进程池并发下完成顺序
+        随机，原实现按传入顺序累积 R 导致"最大回撤"在并发运行间不可复现）
+
+        按信号日排序的 R=[1.0, 1.0, -1.5, -1.0, 2.0]：累计曲线峰值 2.0、谷值 -0.5，
+        最大回撤 = 2.5；若按乱序 [-1.5, 1, -1, 1, 2] 累积则旧实现算出 1.5。
+        """
+        r_by_date = {
+            "2024-01-01": 1.0, "2024-01-02": 1.0, "2024-01-03": -1.5,
+            "2024-01-04": -1.0, "2024-01-05": 2.0,
+        }
+        dates = sorted(r_by_date)
+        recs_sorted = [make_rec(make_signal(date=d), {10: out(10, r_by_date[d])}) for d in dates]
+        order = [2, 0, 3, 1, 4]  # 乱序：第 3、1、4、2、5 笔
+        recs_shuffled = [recs_sorted[i] for i in order]
+
+        b_sorted = group_stats(recs_sorted, holds=[10])["normal|S|10"]
+        b_shuffled = group_stats(recs_shuffled, holds=[10])["normal|S|10"]
+        assert b_sorted.max_drawdown == pytest.approx(2.5, abs=1e-4)
+        # 乱序输入与按日期排序输入结果一致（修复后）；修复前乱序会得到 1.5
+        assert b_shuffled.max_drawdown == b_sorted.max_drawdown
+        assert b_shuffled.max_drawdown != pytest.approx(1.5, abs=1e-4)
+
+        m_sorted = mode_stats(recs_sorted, "normal", holds=[10])
+        m_shuffled = mode_stats(recs_shuffled, "normal", holds=[10])
+        assert m_sorted["max_drawdown"] == pytest.approx(2.5, abs=1e-4)
+        assert m_shuffled["max_drawdown"] == m_sorted["max_drawdown"]
+        assert m_shuffled["max_drawdown"] != pytest.approx(1.5, abs=1e-4)
+
+    def test_max_drawdown_same_day_multiple(self):
+        """同日多笔（不同股票）次序也要确定（2026-08-06 复查确认：仅按日期排序不够——
+        Python 稳定排序保留传入顺序，进程池并发下同日多笔的相对顺序仍随机）
+
+        按 (信号日, code) 排序的 R=[-2, -2, 0.5, 0.5, -0.5]：峰值 0、谷值 -4，
+        最大回撤 = 4.0；若同日两笔被交换（只按日期排序）则得 3.5。
+        """
+        recs = [
+            make_rec(make_signal(code="600000", date="2024-01-01"), {10: out(10, -2.0)}),
+            make_rec(make_signal(code="600000", date="2024-01-02"), {10: out(10, -2.0)}),
+            make_rec(make_signal(code="600519", date="2024-01-02"), {10: out(10, 0.5)}),
+            make_rec(make_signal(code="600000", date="2024-01-03"), {10: out(10, 0.5)}),
+            make_rec(make_signal(code="600519", date="2024-01-04"), {10: out(10, -0.5)}),
+        ]
+        shuffled = [recs[2], recs[0], recs[3], recs[1], recs[4]]  # 同日 600519 提到最前
+        b_ok = group_stats(recs, holds=[10])["normal|S|10"]
+        b_shuffled = group_stats(shuffled, holds=[10])["normal|S|10"]
+        assert b_ok.max_drawdown == pytest.approx(4.0, abs=1e-4)
+        assert b_shuffled.max_drawdown == b_ok.max_drawdown
+        # 仅按日期排序的旧实现会得到 3.5（同日两笔保留传入顺序）——断言修复已避开
+        assert b_shuffled.max_drawdown != pytest.approx(3.5, abs=1e-4)
+
+        m_ok = mode_stats(recs, "normal", holds=[10])
+        m_shuffled = mode_stats(shuffled, "normal", holds=[10])
+        assert m_ok["max_drawdown"] == pytest.approx(4.0, abs=1e-4)
+        assert m_shuffled["max_drawdown"] == m_ok["max_drawdown"]
+        assert m_shuffled["max_drawdown"] != pytest.approx(3.5, abs=1e-4)
