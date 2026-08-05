@@ -48,6 +48,7 @@ def cmd_run(args) -> int:
         env_mode=args.env_mode, env_index=args.env_index,
         volume_filter=not args.no_volume_filter, min_amount=args.min_amount,
         vol_window=args.vol_window,
+        prbook_gate=not args.no_prbook_gate,
     )
     try:
         params.validate()
@@ -59,7 +60,8 @@ def cmd_run(args) -> int:
           f"| 模式 {params.mode} | 步长 {params.interval} | hold {'/'.join(str(h) for h in holds)}d "
           f"| 评级 {'/'.join(params.grades)}")
     print(f"  {params.codes or '全市场股票池'} | 线程 {params.max_workers}"
-          + (" | 严格逐窗重算（对照）" if params.recompute_each_window else ""))
+          + (" | 严格逐窗重算（对照）" if params.recompute_each_window else "")
+          + (" | C1 财报日避让" if params.prbook_gate else " | 无 C1 财报日避让（对照）"))
 
     engine = BacktestEngine(params)
     if params.dl_cands:
@@ -91,7 +93,8 @@ def cmd_run(args) -> int:
         print(f"  [D2] 完成 | 信号 {len(stress_records)} 笔")
 
     write_report(report_path, result.records, _buckets(result.records, params), params,
-                 meta={"processed": result.processed, "skipped": result.skipped},
+                 meta={"processed": result.processed, "skipped": result.skipped,
+                       "gate_counts": result.gate_counts},
                  stress_records=stress_records)
     params.save_snapshot(str(params_path), strategy_info)
 
@@ -189,6 +192,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="主闸门指数（默认上证指数；可选 深证成指/创业板指）")
     run_p.add_argument("--no-volume-filter", action="store_true",
                        help="关闭 C3 量能硬过滤（2026-08-05 第3波，默认开=回测验证后正式接入）")
+    run_p.add_argument("--no-prbook-gate", action="store_true",
+                       help="关闭 C1 财报日避让（2026-08-05 老板拍板，默认开=正式接入；对照实验用）")
     run_p.add_argument("--min-amount", type=float, default=5000.0,
                        help="日均成交额阈值（万元，默认 5000；建议值，回测验证）")
     run_p.add_argument("--vol-window", type=int, default=5,

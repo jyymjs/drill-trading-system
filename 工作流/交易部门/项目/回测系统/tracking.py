@@ -60,6 +60,9 @@ class TrackedRecord:
 
     signal: Signal
     outcomes: dict[int, Outcome] = field(default_factory=dict)
+    prbook_warn: str | None = None  # C1 财报日避让（2026-08-05 老板拍板）：
+    #   持仓期内跨过预约披露日 → 警示文本（如 "2026-08-20（报告期 2026-06-30）"）；
+    #   第一层设计：只警示不强制平仓。None = 无披露日警示。
 
 
 def _find_signal_index(df: pd.DataFrame, signal_date: pd.Timestamp) -> int:

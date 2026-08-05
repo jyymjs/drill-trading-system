@@ -10,7 +10,6 @@
 import pandas as pd
 
 import duckdb
-
 from 数据基础.duckdb.config import DB_PATH
 
 ANN_COLS = ["symbol", "date", "title", "ann_type", "url", "adjunct_url",
@@ -95,10 +94,11 @@ def upsert_news(con, rows: list[dict]) -> int:
 # ───────────────────────── 查询辅助 ─────────────────────────
 
 def next_prbook_dates(con, symbols: list[str]) -> list[dict]:
-    """财报日避让查询：给定股票 → 最近报告期的预约披露日（未披露的）
+    """财报日避让查询（实时视图）：给定股票 → 当前尚未披露的报告期预约披露日
 
     返回 [{symbol, secname, report_period, first_appoint, actual_date}]，
     按 first_appoint 升序。actual_date 为空 = 尚未披露（避让对象）。
+    （C1 财报日避让·2026-08-05 老板拍板；回测历史视图用 prbook_rows。）
     """
     if not symbols:
         return []
@@ -106,6 +106,22 @@ def next_prbook_dates(con, symbols: list[str]) -> list[dict]:
     return con.execute(
         "SELECT symbol, secname, report_period, first_appoint, actual_date "
         f"FROM prbook WHERE symbol IN ({marks}) AND actual_date IS NULL "
+        "ORDER BY first_appoint").fetch_df().to_dict("records")
+
+
+def prbook_rows(con, symbols: list[str]) -> list[dict]:
+    """财报日避让查询（回测历史视图）：给定股票 → 全部报告期预约披露行（含已披露）
+
+    返回 [{symbol, secname, report_period, first_appoint, actual_date}]，
+    按 first_appoint 升序。actual_date 供"信号日 T 时点是否已披露"判断
+    （回测需要历史报告期的披露日参与避让；实时避让用 next_prbook_dates）。
+    """
+    if not symbols:
+        return []
+    marks = ",".join(f"'{s}'" for s in symbols)
+    return con.execute(
+        "SELECT symbol, secname, report_period, first_appoint, actual_date "
+        f"FROM prbook WHERE symbol IN ({marks}) "
         "ORDER BY first_appoint").fetch_df().to_dict("records")
 
 

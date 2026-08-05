@@ -21,6 +21,7 @@ from 回测系统.adapters.risk_model import DefaultRiskModel
 from 回测系统.adapters.strategy_provider import ZuanQianProvider
 from 回测系统.params import GRID_ANCHOR, BacktestParams, _parse_yyyymmdd
 from 回测系统.tracking import Signal, TrackedRecord, track_signal
+from 分析决策.市场环境.prbook_gate import prbook_verdict, prbook_warn  # C1 财报日避让（2026-08-05 老板拍板）
 
 
 @dataclass
@@ -52,8 +53,11 @@ class BacktestEngine:
         self.needed_cols = self.strategy.required_indicators()
         # B1 环境闸门（2026-08-05 第3波）：执行层过滤计数 + 指数数据懒加载
         self.gate_counts: dict = {"veto_env": 0, "veto_volume": 0,
-                                  "downgraded": 0, "missing": 0, "kept": 0}
-        self._index_df = None  # 主闸门指数日线（首次使用 env_gate 时加载）
+                                  "downgraded": 0, "missing": 0, "kept": 0,
+                                  # C1 财报日避让（2026-08-05 老板拍板）：披露日否决/警示/无数据放行
+                                  "veto_prbook": 0, "prbook_warn": 0, "prbook_missing": 0}
+        self._index_df = None    # 主闸门指数日线（首次使用 env_gate 时加载）
+        self._prbook_map: dict = {}  # C1 预约披露 {code: 未披露行列表}（run() 内一次性加载；空=无数据放行）
 
     # ── 主入口 ──
 
@@ -68,6 +72,9 @@ class BacktestEngine:
         result = EngineResult()
         if not codes:
             return result
+
+        if self.params.prbook_gate:
+            self._load_prbook_map(codes)  # C1 预约披露一次性加载（线程共享只读）
 
         with ThreadPoolExecutor(max_workers=self.params.max_workers) as executor:
             futures = {executor.submit(self._process_stock, code): code for code in codes}
@@ -119,6 +126,18 @@ class BacktestEngine:
             if not self.strategy.quick_prefilter(window):
                 continue
 
+            prbook_rows = None
+            if self.params.prbook_gate:
+                # C1 财报日避让（执行层，2026-08-05 老板拍板）：披露日否决 → 跳过后续评级
+                prbook_rows = self._prbook_map.get(code)
+                if prbook_rows is None:
+                    self.gate_counts["prbook_missing"] += 1   # 无该股披露数据 → 放行并计数
+                else:
+                    action, info = prbook_verdict(prbook_rows, sig_date)
+                    if action == "veto":
+                        self.gate_counts["veto_prbook"] += 1
+                        continue
+
             for mode in self._active_modes():
                 sig = self._build_signal(code, sig_date, mode, window, close_arr[t])
                 if sig is None:
@@ -132,10 +151,29 @@ class BacktestEngine:
                                             cost_multiplier=self.params.cost_multiplier,
                                             moving_stop=self.params.moving_stop)
                             for h in self.params.holds}
-                records.append(TrackedRecord(signal=sig, outcomes=outcomes))
+                rec = TrackedRecord(signal=sig, outcomes=outcomes)
+                # C1 持仓警示：持仓期内（T+1 ~ 最晚出场日）跨过披露日 → 记录警示，不强制平仓
+                if prbook_rows is not None:
+                    latest_exit = max((oc.exit_date for oc in outcomes.values()
+                                       if oc.exit_date is not None), default=None)
+                    warn = prbook_warn(prbook_rows, sig_date, latest_exit)
+                    if warn:
+                        rec.prbook_warn = warn
+                        self.gate_counts["prbook_warn"] += 1
+                records.append(rec)
         return records
 
     # ── 内部工具 ──
+
+    def _load_prbook_map(self, codes: list[str]) -> None:
+        """C1 预约披露一次性加载（复用 data_sources/store.next_prbook_dates 查询口径）
+
+        - 与数据提供器同库（CacheDataProvider.db_path；默认主库 t017_p2.duckdb）
+        - 缺表/异常 → 空 dict：后续按"无数据放行 + prbook_missing 计数"处理
+        """
+        from 分析决策.市场环境.prbook_gate import load_prbook_map
+        db_path = getattr(self.provider, "db_path", None)
+        self._prbook_map = load_prbook_map(codes, db_path=db_path)
 
     def _load_index_df(self):
         """懒加载主闸门指数日线（B1；缓存优先，无缓存走 pytdx 拉取）"""

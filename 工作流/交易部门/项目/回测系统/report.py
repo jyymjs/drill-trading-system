@@ -37,6 +37,8 @@ def signals_to_frame(records: list[TrackedRecord], holds: list[int]) -> pd.DataF
         row["trigger"] = sig.trigger
         row["stop"] = sig.stop
         row["risk"] = sig.risk
+        # C1 财报日避让（2026-08-05 老板拍板）：持仓期跨预约披露日 → 警示文本（空=无）
+        row["prbook_warn"] = rec.prbook_warn or ""
         for hold in holds:
             oc = rec.outcomes[hold]
             row[f"triggered_{hold}d"] = int(oc.triggered)
@@ -186,6 +188,30 @@ def _stress_section(base_records: list[TrackedRecord],
     ])
 
 
+def _prbook_section(records: list[TrackedRecord], gate_counts: dict | None,
+                    params: BacktestParams) -> str:
+    """C1 财报日避让节（2026-08-05 老板拍板 · 优化方案 C1 定案第3条·第一层）
+
+    第一层口径：信号日 = 该股预约披露日 → 不新开仓（否决）；持仓期跨披露日 → 警示
+    （记录到本报告，不强制平仓）。评级与执行分离——grade() 评级不受影响。
+    """
+    n_warn = sum(1 for rec in records if rec.prbook_warn)
+    gc = gate_counts or {}
+    state = "开（正式接入）" if params.prbook_gate else "关（对照）"
+    lines = [
+        "## 财报日避让（C1 第一层 · 预约披露日）",
+        "",
+        f"> 2026-08-05 老板拍板执行《量化体系优化方案》C1 项：预约披露日不新开仓；"
+        f"已持仓跨披露日 → 警示不强制平仓。本回测 C1 开关：**{state}**。",
+        "",
+        f"- 披露日否决：**{gc.get('veto_prbook', 0)}** 笔（信号日=预约披露日，未开仓）",
+        f"- 持仓警示：**{n_warn}** 笔（持仓期内跨过预约披露日，详见 signals.csv prbook_warn 列）",
+        f"- 无披露数据放行：{gc.get('prbook_missing', 0)} 笔（数据缺失不误杀）",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
     """normal vs prebreak 对比段"""
     lines = ["| 指标 | normal | prebreak |", "|---|---|---|"]
@@ -251,6 +277,9 @@ def write_report(path: Path, records: list[TrackedRecord],
 
     if "normal" in modes and "prebreak" in modes:
         lines += ["## normal vs prebreak 对比", "", _compare_table(records, holds), ""]
+
+    # C1 财报日避让（2026-08-05 老板拍板执行优化方案 C1 第一层）
+    lines += [_prbook_section(records, meta.get("gate_counts"), params)]
 
     # D1 分段一致性（2026-08-05 方案 D 类质检，基于主记录）
     lines += [_consistency_section(records, holds)]

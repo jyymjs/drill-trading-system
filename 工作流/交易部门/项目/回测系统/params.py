@@ -70,6 +70,12 @@ class BacktestParams:
     volume_filter: bool = True      # C3 量能硬过滤开关
     min_amount: float = 5000.0      # 日均成交额阈值（万元，建议值）
     vol_window: int = 5             # 均额窗口（交易日，含信号日）
+    # C1 财报日避让第一层：预约披露日不新开仓（2026-08-05 老板拍板执行优化方案 C1 项）：
+    #   信号日当天是该股预约披露日（first_appoint == 信号日）→ 否决该信号（不新开仓）；
+    #   持仓期内跨过披露日 → 输出警示（记录到报告，不强制平仓——第一层设计）；
+    #   实现于执行层（prbook_gate.py），不改 grade() 评级核心（评级与执行分离）；
+    #   默认开=正式接入（对照实验用 --no-prbook-gate，见 c1_prbook_compare.py）。
+    prbook_gate: bool = True
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -147,6 +153,7 @@ class BacktestParams:
             "prebreak_untracked": "未触发计信号数/触发率，不参与胜率/平均R/回撤",
             "exit_simplified": "v1 仅 止损 + hold到期收盘 两种出场",
             "moving_stop": "C5 2026-08-05 老板拍板：持仓中每确认新结构低点（买入后新高后回调低点，日线收盘判定）→ 止损上移 低点×0.99；默认关（对照实验用）",
+            "prbook_gate": "C1 2026-08-05 老板拍板（优化方案 C1 定案第3条·第一层）：信号日=该股预约披露日 → 不新开仓；持仓期跨披露日 → 警示不强制平仓；默认开",
         }
         if strategy_info:
             data["strategy_info"] = strategy_info

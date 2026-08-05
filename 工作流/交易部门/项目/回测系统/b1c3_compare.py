@@ -109,6 +109,7 @@ def run_group(label: str, env_gate: bool, volume_filter: bool, codes: list[str],
         start=start, end=end, mode="normal", interval=5,
         holds=[5, 10, 20], grades=["S"], codes=codes, max_workers=5,
         env_gate=env_gate, volume_filter=volume_filter,
+        prbook_gate=False,  # C1 财报日避让（2026-08-05 老板拍板）：B1C3 实验口径纯净，不受 C1 干扰
     )
     engine = BacktestEngine(params)
     result = engine.run()
@@ -166,6 +167,7 @@ def run_day_window(day: str, window_days: int, codes: list[str]) -> dict:
             start=start, end=end, mode="normal", interval=1,
             holds=[20], grades=["S", "A", "B"], codes=codes, max_workers=5,
             env_gate=eg, volume_filter=vf,
+            prbook_gate=False,  # C1 财报日避让（2026-08-05 老板拍板）：B1C3 实验口径纯净
         )
         result = BacktestEngine(params).run()
         day_recs = [r for r in result.records
