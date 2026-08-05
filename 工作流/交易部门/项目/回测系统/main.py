@@ -51,6 +51,7 @@ def cmd_run(args) -> int:
         prbook_gate=not args.no_prbook_gate,
         sentiment_gate=not args.no_sentiment_gate, sent_threshold=args.sent_threshold,
         missing_sentiment=args.missing_sentiment,
+        dn_confirm=args.dn_confirm,
     )
     try:
         params.validate()
@@ -210,6 +211,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="全市场下跌家数占比阈值（%%，默认 70；建议值，普跌日实证 2026-05-29=71.4%%）")
     run_p.add_argument("--missing-sentiment", default="pass", choices=["pass", "veto"],
                        help="涨跌家数数据缺失：pass=放行（默认）/ veto=否决")
+    run_p.add_argument("--dn-confirm", type=float, default=0.0,
+                       help="prebreak 突破日量能确认阈值（0=关默认；>0 时触发日量比>阈值才计入，"
+                            "2026-08-06 实验参数：突破日成交量/前20日均量；对照组 0=纯价格触发）")
 
     verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")

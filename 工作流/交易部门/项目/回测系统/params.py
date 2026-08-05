@@ -79,6 +79,15 @@ class BacktestParams:
     sentiment_gate: bool = True     # C4 情绪闸门开关（涨跌家数维度，与指数闸门并列）
     sent_threshold: float = 70.0    # 全市场下跌家数占比阈值（%，建议值）
     missing_sentiment: str = "pass" # 涨跌家数缺失：pass=放行并计数 / veto=否决
+    # 突破日量能确认（2026-08-06 老板拍板实验参数 · 默认 0.0=关，不改变现有行为）：
+    #   prebreak 触发（突破价成交）后，检查突破日（触发日）量比 = 触发日成交量 ÷ 触发日前 20 日均量
+    #   （口径对齐 DN 相对量比：启动K均量/前面调整段日均量，DN 用前 20 日均量；不含触发日）
+    #   > dn_confirm 才计入交易；量能不达标 → 视为未触发（不进场，不参与统计）。
+    #   背景：prebreak 5条件评级不含 DN（动能）——突破发生在评级后，无法提前评动能；
+    #   老板质疑"力度小的突破（无量/磨上去）假突破概率高"→ 回测验证（dn_confirm_compare.py），
+    #   有效则建议接入扫描/挂单指引（阈值取哪个），无效报告原因。
+    #   对照组 = 0.0（纯价格触发，现状行为）。
+    dn_confirm: float = 0.0
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -140,6 +149,9 @@ class BacktestParams:
             raise ValueError(f"--min-amount 必须 > 0（万元），收到: {self.min_amount!r}")
         if not isinstance(self.vol_window, int) or self.vol_window < 1:
             raise ValueError(f"--vol-window 必须是 ≥1 的整数，收到: {self.vol_window!r}")
+        # 突破日量能确认（2026-08-06 实验参数）：0.0=关；>0 为量比阈值（触发日/前20日均量）
+        if not isinstance(self.dn_confirm, (int, float)) or self.dn_confirm < 0:
+            raise ValueError(f"--dn-confirm 必须 ≥ 0（0=关），收到: {self.dn_confirm!r}")
         # C4 情绪闸门参数校验（2026-08-05 第3波）
         if not (0 < self.sent_threshold <= 100):
             raise ValueError(f"--sent-threshold 必须是 (0,100] 的占比百分比，收到: {self.sent_threshold!r}")

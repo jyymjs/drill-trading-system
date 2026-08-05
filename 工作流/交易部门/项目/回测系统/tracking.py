@@ -48,6 +48,8 @@ class Outcome:
     exit_date: pd.Timestamp | None
     stopped: bool                 # 是否止损出场（False=hold 到期收盘）
     r: float                      # 倍数R
+    vol_ratio: float | None = None  # 突破日量比（prebreak 触发日成交量÷前20日均量，2026-08-06
+    #   量能确认实验：对照组也记录，供"被剔除集表现"分析；normal=None；未触发=None）
 
     def participate(self) -> bool:
         """是否参与统计（normal 全参与；prebreak 仅触发者参与）"""
@@ -111,7 +113,8 @@ def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float
 
 
 def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True,
-                 cost_multiplier: float = 1.0, moving_stop: bool = False) -> Outcome:
+                 cost_multiplier: float = 1.0, moving_stop: bool = False,
+                 dn_confirm: float = 0.0) -> Outcome:
     """跟踪一笔信号在 hold 个交易日内的出场
 
     Args:
@@ -123,9 +126,13 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         moving_stop: C5 移动止损开关（2026-08-05 老板拍板）：
             持仓中每确认"新结构低点"（买入后新高之后的回调低点）→ 止损上移到 低点×0.99；
             日线收盘判定（信号日视角）。默认关 = 现有「止损+hold到期收盘」行为。
+        dn_confirm: 突破日量能确认阈值（2026-08-06 实验参数，默认 0.0=关）：
+            prebreak 触发后检查突破日量比 = 触发日成交量 ÷ 触发日前 20 日均量
+            （口径对齐 DN 相对量比：启动K均量/调整段前 20 日均量）；
+            > dn_confirm 才计入交易，量能不达标 → 视为未触发（不进场，不参与统计）。
 
     Returns:
-        Outcome（预突破未触发时 triggered=False，不参与统计）
+        Outcome（预突破未触发时 triggered=False，不参与统计；prebreak 触发者附 vol_ratio）
     """
     t = _find_signal_index(df, signal.date)
     n = len(df)
@@ -135,7 +142,8 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
 
     if signal.mode == "normal":
         return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop)
-    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop)
+    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop,
+                           dn_confirm)
 
 
 # ── C5 移动止损（2026-08-05 老板拍板 · 方案 C5 · 先回测后上线）──
@@ -212,8 +220,13 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
 
 def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
                     enable_cost: bool = True, cost_multiplier: float = 1.0,
-                    moving_stop: bool = False) -> Outcome:
-    """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后跟踪出场（C5 移动止损可选）"""
+                    moving_stop: bool = False, dn_confirm: float = 0.0) -> Outcome:
+    """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后跟踪出场（C5 移动止损可选）
+
+    dn_confirm > 0 时：突破日量能确认（2026-08-06 实验）——触发后检查突破日量比
+    （触发日成交量 ÷ 触发日前 20 日均量，口径对齐 DN 相对量比 ref.tail(20).mean()），
+    量比 ≤ 阈值 → 视为未触发（不进场，不参与统计）；对照组（0.0）仅记录 vol_ratio 供分析。
+    """
     trigger = signal.trigger
     risk = signal.risk
     high = df["最高"].values
@@ -230,6 +243,14 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
     if trig_idx is None:
         return Outcome(hold, False, 0.0, 0.0, None, False, 0.0)   # 未触发：不参与统计
 
+    # 1.5) 突破日量比（触发日成交量 ÷ 触发日前 20 日均量；前 20 根不足/均量为 0 → 量比 0 不达标）
+    vol = df["成交量"].values
+    ref_mean = float(vol[max(0, trig_idx - 20):trig_idx].mean()) if trig_idx > 0 else 0.0
+    vol_ratio = round(float(vol[trig_idx]) / ref_mean, 4) if ref_mean > 0 else 0.0
+    if dn_confirm > 0 and vol_ratio <= dn_confirm:
+        # 突破日量能不达标（力度小/无量磨上去）→ 不进场，视为未触发（vol_ratio 保留供分析）
+        return Outcome(hold, False, 0.0, 0.0, None, False, 0.0, vol_ratio)
+
     entry = trigger
     # 2) 触发后跟踪出场（触发日次日 ~ hold 末；移动止损同 normal 口径）
     exit_price, exit_date, stopped = _track_window(
@@ -238,4 +259,5 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / risk if risk > 0 else 0.0
-    return Outcome(hold, True, round(float(entry), 4), round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))
+    return Outcome(hold, True, round(float(entry), 4), round(float(exit_price), 4),
+                   exit_date, stopped, round(float(r), 4), vol_ratio)
