@@ -14,11 +14,11 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 from tqdm import tqdm
-
 from 分析决策.市场环境.prbook_gate import (  # C1 财报日避让（2026-08-05 老板拍板）
     prbook_verdict,
     prbook_warn,
 )
+
 from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
 from 回测系统.adapters.data_provider import CacheDataProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel

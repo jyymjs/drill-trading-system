@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(_HERE)))  # 交易部根
 import pandas as pd
 
 from 回测系统.adapters.data_provider import CacheDataProvider
-from 回测系统.tracking import Signal, TrackedRecord, track_signal
+from 回测系统.tracking import Signal, track_signal
 
 # CSV 简写列 → 六条件全名（与 report.py SCORE_SHORT 反向）
 SCORE_SHORT = {"PT平台测试": "PT", "TY统一区间": "TY", "DN动能": "DN",
@@ -170,8 +170,8 @@ def render_markdown(result: dict, holds: list[int], src: str, codes_n: int) -> s
         f"- 信号数：{result['n_signals']} 笔　股票数：{codes_n} 只　观察窗：{'/'.join(str(h) for h in holds)}d",
         f"- 同源自检：关版重算与基线 CSV 一致 **{ss['ok']}/{ss['checked']}**"
         f"（{'通过' if ss['ok'] == ss['checked'] else '⚠ 有差异，见附录'}）",
-        f"- 移动止损口径：持仓中每确认新结构低点（买入后新高后的回调低点，日线收盘判定）"
-        f"→ 止损上移 低点×0.99（须高于当前止损 且 高于进场价——六层第3层正向硬规则）",
+        "- 移动止损口径：持仓中每确认新结构低点（买入后新高后的回调低点，日线收盘判定）"
+        "→ 止损上移 低点×0.99（须高于当前止损 且 高于进场价——六层第3层正向硬规则）",
         "- 出处：知识库《价格行为学入门·04 突破单和移动止损篇》（线索c 2026-07-24）核心方法 + 《出场体系·六层出场》第3层",
         "",
         "> 判定口径：胜=R>0；prebreak 仅触发者参与；盈亏比=总盈利R/|总亏损R|；"

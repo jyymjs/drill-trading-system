@@ -1,24 +1,36 @@
 """技术指标计算单元测试"""
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
-import sys
-import os
 
 # 确保能导入项目模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from 分析决策.分析.indicators import (
-    ma, ema, macd, rsi, kdj, boll,
-    volume_ratio, ma_cross, macd_cross,
-    atr, rolling_volatility,
-    body_to_range_series, body_to_range_ratio,
-    consecutive_count, profile_compactness,
-    platform_test_count, retracement_detect,
-    channel_detect, overshoot_detect,
-    support_resistance_levels, all_indicators,
+    all_indicators,
+    atr,
+    body_to_range_ratio,
+    body_to_range_series,
+    boll,
+    channel_detect,
+    consecutive_count,
+    ema,
+    kdj,
+    ma,
+    ma_cross,
+    macd,
+    overshoot_detect,
+    platform_test_count,
+    profile_compactness,
+    retracement_detect,
+    rolling_volatility,
+    rsi,
+    support_resistance_levels,
+    volume_ratio,
 )
-
 
 # ============================================================
 # 辅助：生成测试用的 K 线数据

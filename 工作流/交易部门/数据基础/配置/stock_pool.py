@@ -1,5 +1,6 @@
 """股票/ETF 池管理"""
 from itertools import islice
+
 from 数据基础.数据.fetcher import get_stock_list
 
 

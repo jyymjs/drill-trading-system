@@ -10,7 +10,11 @@ vision_describe.py — 我的"眼睛"：调用智谱视觉模型描述图片（�
 配置: scripts/config.local.json（{"zhipu_api_key": "...", "zhipu_model": "glm-4.6v-flash"}）
       或环境变量 ZHIPU_API_KEY
 """
-import sys, os, json, base64
+import base64
+import json
+import os
+import sys
+
 from openai import OpenAI
 
 CFG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.local.json")

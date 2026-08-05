@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Start batch processing - no API key in command line args"""
-import subprocess, sys, os
+import os
+import subprocess
+import sys
 
 env = os.environ.copy()
 env["ZHIPU_API_KEY"] = "f6de857c9a5f45acafd3be75cdbb7e62.IQQmrpKGiX65q70J"

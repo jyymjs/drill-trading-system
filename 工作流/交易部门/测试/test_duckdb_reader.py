@@ -165,9 +165,8 @@ def test_provider_duckdb_first(db):
 
 def test_provider_falls_back_to_csv(db, tmp_path, monkeypatch):
     """duckdb 缺股 → 回退 deprecated CSV 层"""
-    from 回测系统.adapters.data_provider import CacheDataProvider
-
     import 数据基础.数据.cache as cache_mod
+    from 回测系统.adapters.data_provider import CacheDataProvider
 
     monkeypatch.setattr(cache_mod, "DATA_DIR", tmp_path)   # CSV 目录指向临时
     csv_df = pd.DataFrame({

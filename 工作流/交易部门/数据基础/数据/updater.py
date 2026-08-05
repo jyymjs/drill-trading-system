@@ -7,14 +7,18 @@
   - 全量更新: 逐只 pytdx + ThreadPoolExecutor 并行
 """
 import os
-import time
-from datetime import datetime, timedelta
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable
-import pandas as pd
+from datetime import datetime
 
-from 数据基础.数据.fetcher import get_daily_kline, _fetch_by_pytdx, _fetch_by_baostock, _fetch_by_akshare
-from 数据基础.数据.cache import cache_path, read_cache, write_cache
+import pandas as pd
+from 数据基础.数据.cache import cache_path, write_cache
+from 数据基础.数据.fetcher import (
+    _fetch_by_akshare,
+    _fetch_by_baostock,
+    _fetch_by_pytdx,
+    get_daily_kline,
+)
 from 数据基础.配置.settings import KLINE_YEARS
 
 MODE_SKIP = "skip"
@@ -261,7 +265,7 @@ def get_cache_stats() -> dict:
         dated_files = []
         # 从前、中、后各取一些文件，读取最后一行
         n = len(files)
-        check_indices = list(range(0, min(50, n))) + \
+        check_indices = list(range(min(50, n))) + \
                         list(range(n // 2, min(n // 2 + 30, n))) + \
                         list(range(max(0, n - 50), n))
         for idx in set(check_indices):

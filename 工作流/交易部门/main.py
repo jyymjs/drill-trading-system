@@ -6,19 +6,19 @@
     python main.py kline <代码>     查看单只股票K线
     python main.py scan [--strategy <策略名>]  全市场扫描
 """
-import sys
 import argparse
-from datetime import datetime
-from pathlib import Path
 
 # 确保项目根目录在路径中
 import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from 数据基础.配置.settings import OUTPUT_DIR, KLINE_YEARS
-from 数据基础.配置.stock_pool import get_all_stocks
+from 分析决策.分析.reporter import plot_kline, print_results, save_results
 from 分析决策.分析.scanner import scan
-from 分析决策.分析.reporter import print_results, save_results, plot_kline
+from 数据基础.配置.stock_pool import get_all_stocks
 from 策略.核心策略.base import BaseStrategy
 
 
@@ -80,7 +80,7 @@ def cmd_scan(args):
     strategy = _load_strategy(args.strategy)
     if strategy is None:
         print(f"❌ 未找到策略: '{args.strategy}'")
-        print(f"可用策略: demo_strategy, zuanqian_strategy (钻潜标准模式, 钻潜VCP模式)")
+        print("可用策略: demo_strategy, zuanqian_strategy (钻潜标准模式, 钻潜VCP模式)")
         sys.exit(1)
 
     print(f"\n[SCAN] 全市场扫描 | 策略: {strategy.name}")
@@ -118,8 +118,8 @@ def cmd_scan(args):
 
 def cmd_diagnose(args):
     """单只股票诊断：逐步检测策略条件"""
-    from 数据基础.数据.fetcher import get_daily_kline
     from 分析决策.分析.indicators import all_indicators
+    from 数据基础.数据.fetcher import get_daily_kline
 
     strategy = _load_strategy(args.strategy)
     if strategy is None:
@@ -162,7 +162,7 @@ def cmd_diagnose(args):
 
     # 额外信息
     latest = df.iloc[-1]
-    print(f"【附加信息】")
+    print("【附加信息】")
     print(f"  MA20: {latest.get('MA20', 'N/A'):.2f}" if "MA20" in df.columns else "")
     print(f"  量比: {latest.get('VOL_RATIO', 'N/A'):.2f}" if "VOL_RATIO" in df.columns else "")
     if "RSI" in df.columns:
@@ -181,11 +181,10 @@ def cmd_diagnose(args):
 
 def cmd_track(args):
     """交易记录管理"""
-    from 分析决策.跟踪.trade_journal import get_all_trades, trade_stats, format_stats
-    from 分析决策.跟踪.equity_curve import plot_equity_curve
-    from 分析决策.跟踪.monte_carlo import simulate, plot_simulation
-
     import numpy as np
+    from 分析决策.跟踪.equity_curve import plot_equity_curve
+    from 分析决策.跟踪.monte_carlo import plot_simulation, simulate
+    from 分析决策.跟踪.trade_journal import format_stats, get_all_trades, trade_stats
 
     if args.action == "list":
         trades = get_all_trades()
@@ -204,6 +203,7 @@ def cmd_track(args):
         print("\n=== 录入交易记录 ===\n")
         import uuid
         from datetime import datetime
+
         from 分析决策.风控.position import TradeRecord
 
         trade_id = str(uuid.uuid4())[:8]
@@ -263,16 +263,20 @@ def cmd_track(args):
         if path:
             trades = get_all_trades()
             stats = trade_stats(trades)
-            print(f"\n=== 资金曲线 ===\n")
+            print("\n=== 资金曲线 ===\n")
             print(f"  图片已保存: {path}")
             print(f"\n{format_stats(stats)}")
         else:
             print("\n暂无交易记录")
 
     elif args.action == "monte-carlo":
+        from 分析决策.跟踪.monte_carlo import (
+            load_backtest_r_series,
+            load_backtest_years,
+            render_terminal_report,
+            simulate,
+        )
         from 分析决策.跟踪.trade_journal import get_all_trades
-        from 分析决策.跟踪.monte_carlo import (simulate, render_terminal_report,
-                                            load_backtest_r_series, load_backtest_years)
 
         if args.source == "backtest":
             trades = load_backtest_r_series(args.signals, mode=args.mode, hold=args.hold,
@@ -317,7 +321,7 @@ def cmd_track(args):
 
     elif args.action in ("sim-open", "sim-check", "sim-stats"):
         # R-009 模块3：模拟交易流水线（模拟/小仓验证阶段）
-        from 分析决策.跟踪.sim_trading import sim_open, sim_check, sim_stats
+        from 分析决策.跟踪.sim_trading import sim_check, sim_open, sim_stats
         if args.action == "sim-open":
             if not args.code or args.price <= 0 or args.stop <= 0:
                 print("用法: track sim-open --code 600777 --price 8.5 --stop 8.0 [--grade B] [--name xxx]")
@@ -332,15 +336,15 @@ def cmd_track(args):
 
 def cmd_capital(args):
     """资金管理"""
-    from 分析决策.风控.capital import get_capital, set_capital, max_risk_per_trade
+    from 分析决策.风控.capital import get_capital, max_risk_per_trade, set_capital
     if args.action == "show":
         cap = get_capital()
         risk = max_risk_per_trade()
-        print(f"\n=== 资金状况 ===\n")
+        print("\n=== 资金状况 ===\n")
         print(f"  总资金: ¥{cap:.0f}")
-        print(f"  单笔风险比例: 1.5%")
+        print("  单笔风险比例: 1.5%")
         print(f"  单笔最大风险: ¥{risk:.0f}")
-        print(f"  建议修改: python main.py capital set <金额>")
+        print("  建议修改: python main.py capital set <金额>")
     elif args.action == "set" and args.amount:
         set_capital(args.amount)
         risk = max_risk_per_trade()

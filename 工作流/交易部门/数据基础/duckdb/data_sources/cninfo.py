@@ -20,7 +20,6 @@ import time
 from datetime import datetime
 
 import requests
-
 from 数据基础.duckdb.data_sources.config import (
     CNINFO_ANN_PAGE,
     CNINFO_ANN_URL,

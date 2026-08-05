@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 周会视频专用 — 替换提示词后复用标准引擎
 
@@ -8,8 +7,8 @@
   python extract_knowledge_weekly.py --video 视频.mp4 --zhipu-api-key xxx --frame-interval 15
 """
 
-import sys
 import os
+import sys
 
 # ── 替换提示词（在导入引擎前完成） ──
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

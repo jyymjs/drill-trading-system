@@ -8,11 +8,13 @@
   3. 模拟每条序列的资金曲线
   4. 输出置信区间（95%），评估长期稳定性
 """
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 
 # 中文字体（Windows 微软雅黑；缺失时退回默认，仅图表显示问题不影响功能）
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
@@ -112,8 +114,7 @@ def simulate(trades: list[dict] = None, n_simulations: int = 10000,
         cur = 0
         for is_neg in row:
             cur = cur + 1 if is_neg else 0
-            if cur > max_streak:
-                max_streak = cur
+            max_streak = max(max_streak, cur)
         streaks[i] = max_streak
 
     return {

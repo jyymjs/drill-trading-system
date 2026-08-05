@@ -38,9 +38,9 @@ for p in (_HERE.parent, _ROOT):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from 回测系统.engine import BacktestEngine                       # noqa: E402
-from 回测系统.params import BacktestParams                        # noqa: E402
-from 回测系统.tracking import TrackedRecord                       # noqa: E402
+from 回测系统.engine import BacktestEngine
+from 回测系统.params import BacktestParams
+from 回测系统.tracking import TrackedRecord
 
 # 默认参数（2026-08-05 定案口径）
 DEFAULT_SAMPLE = 400
@@ -231,7 +231,7 @@ def render_report(results: dict, day_exp: dict, args) -> str:
     lines = [
         "# B1 环境闸门 + C3 量能过滤 · 回测对照报告",
         "",
-        f"> 日期：2026-08-05 · 出处：《量化体系优化方案》B1/C3/C4（建议值+回测验证，不拍脑袋）",
+        "> 日期：2026-08-05 · 出处：《量化体系优化方案》B1/C3/C4（建议值+回测验证，不拍脑袋）",
         f"> 样本：{args.smoke or args.sample} 只（seed={args.seed}）｜区间 {args.start}~{args.end}｜"
         f"mode=normal｜评级=S（C1 只做 S）｜hold 主口径 {hold}d",
         "",
@@ -293,7 +293,7 @@ def render_report(results: dict, day_exp: dict, args) -> str:
     # 环境闸门专杀日明细：00 组信号日中"上证当日跌破阈值"的信号（11 全开下必然被否决）
     lines += ["## 五、环境闸门专杀日明细（00 基线信号中上证当日跌超阈值的信号）", "",
               "| 日期 | 上证当日涨跌% | 00基线信号数 |", "|------|------------:|----------:|"]
-    from 分析决策.市场环境.index_data import load_index_daily  # noqa: E402
+    from 分析决策.市场环境.index_data import load_index_daily
     idx = load_index_daily("上证指数")
     recs00 = results["00基线"]["records"]
     day_counts: dict[str, int] = {}

@@ -46,9 +46,9 @@ for p in (_HERE.parent, _ROOT):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from 回测系统.engine import BacktestEngine                       # noqa: E402
-from 回测系统.params import BacktestParams                        # noqa: E402
-from 回测系统.tracking import TrackedRecord                       # noqa: E402
+from 回测系统.engine import BacktestEngine
+from 回测系统.params import BacktestParams
+from 回测系统.tracking import TrackedRecord
 
 # 默认参数（2026-08-05 定案口径）
 DEFAULT_SAMPLE = 400
@@ -110,7 +110,7 @@ def pytdx_down_pct(date_str: str) -> dict:
 
     与 duckdb 口径交叉验证（2026-05-29：71.6% vs 71.4%，一致）。
     """
-    from 分析决策.市场环境.index_data import load_market_breadth  # noqa: E402
+    from 分析决策.市场环境.index_data import load_market_breadth
     df = load_market_breadth()
     hit = df[df["日期"] == pd.Timestamp(date_str)]
     if hit.empty:
@@ -323,7 +323,7 @@ def render_report(results: dict, day_exp: dict, day_meta: dict, args) -> str:
     # 情绪闸门专杀日明细：00 组信号日中"下跌占比超阈值"的信号（11 全开下必然被情绪否决）
     lines += ["## 五、情绪闸门专杀日明细（00 基线信号中全市场下跌占比超阈值的信号）", "",
               "| 日期 | 下跌占比% | 00基线信号数 |", "|------|---------:|----------:|"]
-    from 分析决策.市场环境.index_data import load_market_breadth  # noqa: E402
+    from 分析决策.市场环境.index_data import load_market_breadth
     breadth = load_market_breadth()
     recs00 = results["00基线"]["records"]
     day_counts: dict[str, int] = {}

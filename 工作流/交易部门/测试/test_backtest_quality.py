@@ -11,8 +11,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # �
 
 from 回测系统.engine import BacktestEngine
 from 回测系统.params import BacktestParams
-from 回测系统.quality import (annualized_r, check_cost_stress, check_half_consistency,
-                              participating_r, span_days)
+from 回测系统.quality import (
+    annualized_r,
+    check_cost_stress,
+    check_half_consistency,
+    participating_r,
+    span_days,
+)
 from 回测系统.report import write_report
 from 回测系统.tracking import Outcome, Signal, TrackedRecord, _trade_cost
 

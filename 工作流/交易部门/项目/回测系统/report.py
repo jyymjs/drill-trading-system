@@ -104,7 +104,7 @@ def _mode_section(records: list[TrackedRecord], buckets: dict[str, StatBlock],
         "",
         f"- 信号数：**{n_signals}** 笔（×{len(holds)} 个观察窗 = 统计组合 {m['n_signals']} 笔）",
         f"- 触发率（prebreak）：**{_fmt_rate(m['trigger_rate'])}**（{m['n_triggered']}/{m['n_signals']}）"
-        if mode == "prebreak" else f"- 进场：信号日 T 收盘价成交，全部参与统计",
+        if mode == "prebreak" else "- 进场：信号日 T 收盘价成交，全部参与统计",
         f"- 参与统计：{m['n_participate']} 笔",
         f"- 胜率（R>0）：**{_fmt_rate(m['win_rate'])}**（{m['n_win']}/{m['n_participate']}）",
         f"- 平均R：**{m['avg_r']:.4f}**　累计R：{m['total_r']:.4f}",

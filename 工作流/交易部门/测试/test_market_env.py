@@ -20,14 +20,21 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))
 
-from 分析决策.市场环境.gate import (  # noqa: E402
-    MarketGateConfig, gate_verdict, volume_verdict, exec_verdict,
-    index_pct_on, breadth_ratio_on, sentiment_verdict,
+from 分析决策.市场环境.gate import (
+    MarketGateConfig,
+    breadth_ratio_on,
+    exec_verdict,
+    gate_verdict,
+    index_pct_on,
+    sentiment_verdict,
+    volume_verdict,
 )
-from 分析决策.市场环境.index_data import (  # noqa: E402
-    load_index_daily, load_market_breadth, _bars_to_cn, _cache_path,
+from 分析决策.市场环境.index_data import (
+    _bars_to_cn,
+    _cache_path,
+    load_index_daily,
+    load_market_breadth,
 )
-
 
 # ── 测试数据工厂 ──
 

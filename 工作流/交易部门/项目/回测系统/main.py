@@ -102,8 +102,12 @@ def cmd_run(args) -> int:
 
     # 蒙特卡洛版式报告（自动生成，复用 分析决策/跟踪/monte_carlo 渲染器）
     try:
-        from 分析决策.跟踪.monte_carlo import (load_backtest_r_series, simulate,
-                                            render_terminal_report, load_backtest_years)
+        from 分析决策.跟踪.monte_carlo import (
+            load_backtest_r_series,
+            load_backtest_years,
+            render_terminal_report,
+            simulate,
+        )
         mc_years = load_backtest_years(str(signals_path))
         mc_trades = load_backtest_r_series(str(signals_path), mode="prebreak",
                                            hold="20d", sample_n=500)

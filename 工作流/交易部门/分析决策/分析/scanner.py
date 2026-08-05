@@ -1,18 +1,20 @@
 """扫描器 - 对股票池执行策略筛选"""
 import time
-from typing import Callable
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import pandas as pd
-from tqdm import tqdm
 
-from 数据基础.配置.settings import (
-    KLINE_YEARS, SCAN_MAX_WORKERS, SCAN_PROGRESS, SCAN_RETRY
-)
-from 数据基础.配置.stock_pool import get_all_stocks, get_etf_list, get_stock_names
-from 数据基础.数据.fetcher import get_daily_kline
+from tqdm import tqdm
 from 分析决策.分析.indicators import all_indicators
-from 策略.核心策略.base import BaseStrategy
 from 工具链.工具.logger import logger
+from 数据基础.数据.fetcher import get_daily_kline
+from 数据基础.配置.settings import (
+    KLINE_YEARS,
+    SCAN_MAX_WORKERS,
+    SCAN_PROGRESS,
+    SCAN_RETRY,
+)
+from 数据基础.配置.stock_pool import get_all_stocks, get_etf_list
+from 策略.核心策略.base import BaseStrategy
 
 
 def scan_single_stock(

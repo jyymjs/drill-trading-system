@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from 数据基础.duckdb.data_sources import cninfo as CI
 from 数据基础.duckdb.data_sources import cls as CLS
+from 数据基础.duckdb.data_sources import cninfo as CI
 from 数据基础.duckdb.data_sources import store as DS
 
 # 巨潮公告接口样例响应（2026-08-05 实测字段结构）

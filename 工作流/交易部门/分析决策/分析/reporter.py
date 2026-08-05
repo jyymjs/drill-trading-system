@@ -1,12 +1,12 @@
 """结果报告生成"""
 import os
 from datetime import datetime
+
 import pandas as pd
 from prettytable import PrettyTable
-
-from 数据基础.配置.settings import OUTPUT_DIR
+from 分析决策.风控.capital import calc_lots
 from 数据基础.数据.fetcher import get_daily_kline
-from 分析决策.风控.capital import max_risk_per_trade, calc_lots
+from 数据基础.配置.settings import OUTPUT_DIR
 
 try:
     import mplfinance as mpf
@@ -84,7 +84,7 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
     print(f"\n=== 预突破候选 ({len(results)} 只) ===\n")
     from 分析决策.风控.capital import max_risk_per_trade as _mr
     print(f"       条件单参数: 风险=¥{_mr():.0f} | 触发=TY上沿 | 止损=TY下沿")
-    print(f"       晚间挂单 → 次日盘中自动触发 → 同步挂止损单\n")
+    print("       晚间挂单 → 次日盘中自动触发 → 同步挂止损单\n")
     print(table)
 
 

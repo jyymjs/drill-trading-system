@@ -8,10 +8,8 @@
 注意：需要 pip install alphalens-reloaded（可选，安装失败不影响其他模块）
 """
 
-import numpy as np
+
 import pandas as pd
-from pathlib import Path
-from typing import List
 
 HAS_ALPHALENS = False
 try:
@@ -22,10 +20,10 @@ except ImportError:
 
 
 def evaluate_factor(
-    codes: List[str],
+    codes: list[str],
     factor_name: str,
     factor_fn,
-    periods: List[int] = [1, 5, 10, 20],
+    periods: list[int] = [1, 5, 10, 20],
 ) -> dict | None:
     """对因子进行 IC 分析 + 分层回测
 
@@ -79,7 +77,7 @@ def evaluate_factor(
 
         print(f"\n=== {factor_name} 因子评估 ===\n")
         print(f"有效样本: {len(factor_values)} 只")
-        print(f"\nIC 均值:")
+        print("\nIC 均值:")
         for p in periods:
             col = f"{p}D"
             if col in mean_ic.index:
@@ -101,8 +99,8 @@ def quick_factor_check(code: str, factor_col: str = "VOL_RATIO") -> dict:
 
     检查该因子在最近的表现是否异常。
     """
-    from 数据基础.数据.fetcher import get_daily_kline
     from 分析决策.分析.indicators import all_indicators
+    from 数据基础.数据.fetcher import get_daily_kline
 
     df = get_daily_kline(code, use_cache=True)
     if df.empty:

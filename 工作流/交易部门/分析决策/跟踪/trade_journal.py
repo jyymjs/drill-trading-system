@@ -1,9 +1,7 @@
 """交易记录系统 — 记录每笔真实交易，计算统计指标"""
 import csv
 import os
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from 分析决策.风控.position import TradeRecord
 
@@ -53,7 +51,7 @@ def get_all_trades() -> list[dict]:
     return trades
 
 
-def trade_stats(trades: Optional[list[dict]] = None) -> dict:
+def trade_stats(trades: list[dict] | None = None) -> dict:
     """计算交易统计数据"""
     if trades is None:
         trades = get_all_trades()

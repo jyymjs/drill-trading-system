@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 extract_knowledge.py — 将交易教学视频（MP4）转化为结构化的 Markdown 知识文档
 
@@ -26,13 +25,11 @@ import re
 import subprocess
 import sys
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from datetime import timedelta
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # ============================================================
 # 第三方库 — 延迟导入（在对应函数中 import）
@@ -84,7 +81,7 @@ class Config:
     gemini_model: str = "gemini-2.0-flash-exp"
 
     @classmethod
-    def from_env_and_args(cls, args: Optional[argparse.Namespace] = None) -> "Config":
+    def from_env_and_args(cls, args: argparse.Namespace | None = None) -> Config:
         """从环境变量 .env 和 CLI 参数合并构建配置，CLI 参数优先。"""
         # 尝试加载 .env
         self = cls()
@@ -203,7 +200,7 @@ class CheckpointManager:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 log.warning("检查点文件损坏，重新开始: %s", self.path)
         return {
             "video_path": "",
@@ -229,7 +226,7 @@ class CheckpointManager:
                 json.dump(self.data, f, ensure_ascii=False, indent=2, default=str)
             # Windows 上 replace 是原子的（目标存在时覆盖）
             os.replace(tmp, self.path)
-        except IOError as e:
+        except OSError as e:
             log.warning("检查点保存失败: %s", e)
 
     def sync_video_info(self, video_path: str) -> bool:
@@ -261,7 +258,7 @@ class CheckpointManager:
         self.data["audio_extracted"] = True
         self.save()
 
-    def mark_frames_extracted(self, frame_list: List[str]) -> None:
+    def mark_frames_extracted(self, frame_list: list[str]) -> None:
         self.data["frames_extracted"] = True
         self.data["frame_list"] = frame_list
         # 为新帧初始化结果条目
@@ -276,13 +273,13 @@ class CheckpointManager:
                 }
         self.save()
 
-    def mark_transcription_done(self, result: List[dict]) -> None:
+    def mark_transcription_done(self, result: list[dict]) -> None:
         self.data["transcription_done"] = True
         self.data["transcription_result"] = result
         self.save()
 
-    def mark_frame_analyzed(self, filename: str, result: Optional[str],
-                            error: Optional[str], timestamp: float) -> None:
+    def mark_frame_analyzed(self, filename: str, result: str | None,
+                            error: str | None, timestamp: float) -> None:
         if filename not in self.data["frame_results"]:
             self.data["frame_results"][filename] = {}
         self.data["frame_results"][filename] = {
@@ -307,7 +304,7 @@ class CheckpointManager:
         self.data["output_path"] = output_path
         self.save()
 
-    def get_pending_frames(self) -> List[str]:
+    def get_pending_frames(self) -> list[str]:
         """返回尚未分析或分析失败的帧。"""
         pending = []
         for f in self.data["frame_list"]:
@@ -452,7 +449,7 @@ class VideoProcessor:
         ]
         self._run_ffmpeg(cmd, desc="音频提取")
 
-    def _split_audio_segments(self, total_duration: float) -> List[str]:
+    def _split_audio_segments(self, total_duration: float) -> list[str]:
         """将长视频切分为多段音频。"""
         segment_sec = self.config.max_segment_minutes * 60
         segments = []
@@ -480,7 +477,7 @@ class VideoProcessor:
             idx += 1
         return segments
 
-    def _merge_audio_segments(self, segments: List[str], output: str) -> None:
+    def _merge_audio_segments(self, segments: list[str], output: str) -> None:
         """合并多段音频。"""
         if not segments:
             raise RuntimeError("没有可合并的音频分段")
@@ -503,7 +500,7 @@ class VideoProcessor:
         ]
         self._run_ffmpeg(cmd, desc="音频分段合并")
 
-    def extract_frames(self, frame_interval: float = 5.0) -> List[str]:
+    def extract_frames(self, frame_interval: float = 5.0) -> list[str]:
         """
         每隔 frame_interval 秒提取一帧 PNG。
         返回帧文件路径列表（按时间排序）。
@@ -613,7 +610,7 @@ class VideoProcessor:
         log.info("帧去重: 移除 %d 张, 保留 %d 张", removed, len(kept))
         return removed
 
-    def _run_ffmpeg(self, cmd: List[str], desc: str = "") -> None:
+    def _run_ffmpeg(self, cmd: list[str], desc: str = "") -> None:
         """执行 ffmpeg 命令并记录日志。"""
         log.info("ffmpeg %s: %s", desc, " ".join(cmd[:6]) + "...")
         try:
@@ -652,10 +649,10 @@ class Transcriber:
 
     def __init__(self, config: Config):
         self.config = config
-        self.engine: Optional[str] = None  # "sensevoice" or "whisper"
+        self.engine: str | None = None  # "sensevoice" or "whisper"
         self.model = None
 
-    def transcribe(self, audio_path: str) -> List[Dict[str, Any]]:
+    def transcribe(self, audio_path: str) -> list[dict[str, Any]]:
         """转录音频，返回 [{timestamp, text}, ...] 格式。"""
         if not os.path.isfile(audio_path):
             raise FileNotFoundError(f"音频文件不存在: {audio_path}")
@@ -698,7 +695,7 @@ class Transcriber:
             pass
         raise RuntimeError(f"无法获取音频时长: {audio_path}")
 
-    def _transcribe_sensevoice(self, audio_path: str) -> List[Dict[str, Any]]:
+    def _transcribe_sensevoice(self, audio_path: str) -> list[dict[str, Any]]:
         """使用 SenseVoice 转录。"""
         try:
             from funasr import AutoModel
@@ -770,7 +767,7 @@ class Transcriber:
         log.info("SenseVoice 转录完成: %d 条", len(all_segments))
         return all_segments
 
-    def _transcribe_whisper(self, audio_path: str) -> List[Dict[str, Any]]:
+    def _transcribe_whisper(self, audio_path: str) -> list[dict[str, Any]]:
         """使用 openai-whisper 转录（备用）。"""
         try:
             import whisper
@@ -853,12 +850,12 @@ class FrameAnalyzer:
 
     def __init__(self, config: Config):
         self.config = config
-        self.engine: Optional[str] = None
+        self.engine: str | None = None
         self._zhipu_client = None
         self._gemini_client = None
 
-    def analyze_batch(self, frames: List[Tuple[str, str]],
-                      checkpoint: CheckpointManager) -> List[Tuple[str, str, Optional[str]]]:
+    def analyze_batch(self, frames: list[tuple[str, str]],
+                      checkpoint: CheckpointManager) -> list[tuple[str, str, str | None]]:
         """
         批量分析帧。
         frames: [(filename, full_path), ...]
@@ -867,7 +864,7 @@ class FrameAnalyzer:
         if not frames:
             return []
 
-        results: List[Tuple[str, str, Optional[str]]] = []
+        results: list[tuple[str, str, str | None]] = []
 
         # 先尝试 GLM-4V
         if self.config.zhipu_api_key:
@@ -910,8 +907,8 @@ class FrameAnalyzer:
             )
         return self._zhipu_client
 
-    def _analyze_with_zhipu(self, frames: List[Tuple[str, str]],
-                             checkpoint: CheckpointManager) -> List[Tuple[str, str, Optional[str]]]:
+    def _analyze_with_zhipu(self, frames: list[tuple[str, str]],
+                             checkpoint: CheckpointManager) -> list[tuple[str, str, str | None]]:
         client = self._get_zhipu_client()
         results = []
 
@@ -992,8 +989,8 @@ class FrameAnalyzer:
             self._gemini_client = genai
         return self._gemini_client
 
-    def _analyze_with_gemini(self, frames: List[Tuple[str, str]],
-                              checkpoint: CheckpointManager) -> List[Tuple[str, str, Optional[str]]]:
+    def _analyze_with_gemini(self, frames: list[tuple[str, str]],
+                              checkpoint: CheckpointManager) -> list[tuple[str, str, str | None]]:
         genai = self._get_gemini_client()
         model = genai.GenerativeModel(self.config.gemini_model)
         results = []
@@ -1071,8 +1068,8 @@ class KnowledgeMerger:
 
     def merge(self,
               video_name: str,
-              transcription: List[Dict[str, Any]],
-              frame_results: Dict[str, dict],
+              transcription: list[dict[str, Any]],
+              frame_results: dict[str, dict],
               frame_interval: float) -> str:
         """
         合并语音 + 画面，生成 Markdown 内容并写出文件。
@@ -1085,10 +1082,10 @@ class KnowledgeMerger:
 
     def _build_sections(
         self,
-        transcription: List[Dict[str, Any]],
-        frame_results: Dict[str, dict],
+        transcription: list[dict[str, Any]],
+        frame_results: dict[str, dict],
         frame_interval: float,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         构建对齐后的知识章节。
         策略：
@@ -1103,7 +1100,7 @@ class KnowledgeMerger:
         sorted_audio = sorted(transcription, key=lambda x: x["timestamp"])
 
         # 将帧结果按时间建立索引
-        frame_by_time: Dict[int, Dict[str, Any]] = {}
+        frame_by_time: dict[int, dict[str, Any]] = {}
         for fname, finfo in frame_results.items():
             try:
                 idx = int(re.search(r"(\d+)", fname).group(1)) - 1
@@ -1163,8 +1160,8 @@ class KnowledgeMerger:
 
         return result
 
-    def _build_from_frames_only(self, frame_results: Dict[str, dict],
-                                 frame_interval: float) -> List[Dict[str, Any]]:
+    def _build_from_frames_only(self, frame_results: dict[str, dict],
+                                 frame_interval: float) -> list[dict[str, Any]]:
         """无语音时，仅用帧分析构建章节。"""
         sections = []
         window_size = 5  # 每 5 帧一组
@@ -1200,7 +1197,7 @@ class KnowledgeMerger:
         return f"{start} ~ {end}"
 
     def _render_markdown(self, video_name: str,
-                          sections: List[Dict[str, Any]]) -> str:
+                          sections: list[dict[str, Any]]) -> str:
         """渲染 Markdown 内容。"""
         lines = [
             f"# 课程知识：{video_name}",
@@ -1265,8 +1262,8 @@ class KnowledgeMerger:
 
         return "\n".join(lines)
 
-    def _extract_knowledge_hints(self, audio_texts: List[str],
-                                  frame_analyses: List[str]) -> List[str]:
+    def _extract_knowledge_hints(self, audio_texts: list[str],
+                                  frame_analyses: list[str]) -> list[str]:
         """从语音和画面中提取可能的知识点提示（简单规则匹配）。"""
         hints = set()
         all_text = " ".join(audio_texts) + " " + " ".join(frame_analyses)
@@ -1307,7 +1304,7 @@ class FailedFrameRetrier:
     """对分析失败的帧进行重试。"""
 
     @staticmethod
-    def collect_failed(checkpoint: CheckpointManager) -> List[Tuple[str, str]]:
+    def collect_failed(checkpoint: CheckpointManager) -> list[tuple[str, str]]:
         """收集失败的帧。"""
         failed = []
         frames_dir = os.path.dirname(checkpoint.path) + "/frames"
@@ -1353,8 +1350,8 @@ class KnowledgeExtractor:
         log.info("=" * 60)
 
         # 音频提取和帧提取可以并行
-        audio_future: Optional[Future] = None
-        frames: List[str] = []
+        audio_future: Future | None = None
+        frames: list[str] = []
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             # 提交音频提取
@@ -1395,7 +1392,7 @@ class KnowledgeExtractor:
         log.info("阶段 2/4：语音转文字")
         log.info("=" * 60)
 
-        transcription: List[Dict[str, Any]] = []
+        transcription: list[dict[str, Any]] = []
         if self.checkpoint.needs_transcription():
             if os.path.isfile(self.config.audio_path):
                 transcription = self.transcriber.transcribe(self.config.audio_path)
@@ -1483,7 +1480,7 @@ class KnowledgeExtractor:
             log.error("音频提取失败: %s", e)
             raise
 
-    def _extract_frames_safe(self) -> List[str]:
+    def _extract_frames_safe(self) -> list[str]:
         """安全的帧提取包装。"""
         try:
             return self.video_processor.extract_frames(self.config.frame_interval)

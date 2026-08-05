@@ -8,9 +8,9 @@
 与 P3 store.py 风格一致：INSERT OR REPLACE 幂等 upsert。
 """
 import pandas as pd
+from 数据基础.duckdb.config import DB_PATH
 
 import duckdb
-from 数据基础.duckdb.config import DB_PATH
 
 ANN_COLS = ["symbol", "date", "title", "ann_type", "url", "adjunct_url",
             "adj_size", "org_id"]

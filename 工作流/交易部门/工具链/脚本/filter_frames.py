@@ -12,8 +12,12 @@ filter_frames.py — 对视频帧进行去重和筛选
   # 只保留最独特的帧（阈值0.95=只移除几乎完全相同的帧）
   python filter_frames.py --dir frames/ --threshold 0.95
 """
-import argparse, os, sys, shutil
+import argparse
+import os
+import shutil
+import sys
 from pathlib import Path
+
 
 def dhash(image, hash_size=8):
     """计算图片的差异哈希 (difference hash)"""
@@ -50,7 +54,7 @@ def main():
         return
 
     # 计算所有帧的哈希
-    import pickle, time
+    import pickle
     cache_file = frames_dir / ".hash_cache"
     if cache_file.exists():
         with open(cache_file, "rb") as f:
@@ -71,7 +75,7 @@ def main():
 
         with open(cache_file, "wb") as f:
             pickle.dump(hashes, f)
-        print(f"哈希计算完成, 已缓存")
+        print("哈希计算完成, 已缓存")
 
     # 按相似度聚类去重
     hash_size = 64  # dhash outputs hash_size*hash_size bits
@@ -98,7 +102,7 @@ def main():
             keep.append(name)
             kept_hashes.append(h)
 
-    print(f"\n结果:")
+    print("\n结果:")
     print(f"  保留: {len(keep)} 帧")
     print(f"  移除: {len(remove)} 帧")
 

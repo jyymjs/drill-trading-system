@@ -1,6 +1,6 @@
 """技术指标计算 - 纯 pandas 实现"""
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def ma(series: pd.Series, n: int) -> pd.Series:
@@ -230,8 +230,7 @@ def profile_compactness(df: pd.DataFrame, window: int = 20) -> float:
     Returns:
         紧凑度评分 0~1
     """
-    if len(df) < window:
-        window = len(df)
+    window = min(window, len(df))
     recent = df.tail(window)
     hl = recent["最高"] - recent["最低"]
     body = (recent["收盘"] - recent["开盘"]).abs()
@@ -974,8 +973,7 @@ def accumulation_zone(df: pd.DataFrame, n_bins: int = 30, top_ratio: float = 0.6
     for j in range(len(ps)):
         while i <= j and cum[j] - (cum[i - 1] if i > 0 else 0.0) >= top_ratio:
             span = ps[j] - ps[i]
-            if span < best_span:
-                best_span = span
+            best_span = min(best_span, span)
             i += 1
     zone_ratio = float(best_span / full) if full > 0 else 1.0
     concentrated = zone_ratio < 0.4

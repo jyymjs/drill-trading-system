@@ -3,7 +3,9 @@
 Run a single video through extract_knowledge.py.
 Usage: python run_video.py <video_path> [temp_suffix]
 """
-import subprocess, sys, os
+import os
+import subprocess
+import sys
 
 video = sys.argv[1]
 suffix = sys.argv[2] if len(sys.argv) > 2 else "0"

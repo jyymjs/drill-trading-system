@@ -7,7 +7,6 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
 VIOLATIONS_FILE = JOURNAL_DIR / "violations.json"

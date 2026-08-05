@@ -12,10 +12,16 @@ duckdb 分支统一前复权口径（因子自算 qfq），为主链路默认数
 技术形态识别（DL/PT/LK/TY）对复权不敏感，但均线/价格阈值可能有轻微偏差。
 """
 from datetime import datetime, timedelta
-import pandas as pd
+
 import numpy as np
-from 数据基础.配置.settings import KLINE_ADJUST, KLINE_CACHE_DAYS, KLINE_YEARS, STOCK_LIST_CACHE_DAYS
+import pandas as pd
 from 数据基础.数据.cache import read_cache, write_cache
+from 数据基础.配置.settings import (
+    KLINE_ADJUST,
+    KLINE_CACHE_DAYS,
+    KLINE_YEARS,
+    STOCK_LIST_CACHE_DAYS,
+)
 
 # ── pytdx ──
 try:
@@ -422,4 +428,3 @@ def get_bulk_day(date: str | None = None, include_etf: bool = True) -> pd.DataFr
 
 def _import_error_hint():
     """baostock bulk API 已废弃，提示用户使用 pytdx"""
-    pass

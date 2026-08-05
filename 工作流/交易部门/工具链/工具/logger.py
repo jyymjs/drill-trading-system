@@ -1,8 +1,9 @@
 """日志配置"""
-import sys
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
-from 数据基础.配置.settings import LOG_LEVEL, LOG_FILE
+
+from 数据基础.配置.settings import LOG_FILE, LOG_LEVEL
 
 
 def setup_logger(name: str = "quant") -> logging.Logger:
