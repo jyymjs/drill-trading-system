@@ -168,14 +168,14 @@ def render_markdown(result: dict, holds: list[int], src: str, codes_n: int) -> s
         "",
         f"- 信号源：`{src}`（基线 moving_stop=关，同一信号集重跑开版）",
         f"- 信号数：{result['n_signals']} 笔　股票数：{codes_n} 只　观察窗：{'/'.join(str(h) for h in holds)}d",
-        f"- 同源自检：关版重算与基线 CSV 一致 **{ss['ok']}/{ss['checked']}**"
-        f"（{'通过' if ss['ok'] == ss['checked'] else '⚠ 有差异，见附录'}）",
-        "- 移动止损口径：持仓中每确认新结构低点（买入后新高后的回调低点，日线收盘判定）"
-        "→ 止损上移 低点×0.99（须高于当前止损 且 高于进场价——六层第3层正向硬规则）",
+        (f"- 同源自检：关版重算与基线 CSV 一致 **{ss['ok']}/{ss['checked']}**"
+        f"（{'通过' if ss['ok'] == ss['checked'] else '⚠ 有差异，见附录'}）"),
+        ("- 移动止损口径：持仓中每确认新结构低点（买入后新高后的回调低点，日线收盘判定）"
+        "→ 止损上移 低点×0.99（须高于当前止损 且 高于进场价——六层第3层正向硬规则）"),
         "- 出处：知识库《价格行为学入门·04 突破单和移动止损篇》（线索c 2026-07-24）核心方法 + 《出场体系·六层出场》第3层",
         "",
-        "> 判定口径：胜=R>0；prebreak 仅触发者参与；盈亏比=总盈利R/|总亏损R|；"
-        "最大回撤=1R等权累计R曲线；止损单占比=以止损价出场比例。",
+        ("> 判定口径：胜=R>0；prebreak 仅触发者参与；盈亏比=总盈利R/|总亏损R|；"
+        "最大回撤=1R等权累计R曲线；止损单占比=以止损价出场比例。"),
         "",
     ]
     for mode in ("normal", "prebreak"):
@@ -196,8 +196,8 @@ def render_markdown(result: dict, holds: list[int], src: str, codes_n: int) -> s
         "",
         f"- 提前请出（开版止损、关版未止损）：**{early_n}** 笔",
         f"- 其中关版本会盈利（误伤）：**{early_win}** 笔（{_fmt(early_win / early_n) if early_n else 0.0}）",
-        f"- 提前请出笔的 R 净变化（开版总R − 关版总R）：**{early_r_delta:+.4f}**"
-        f"（{'负 = 提前请出净亏，误伤为主' if early_r_delta < 0 else '正 = 提前请出净赚，逃顶有效'}）",
+        (f"- 提前请出笔的 R 净变化（开版总R − 关版总R）：**{early_r_delta:+.4f}**"
+        f"（{'负 = 提前请出净亏，误伤为主' if early_r_delta < 0 else '正 = 提前请出净赚，逃顶有效'}）"),
         "",
     ]
     # 结论（数据说话）：以最长观察窗累计 R 净变化 + 误伤率判定
@@ -239,10 +239,10 @@ def _verdict_section(result: dict, holds: list[int]) -> list[str]:
         f"- 误伤率（提前请出中本会盈利的比例）：**{_fmt(miss_rate)}**",
         f"- **判定：{verdict}**",
         "",
-        "> 依据（C5 定案：先回测验证后上线，数据说话）：胜率上升但平均R/累计R/盈亏比下降，"
+        ("> 依据（C5 定案：先回测验证后上线，数据说话）：胜率上升但平均R/累计R/盈亏比下降，"
         "说明移动止损把「继续大赚」变「小赚止损」——R 分布被压扁，净效应为负。"
         "老师三要素精细版（深度回调/明显影线/调整结构过滤，见 exit_manager.check_trailing_stop 雏形）"
-        "等简化版数据后另议。",
+        "等简化版数据后另议。"),
         "",
     ]
     return lines

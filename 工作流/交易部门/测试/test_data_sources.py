@@ -186,9 +186,9 @@ def con(tmp_path):
 
 def test_schema_created(con):
     """建表：announcements/prbook/news_flash 三表均有 PK"""
-    got = set(r[0] for r in con.execute(
+    got = {r[0] for r in con.execute(
         "SELECT DISTINCT table_name FROM duckdb_constraints() "
-        "WHERE constraint_type='PRIMARY KEY'").fetchall())
+        "WHERE constraint_type='PRIMARY KEY'").fetchall()}
     assert {"announcements", "prbook", "news_flash"} <= got
 
 

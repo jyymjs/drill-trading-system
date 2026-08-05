@@ -232,8 +232,8 @@ def render_report(results: dict, day_exp: dict, args) -> str:
         "# B1 环境闸门 + C3 量能过滤 · 回测对照报告",
         "",
         "> 日期：2026-08-05 · 出处：《量化体系优化方案》B1/C3/C4（建议值+回测验证，不拍脑袋）",
-        f"> 样本：{args.smoke or args.sample} 只（seed={args.seed}）｜区间 {args.start}~{args.end}｜"
-        f"mode=normal｜评级=S（C1 只做 S）｜hold 主口径 {hold}d",
+        (f"> 样本：{args.smoke or args.sample} 只（seed={args.seed}）｜区间 {args.start}~{args.end}｜"
+        f"mode=normal｜评级=S（C1 只做 S）｜hold 主口径 {hold}d"),
         "",
         "## 一、总体对照（hold=20d）",
         "",

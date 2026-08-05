@@ -55,7 +55,7 @@ def get_etf_list() -> list[dict]:
                 result = []
                 for e in etfs:
                     code = str(e.get('code', ''))
-                    if code.startswith('51') or code.startswith('15') or code.startswith('16'):
+                    if code.startswith(('51', '15', '16')):
                         name = e.get('name', code)
                         result.append({"code": code, "name": name})
                 if result:

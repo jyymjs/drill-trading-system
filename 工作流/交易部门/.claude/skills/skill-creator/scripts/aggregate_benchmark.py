@@ -254,11 +254,11 @@ def generate_benchmark(benchmark_dir: Path, skill_name: str = "", skill_path: st
             })
 
     # Determine eval IDs from results
-    eval_ids = sorted(set(
+    eval_ids = sorted({
         r["eval_id"]
         for config in results.values()
         for r in config
-    ))
+    })
 
     benchmark = {
         "metadata": {

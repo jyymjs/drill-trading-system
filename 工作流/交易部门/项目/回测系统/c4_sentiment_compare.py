@@ -260,8 +260,8 @@ def render_report(results: dict, day_exp: dict, day_meta: dict, args) -> str:
         "> 日期：2026-08-05 · 出处：《量化体系优化方案》C4（普跌日盲区实证）· 老板拍板",
         "> 盲区实证：2026-05-29 全市场 71.4% 股票跌但上证仅 -0.73%，21 笔信号全亏 -20.3R",
         "> 情绪闸门：信号日全市场下跌家数占比 > 阈值（建议 70%）→ 环境否决，与指数闸门并列任一触发即否决",
-        f"> 样本：{args.smoke or args.sample} 只（seed={args.seed}）｜区间 {args.start}~{args.end}｜"
-        f"mode=normal｜评级=S（C1 只做 S）｜hold 主口径 {hold}d｜情绪阈值 {DEFAULT_SENT_THRESHOLD}%",
+        (f"> 样本：{args.smoke or args.sample} 只（seed={args.seed}）｜区间 {args.start}~{args.end}｜"
+        f"mode=normal｜评级=S（C1 只做 S）｜hold 主口径 {hold}d｜情绪阈值 {DEFAULT_SENT_THRESHOLD}%"),
         "",
         "## 一、普跌日口径验证（duckdb 全库 vs pytdx 涨跌家数）",
         "",

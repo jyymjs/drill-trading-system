@@ -199,6 +199,6 @@ def plot_kline(
             style="charles",
             volume=True,
             figsize=(12, 6),
-            save=dict(fname=str(OUTPUT_DIR / f"{symbol}_kline.png"), dpi=150)
+            save={"fname": str(OUTPUT_DIR / f"{symbol}_kline.png"), "dpi": 150}
             if save else None,
         )

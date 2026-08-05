@@ -56,10 +56,10 @@ def make_window(amounts: list[float]) -> pd.DataFrame:
 
 
 def cfg(**kw) -> MarketGateConfig:
-    defaults = dict(enabled=True, index="上证指数", drop_pct=-2.0, mode="veto",
-                    volume_filter=False, min_amount=5000.0, vol_window=5,
-                    missing_index="pass", sentiment_gate=False,
-                    sent_threshold=70.0, missing_sentiment="pass")
+    defaults = {"enabled": True, "index": "上证指数", "drop_pct": -2.0, "mode": "veto",
+                    "volume_filter": False, "min_amount": 5000.0, "vol_window": 5,
+                    "missing_index": "pass", "sentiment_gate": False,
+                    "sent_threshold": 70.0, "missing_sentiment": "pass"}
     defaults.update(kw)
     return MarketGateConfig(**defaults)
 

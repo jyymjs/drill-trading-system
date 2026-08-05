@@ -41,7 +41,7 @@ TDX_SERVERS = [
 
 def _get_market_code(symbol: str) -> int:
     """获取 pytdx 市场代码：0=深圳 1=上海"""
-    if symbol.startswith("6") or symbol.startswith("5"):
+    if symbol.startswith(("6", "5")):
         return 1
     return 0
 
@@ -133,7 +133,7 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
 # ════════════════════════════════════════════════════════════
 
 def _baostock_prefix(symbol: str) -> str:
-    if symbol.startswith("6") or symbol.startswith("51"):
+    if symbol.startswith(("6", "51")):
         return "sh."
     return "sz."
 
@@ -361,7 +361,7 @@ def _get_stock_list_baostock() -> list[dict]:
             typ = s[4]
             status = s[5]
             if typ == "1" and status == "1" and \
-               (code.startswith("sh.6") or code.startswith("sz.0") or code.startswith("sz.3")):
+               (code.startswith(("sh.6", "sz.0", "sz.3"))):
                 clean_code = code.replace("sh.", "").replace("sz.", "")
                 stocks.append({"code": clean_code, "name": name})
         bs.logout()

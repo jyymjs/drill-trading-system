@@ -407,7 +407,7 @@ def plot_simulation(result: dict, save: bool = True) -> str:
         f"  盈利概率: {result['prob_profit']:.1%}"
     )
     fig.text(0.5, 0.01, stats_text, ha="center", fontsize=9, color="#888",
-             bbox=dict(boxstyle="round", facecolor="#141420", edgecolor="#333"))
+             bbox={"boxstyle": "round", "facecolor": "#141420", "edgecolor": "#333"})
 
     plt.tight_layout(rect=(0, 0.06, 1, 1))
 

@@ -245,9 +245,7 @@ class BacktestEngine:
         """--start/--end 只过滤记录（不改网格）"""
         if self.params.start and d.date() < _parse_yyyymmdd(self.params.start):
             return False
-        if self.params.end and d.date() > _parse_yyyymmdd(self.params.end):
-            return False
-        return True
+        return not (self.params.end and d.date() > _parse_yyyymmdd(self.params.end))
 
     def _build_signal(self, code: str, sig_date: pd.Timestamp, mode: str,
                       window: pd.DataFrame, close_t: float) -> Signal | None:

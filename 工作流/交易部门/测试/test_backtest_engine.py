@@ -39,7 +39,7 @@ def make_kline(n: int = 400, seed: int = 42) -> pd.DataFrame:
 
 
 def make_params(**kw) -> BacktestParams:
-    base = dict(codes=["000001"], interval=5, holds=[5, 10])
+    base = {"codes": ["000001"], "interval": 5, "holds": [5, 10]}
     base.update(kw)
     return BacktestParams(**base)
 
@@ -68,7 +68,7 @@ class TestGrid:
         params = make_params(interval=5, holds=[5])
         BacktestEngine(params, provider=_FakeProvider(df))
         # 网格 = range(249, 400, 5)
-        assert list(range(GRID_ANCHOR, len(df), 5))[0] == GRID_ANCHOR
+        assert next(iter(range(GRID_ANCHOR, len(df), 5))) == GRID_ANCHOR
         assert (len(df) - GRID_ANCHOR) // 5 >= 1
 
     def test_data_too_short_skipped(self):
