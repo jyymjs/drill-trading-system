@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from 分析决策.分析.reporter import plot_kline, print_results, save_results
-from 分析决策.分析.scanner import scan
+from 分析决策.分析.scanner import scan, split_prebreak_results
 from 数据基础.配置.stock_pool import get_all_stocks
 from 策略.核心策略.base import BaseStrategy
 
@@ -101,9 +101,20 @@ def cmd_scan(args):
         print()
 
     # 输出结果
+    mode = getattr(args, "mode", "normal")
+    broken = []  # prebreak 模式下已突破（现价≥触发价）的研究列表
+    if mode == "prebreak":
+        # 2026-08-06 实战发现 + 老板拍板：已突破的挂条件单会立即成交=追高，
+        # 主表只留未突破候选；已突破行标注保留（供研究，不参与挂单候选）
+        results, broken = split_prebreak_results(results)
+
     if results:
-        print_results(results, mode=getattr(args, "mode", "normal"))
+        print_results(results, mode=mode)
         save_results(results)
+        if broken:
+            print(f"\n=== 已突破（现价≥触发价，不参与挂单候选，供研究）: {len(broken)} 只 ===")
+            print_results(broken, mode=mode)
+            save_results(broken, suffix="_broken")
     else:
         print("\n当前没有符合条件的股票")
 
