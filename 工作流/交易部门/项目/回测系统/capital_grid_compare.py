@@ -13,6 +13,8 @@ avgR -0.118），好信号被挡在门外（未成交信号 avgR +0.898）。
   - 买入侧印花税误扣 = 已知保守口径，12 组统一，不做修复
 每组指标：终值/收益%/胜率/avgR/盈亏比/最大回撤/回撤时长/笔数/年化笔数/100笔节奏/
           执行率/可执行池特征（成交股票均价、每股风险均值、被拒原因分布、未成交信号avgR）
+未成交信号 avgR 口径：先按 simulate_capital 同过滤（mode/triggered_{h}d/grades），
+          再按 (date, code) 差集剔除成交行，剩余信号集 r_20d 均值（未触发信号不参与）
 
 用法:
   python 项目/回测系统/capital_grid_compare.py \
@@ -78,20 +80,28 @@ def load_signals(path: Path, start: str, end: str, smoke_codes: int | None,
     return df
 
 
-def pool_features(trades: list[dict], sub: pd.DataFrame, hold: int) -> dict:
+def pool_features(trades: list[dict], sub: pd.DataFrame, hold: int, mode: str = "prebreak",
+                  grades: list[str] | None = None) -> dict:
     """可执行池特征：成交均价 / 每股风险均值 / 未成交信号 avgR
 
-    未成交集 = 与 simulate_capital 相同过滤后的触发信号中未成交行
-    （口径对齐：mode/grades/triggered_20d 过滤 + 区间裁剪后，按 (date, code) 差集）。
+    未成交集口径（与 simulate_capital 内部完全一致）：
+      1) 先按 mode == prebreak 且 triggered_{h}d == 1 过滤（未触发信号不参与，其 r=0 混入会稀释）
+      2) grades 非空时追加 grade ∈ grades 过滤
+      3) 再按 (date, code) 差集剔除成交行 → 剩余 = 触发但被资金约束拒绝的信号
     """
+    grades = grades or []
+    h = int(str(hold).replace("d", ""))
+    sig = sub[(sub["mode"] == mode) & (sub[f"triggered_{h}d"] == 1)]
+    if grades:
+        sig = sig[sig["grade"].isin(grades)]
     avg_price = float(pd.Series([t["entry"] for t in trades]).mean()) if trades else 0.0
     avg_risk_ps = float(pd.Series([t["risk_actual"] / t["shares"]
                                    for t in trades]).mean()) if trades else 0.0
-    r_col = f"r_{hold}d"
-    if len(sub) and len(trades) < len(sub):
-        keys = sub["date"].astype(str).str[:10] + "|" + sub["code"].astype(str)
+    r_col = f"r_{h}d"
+    if len(sig) and len(trades) < len(sig):
+        keys = sig["date"].astype(str).str[:10] + "|" + sig["code"].astype(str)
         traded = {f"{t['date']}|{t['code']}" for t in trades}
-        rejected = sub[~keys.isin(traded)]
+        rejected = sig[~keys.isin(traded)]
         rej_avg_r = float(rejected[r_col].mean()) if len(rejected) else 0.0
     else:
         rej_avg_r = 0.0
@@ -104,7 +114,8 @@ def run_group(df: pd.DataFrame, capital: float, risk_pct: float, max_positions: 
     """跑一组资金模拟，返回 (res, pool)"""
     res = simulate_capital(df, capital, risk_pct / 100.0, max_positions=max_positions,
                            mode=mode, hold=hold, grades=grades)
-    pool = pool_features(res["trades"], df, int(hold.replace("d", "")))
+    pool = pool_features(res["trades"], df, int(hold.replace("d", "")),
+                         mode=mode, grades=grades)
     return res, pool
 
 
@@ -123,7 +134,7 @@ def render_report(rows: list[dict], args) -> str:
          f"hold 主口径 {hold}d｜初始资金 {capital:,.0f} 元｜整手 100 股｜费用 佣金万1.3(最低1元)+印花税万5"
          "（买入侧印花税误扣为已知保守口径，各组统一）"),
         "",
-        "## 一、12 组总览（hold=20d）",
+        f"## 一、{len(rows)} 组总览（hold={hold}d）",
         "",
         ("| 组 | 风险% | 持仓数 | 终值(元) | 收益% | 胜率 | 平均R | 盈亏比 | 最大回撤% | 回撤时长(天) | "
          "笔数 | 年化笔数 | 100笔节奏(月) | 执行率 |"),
