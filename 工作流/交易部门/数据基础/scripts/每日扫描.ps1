@@ -1,4 +1,4 @@
-Set-Location 'C:\Users\32032\Desktop\deepseek\工作流\交易部门'
+﻿Set-Location 'C:\Users\32032\Desktop\deepseek\工作流\交易部门'
 $log = 'C:\Users\32032\Desktop\deepseek\工作流\交易部门\数据基础\data\duckdb_runtime\daily_scan.log'
 Add-Content -Path $log -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] scan start"
 # 1. 周末跳过
