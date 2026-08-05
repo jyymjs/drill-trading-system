@@ -399,6 +399,11 @@ def main():
     # market-review（R-008 市场环境复盘）
     subparsers.add_parser("market-review", help="市场环境复盘（指数一致性/周期/仓位建议）")
 
+    # rcurve（R 值曲线，2026-08-06 老板拍板：R = 盈亏÷单笔风险，累计R曲线跟踪策略）
+    rcurve_parser = subparsers.add_parser("rcurve", help="R 值曲线（每笔交易 R 跟踪与统计）")
+    rcurve_parser.add_argument("args", nargs=argparse.REMAINDER,
+                               help="转发给 r_curve 子命令（record/record-r/list/stats/plot/delete）")
+
     # track
     track_parser = subparsers.add_parser("track", help="交易记录管理")
     track_parser.add_argument("action", type=str, nargs="?",
@@ -457,6 +462,9 @@ def main():
     elif args.command == "market-review":
         from 分析决策.市场环境.market_review import main as market_review_main
         raise SystemExit(market_review_main())
+    elif args.command == "rcurve":
+        from 分析决策.跟踪.r_curve import main as r_curve_main
+        raise SystemExit(r_curve_main(sys.argv[2:]))
     else:
         parser.print_help()
 
