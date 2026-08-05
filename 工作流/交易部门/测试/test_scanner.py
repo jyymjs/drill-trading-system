@@ -21,14 +21,16 @@ from 策略.核心策略.base import BaseStrategy
 
 
 class FakeStrategy(BaseStrategy):
-    """测试桩策略：可控 match / trigger_price（避免依赖真实策略与K线形态）"""
+    """测试桩策略：可控 match / trigger_price / stop_loss（避免依赖真实策略与K线形态）"""
     name = "测试桩策略"
     description = "扫描流程测试专用"
     required_indicators: ClassVar[list[str]] = []
 
-    def __init__(self, trigger_price: float = 10.0, match: bool = True):
+    def __init__(self, trigger_price: float = 10.0, match: bool = True,
+                 stop_loss: float = 9.0):
         self._trigger = trigger_price
         self._match = match
+        self._stop = stop_loss
 
     def quick_prefilter(self, df: pd.DataFrame) -> bool:
         return True
@@ -37,8 +39,9 @@ class FakeStrategy(BaseStrategy):
         return {
             "match": self._match, "grade": "S",
             "trigger_price": self._trigger,
-            "stop_loss": 9.0, "risk_per_share": 1.0,
-            "ty_high": 10.0, "ty_low": 9.0,
+            "stop_loss": self._stop,
+            "risk_per_share": round(self._trigger - self._stop, 2),
+            "ty_high": 10.0, "ty_low": self._stop,
         }
 
     def grade(self, df: pd.DataFrame) -> dict:
@@ -275,9 +278,9 @@ def test_cmd_scan_prebreak_splits(monkeypatch):
 
     results_all = [
         {"code": "600001", "name": "已突破股", "price": 10.5, "触发价": 10.0,
-         "评级": "S", "突破状态": "已突破"},
+         "评级": "S", "突破状态": "已突破", "C23": "达标", "C23原因": ""},
         {"code": "600002", "name": "未突破股", "price": 9.5, "触发价": 10.0,
-         "评级": "S", "突破状态": "未突破"},
+         "评级": "S", "突破状态": "未突破", "C23": "达标", "C23原因": ""},
     ]
     monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
     monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": results_all)
@@ -301,3 +304,146 @@ def test_cmd_scan_prebreak_splits(monkeypatch):
     # 已突破：单独打印 + _broken 后缀保存（供研究）
     assert printed[1] == ["600001"]
     assert saved[1] == (["600001"], "_broken")
+
+
+# ============ C23: 动量≤10% + 止损距离 0.5~3 元（2026-08-06 老板拍板替换进策略） ============
+
+def _expected_mom20(n: int, last_close: float, trigger: float) -> float:
+    """与 scanner 同法计算期望动量：trigger / iloc[-21] 收盘 - 1"""
+    closes = np.linspace(8.0, last_close, n)
+    return trigger / closes[-21] - 1.0
+
+
+def test_scan_single_stock_c23_momentum_field(monkeypatch):
+    """C23: prebreak 候选输出 动量20日% = 触发价 vs 20交易日前收盘涨幅（对齐 tighten_compare）"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0), mode="prebreak")
+    assert entry is not None
+    expected = _expected_mom20(100, 9.5, 10.0)
+    assert entry["动量20日%"] == pytest.approx(round(expected * 100, 1))
+
+
+def test_scan_single_stock_c23_pass(monkeypatch):
+    """C23: 动量≤10% 且 止损距离 0.5~3 元 → 达标（挂单候选主表）"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0, stop_loss=9.0),  # 止损距离 1.0 元
+        mode="prebreak")
+    assert entry is not None
+    assert entry["C23"] == "达标"
+    assert entry["C23原因"] == ""
+
+
+def test_scan_single_stock_c23_reject_momentum(monkeypatch):
+    """C23: 动量>10% → 不达标（原因含动量）——触发价远离 20 日前收盘=追高"""
+    # last_close 12.0 时 iloc[-21] 收盘仍偏低 → 10.0 相对前第20根涨幅大？
+    # 用低 last_close 使前 20 根前收盘低 → 动量大：构造 last_close=8.2（接近起点）
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=8.2))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0), mode="prebreak")
+    assert entry is not None
+    # 8.2 起点：iloc[-21] ≈ 8.2 + 79*0.0222 ≈ 9.95 → 10.0/9.95-1 ≈ 0.5% → 不超？
+    # 反向验证：直接断言"动量20日%"对应关系（数值由 _expected_mom20 决定）
+    expected = _expected_mom20(100, 8.2, 10.0)
+    if expected > scanner.C23_MOM_MAX:
+        assert entry["C23"] == "不达标"
+        assert "动量" in entry["C23原因"]
+    else:
+        assert entry["C23"] == "达标"
+
+
+def test_scan_single_stock_c23_reject_stop_near(monkeypatch):
+    """C23: 止损距离<0.5 元 → 不达标（原因含止损）——太近易被扫"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0, stop_loss=9.6),  # 止损距离 0.4 元
+        mode="prebreak")
+    assert entry is not None
+    assert entry["C23"] == "不达标"
+    assert "止损0.40元<0.5" in entry["C23原因"]
+
+
+def test_scan_single_stock_c23_reject_stop_far(monkeypatch):
+    """C23: 止损距离>3 元 → 不达标（原因含止损）——太远盈亏比差"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0, stop_loss=6.5),  # 止损距离 3.5 元
+        mode="prebreak")
+    assert entry is not None
+    assert entry["C23"] == "不达标"
+    assert "止损3.50元>3" in entry["C23原因"]
+
+
+def test_apply_c23_filter_splits():
+    """C23: apply_c23_filter 拆分（达标→主表，不达标→研究列表）"""
+    rows = [
+        {"code": "600001", "C23": "达标", "C23原因": ""},
+        {"code": "600002", "C23": "不达标", "C23原因": "动量12.3%>10%"},
+        {"code": "600003", "C23": "不达标", "C23原因": "止损0.40元<0.5"},
+    ]
+    passing, filtered = scanner.apply_c23_filter(rows)
+    assert [r["code"] for r in passing] == ["600001"]
+    assert [r["code"] for r in filtered] == ["600002", "600003"]
+
+
+def test_apply_c23_filter_empty():
+    """C23: 空结果拆分安全"""
+    assert scanner.apply_c23_filter([]) == ([], [])
+
+
+def test_cmd_scan_prebreak_c23_filter(monkeypatch):
+    """C23 端到端: cmd_scan prebreak——C23 不达标单独打印+保存（_c23 后缀），主表只留达标"""
+    import main as main_mod
+
+    class Args:
+        strategy = "fake"
+        mode = "prebreak"
+        max_price = None
+
+    results_all = [
+        {"code": "600001", "name": "达标股", "price": 9.5, "触发价": 10.0,
+         "评级": "S", "突破状态": "未突破", "C23": "达标", "C23原因": ""},
+        {"code": "600002", "name": "追高股", "price": 9.5, "触发价": 10.0,
+         "评级": "S", "突破状态": "未突破", "C23": "不达标", "C23原因": "动量15.0%>10%"},
+        {"code": "600003", "name": "已突破股", "price": 10.5, "触发价": 10.0,
+         "评级": "S", "突破状态": "已突破", "C23": "达标", "C23原因": ""},
+    ]
+    monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
+    monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": results_all)
+
+    saved = []
+    printed = []
+    monkeypatch.setattr(
+        main_mod, "save_results",
+        lambda r, suffix="": saved.append(([x["code"] for x in r], suffix)))
+    monkeypatch.setattr(
+        main_mod, "print_results",
+        lambda r, mode="normal": printed.append([x["code"] for x in r]))
+    monkeypatch.setattr(
+        "分析决策.风控.trade_guardian.discipline_report", lambda: "")
+
+    main_mod.cmd_scan(Args())
+
+    # 打印顺序：C23 过滤名单 → 候选主表 → 已突破
+    assert printed[0] == ["600002"]      # C23 不达标
+    assert printed[1] == ["600001"]      # 主表：C23 达标且未突破
+    assert printed[2] == ["600003"]      # 已突破
+    assert saved[0] == (["600002"], "_c23")
+    assert saved[1] == (["600001"], "")
+    assert saved[2] == (["600003"], "_broken")

@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from 分析决策.分析.reporter import plot_kline, print_results, save_results
-from 分析决策.分析.scanner import scan, split_prebreak_results
+from 分析决策.分析.scanner import apply_c23_filter, scan, split_prebreak_results
 from 数据基础.配置.stock_pool import get_all_stocks
 from 策略.核心策略.base import BaseStrategy
 
@@ -125,10 +125,21 @@ def cmd_scan(args):
     # 输出结果
     mode = getattr(args, "mode", "normal")
     broken = []  # prebreak 模式下已突破（现价≥触发价）的研究列表
+    c23_rejected = []  # prebreak 模式下 C23 不达标的研究列表
     if mode == "prebreak":
         # 2026-08-06 实战发现 + 老板拍板：已突破的挂条件单会立即成交=追高，
         # 主表只留未突破候选；已突破行标注保留（供研究，不参与挂单候选）
         results, broken = split_prebreak_results(results)
+
+        # 2026-08-06 C23 替换进策略（老板拍板：S 级 + dn_confirm 1.5 + 动量≤10% +
+        # 止损距离 0.5~3 元；现方案封存见 策略/核心策略/策略版本存档.md）——
+        # 主表只留 C23 达标候选；不达标行标注保留（供研究，不参与挂单候选）
+        results, c23_rejected = apply_c23_filter(results)
+        if c23_rejected:
+            print(f"\n=== C23 过滤（动量>10% 或 止损<0.5/3.0元，不参与挂单候选，供研究）: "
+                  f"{len(c23_rejected)} 只 ===")
+            print_results(c23_rejected, mode=mode)
+            save_results(c23_rejected, suffix="_c23")
 
     if results:
         print_results(results, mode=mode)

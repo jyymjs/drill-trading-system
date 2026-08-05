@@ -57,9 +57,10 @@ def _print_normal(results: list[dict], top_n: int) -> None:
 
 
 def _print_prebreak(results: list[dict], top_n: int) -> None:
-    """预突破模式表格（含条件单参数 + 放量阈值）"""
+    """预突破模式表格（含条件单参数 + 放量阈值 + C23 达标标记）"""
     table = PrettyTable()
-    table.field_names = ["评级", "代码", "名称", "收盘", "触发价", "止损价", "风险/股", "手数", "放量阈值"]
+    table.field_names = ["评级", "代码", "名称", "收盘", "触发价", "止损价", "风险/股", "手数",
+                         "放量阈值", "动量20日%", "C23"]
     table.align["名称"] = "l"
     table.align["代码"] = "l"
     table.float_format = ".2"
@@ -71,6 +72,8 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
         risk_per = r.get("每股风险", 0)
         lots = calc_lots(risk_per) if risk_per > 0 else 0
         vol_th = r.get("放量阈值", 0)  # T-020：P2 放量条件（前20日均量×1.5，手）
+        mom20 = r.get("动量20日%", None)  # C23：触发价 vs 20 交易日前收盘涨幅
+        c23 = r.get("C23", "--")  # C23：达标/不达标（原因见 C23原因 列）
         table.add_row([
             grade,
             r["code"],
@@ -81,12 +84,15 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
             f'{risk_per:.2f}' if risk_per else "--",
             lots if lots > 0 else "--",
             f'{vol_th:,.0f}' if vol_th else "--",
+            f'{mom20:+.1f}' if mom20 is not None else "--",
+            c23,
         ])
 
     print(f"\n=== 预突破候选 ({len(results)} 只) ===\n")
     from 分析决策.风控.capital import max_risk_per_trade as _mr
     print(f"       条件单参数: 风险=¥{_mr():.0f} | 触发=TY上沿 | 止损=TY下沿")
-    print("       放量阈值 = 前20日均量×1.5（手；P2 量能确认 X=1.5，突破日量须大于此值）")
+    print("       放量阈值 = 前20日均量×1.5（手）；量比越高越好，1.5 仅作下限（T-025 修正）")
+    print("       C23 = 动量≤10% 且 止损距离0.5~3元（2026-08-06 老板拍板替换进策略；不达标已过滤）")
     print("       晚间挂单 → 次日盘中自动触发 → 同步挂止损单\n")
     print(table)
 

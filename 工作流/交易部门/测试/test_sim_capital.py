@@ -42,13 +42,15 @@ def make_df(rows: list[dict]) -> pd.DataFrame:
 
 
 def sig(code: str, date: str, close: float, risk: float, exit_date: str,
-        exit: float, r: float, grade: str = "S", entry: float | None = None) -> dict:
-    """单笔信号行（20d 主口径；entry 缺省 = close）"""
+        exit: float, r: float, grade: str = "S", entry: float | None = None,
+        mom20: float = 0.05) -> dict:
+    """单笔信号行（20d 主口径；entry 缺省 = close；mom20 默认 5% 在 C23 内）"""
     return {
         "mode": "prebreak", "code": code, "date": date, "grade": grade,
         "close": close, "risk": risk,
         "triggered_20d": 1, "entry_20d": entry if entry is not None else close,
         "exit_20d": exit, "exit_date_20d": exit_date, "r_20d": r,
+        "mom20": mom20,
     }
 
 
@@ -201,3 +203,45 @@ def test_avg_hold_days_trading_days():
     df = make_df([sig("A", "2024-01-05", 10.0, 1.0, "2024-02-05", 11.0, 1.0)])
     res = simulate_capital(df, capital=10000, risk_ratio=0.015, max_positions=2)
     assert res["avg_hold_days"] == np.busday_count("2024-01-05", "2024-02-05")
+
+
+# ============ C23 收紧（2026-08-06 老板拍板替换进策略）：动量≤10% + 止损 0.5~3 元 ============
+
+def test_c23_mask_filters_momentum_and_risk():
+    """c23_mask: 动量>10% 或 止损<0.5/3.0元 均被滤——与 tighten_compare 同式同常量"""
+    from 回测系统.sim_capital import c23_mask
+    df = pd.DataFrame([
+        {"mom20": 0.05, "risk": 1.0},     # 达标
+        {"mom20": 0.12, "risk": 1.0},     # 动量超
+        {"mom20": 0.05, "risk": 0.4},     # 止损太近
+        {"mom20": 0.05, "risk": 3.5},     # 止损太远
+        {"mom20": float("nan"), "risk": 1.0},  # mom20 复算失败 → 不达标（未知按不达标）
+    ])
+    mask = c23_mask(df)
+    assert list(mask) == [True, False, False, False, False]
+
+
+def test_simulate_capital_c23_filter():
+    """simulate_capital(c23=True)：只成交 C23 达标信号（动量≤10% 且 止损 0.5~3 元）"""
+    rows = [
+        sig("OK1", "2024-01-05", 10.0, 1.0, "2024-02-05", 11.0, 1.0, mom20=0.05),   # 达标
+        sig("MOM", "2024-01-05", 10.0, 1.0, "2024-02-05", 11.0, 1.0, mom20=0.15),   # 动量超
+        sig("NEAR", "2024-01-05", 10.0, 0.4, "2024-02-05", 11.0, 1.0, mom20=0.05),  # 止损太近
+    ]
+    df = make_df(rows)
+    # make_df 原哨兵 risk=999 会被 C23 掩码滤掉 → max_date 判定失效；补 C23 达标哨兵：
+    # 高价股（1e6 元/股）→ 资金不足恒拒买（不成交），但留在 sub 推高 max_date
+    tail = pd.Timestamp("2024-02-05") + pd.Timedelta(days=3)
+    sentinel_c23 = {
+        "mode": "prebreak", "code": "SENT2", "date": tail.strftime("%Y-%m-%d"),
+        "grade": "S", "close": 1e6, "risk": 1.0,
+        "triggered_20d": 1, "entry_20d": 1e6, "exit_20d": 1e6,
+        "exit_date_20d": tail.strftime("%Y-%m-%d"), "r_20d": 0.0, "mom20": 0.05,
+    }
+    df = pd.concat([df, pd.DataFrame([sentinel_c23])], ignore_index=True)
+
+    res = simulate_capital(df, capital=10000, risk_ratio=0.015, max_positions=2, c23=True)
+    assert [t["code"] for t in res["trades"]] == ["OK1"]
+    # 不开启 c23 → 三笔同日均进（持仓满 2 → 按 code 序前两笔成交；对照）
+    res2 = simulate_capital(df, capital=10000, risk_ratio=0.015, max_positions=2)
+    assert [t["code"] for t in res2["trades"]] == ["MOM", "NEAR"]
