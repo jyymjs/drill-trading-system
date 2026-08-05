@@ -219,7 +219,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--signals", default=DEFAULT_SIGNALS)
     ap.add_argument("--capital", type=float, default=5600.0, help="初始资金（默认 5600，老板约束）")
-    ap.add_argument("--risk-ratio", type=float, default=0.015, help="单笔风险比例（默认 1.5%，老板约束）")
+    ap.add_argument("--risk-ratio", type=float, default=0.015, help="单笔风险比例（默认 1.5%%，老板约束）")
     ap.add_argument("--max-positions", type=int, default=2,
                     help="最多同时持仓数（默认 2，老板实盘约束；1=旧版单持仓顺序）")
     ap.add_argument("--mode", default="prebreak", choices=["normal", "prebreak"])
