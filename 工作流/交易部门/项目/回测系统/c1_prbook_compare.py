@@ -84,6 +84,7 @@ def run_group(label: str, prbook_gate: bool, codes: list[str], start: str, end: 
         start=start, end=end, mode="normal", interval=interval,
         holds=[5, 10, 20], grades=grades or ["S"], codes=codes, max_workers=5,
         prbook_gate=prbook_gate,
+        sentiment_gate=False,  # C4 情绪闸门（2026-08-05）：C1 实验唯一变量=财报日避让，其余闸门口径不受干扰
     )
     engine = BacktestEngine(params)
     result = engine.run()
@@ -131,6 +132,7 @@ def run_special(codes: list[str], start: str, end: str) -> dict:
         start=start, end=end, mode="normal", interval=1,
         holds=[20], grades=["S", "A", "B"], codes=codes, max_workers=5,
         prbook_gate=False,
+        sentiment_gate=False,  # C4 情绪闸门（2026-08-05）：专项口径纯净，只测 C1 变量
     )
     engine = BacktestEngine(params)
     result = engine.run()
