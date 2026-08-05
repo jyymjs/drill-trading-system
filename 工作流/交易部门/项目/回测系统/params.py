@@ -49,6 +49,10 @@ class BacktestParams:
     enable_cost: bool = True
     # 成本倍率（D2 2倍成本压力测试=2.0，2026-08-05 方案 D 类；1.0=基线）
     cost_multiplier: float = 1.0
+    # C5 移动止损（2026-08-05 老板拍板，价格行为学04课借鉴）：持仓中每确认新结构低点
+    # （买入后新高之后的回调低点）→ 止损上移到 低点×0.99；日线收盘判定；默认关=现有出场行为。
+    # 先回测对照验证后上线（开/关对照实验见 c5_trail_compare.py）。
+    moving_stop: bool = False
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -116,6 +120,7 @@ class BacktestParams:
             "entry_time": "信号日T收盘（prebreak=触发价，首根最高≥trigger才进场）",
             "prebreak_untracked": "未触发计信号数/触发率，不参与胜率/平均R/回撤",
             "exit_simplified": "v1 仅 止损 + hold到期收盘 两种出场",
+            "moving_stop": "C5 2026-08-05 老板拍板：持仓中每确认新结构低点（买入后新高后回调低点，日线收盘判定）→ 止损上移 低点×0.99；默认关（对照实验用）",
         }
         if strategy_info:
             data["strategy_info"] = strategy_info

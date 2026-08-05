@@ -43,6 +43,7 @@ def cmd_run(args) -> int:
         verify_samples=args.verify_samples,
         recompute_each_window=args.recompute_each_window,
         dl_cands=args.dl_cands,
+        moving_stop=args.moving_stop,
     )
     try:
         params.validate()
@@ -172,6 +173,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--verify-samples", type=int, default=0, help="run 后自动验收自检抽样笔数（0=关）")
     run_p.add_argument("--recompute-each-window", action="store_true",
                        help="严格逐窗重算指标（对照验证慢路径）")
+    run_p.add_argument("--moving-stop", action="store_true",
+                       help="C5 移动止损（2026-08-05 老板拍板）：持仓中每确认新结构低点→止损上移低点×0.99；默认关（先回测对照后上线）")
 
     verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")
