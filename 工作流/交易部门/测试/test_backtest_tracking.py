@@ -7,8 +7,9 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # 回测系统 包（R-005 独立项目）
 
-from backtest.tracking import Signal, track_signal
+from 回测系统.tracking import Signal, track_signal, _trade_cost
 
 
 def make_df(closes: list[float], highs=None, lows=None) -> pd.DataFrame:
@@ -40,7 +41,7 @@ BASE_DATES = pd.date_range("2024-01-01", periods=20, freq="B")
 
 
 def test_stop_loss_triggered():
-    """窗口内最低 ≤ 止损 → 止损价出场，stopped=True"""
+    """窗口内最低 ≤ 止损 → 止损价出场，stopped=True（R 已扣成本）"""
     closes = [10.0] * 20
     lows = [9.8] * 20
     lows[7] = 8.9            # T+2 日最低 8.9 ≤ 止损 9.0 → 触发
@@ -49,11 +50,12 @@ def test_stop_loss_triggered():
     assert oc.triggered and oc.stopped
     assert oc.exit_price == 9.0
     assert oc.exit_date == BASE_DATES[7]
-    assert np.isclose(oc.r, (9.0 - 10.0) / 1.0)
+    cost = _trade_cost(10.0, 9.0, True)
+    assert np.isclose(oc.r, (9.0 - 10.0 - cost) / 1.0, atol=1e-3)
 
 
 def test_expiry_exit():
-    """窗口内不破止损 → hold 末收盘出场，stopped=False"""
+    """窗口内不破止损 → hold 末收盘出场，stopped=False（R 已扣成本）"""
     closes = [10.0] * 20
     lows = [9.8] * 20         # 最低 9.8 > 止损 9.0
     df = make_df(closes, lows=lows)
@@ -61,7 +63,8 @@ def test_expiry_exit():
     assert oc.triggered and not oc.stopped
     assert oc.exit_price == 10.0
     assert oc.exit_date == BASE_DATES[5 + 10]   # T+10
-    assert oc.r == 0.0
+    cost = _trade_cost(10.0, 10.0, True)
+    assert np.isclose(oc.r, (0.0 - cost) / 1.0)
 
 
 def test_multi_hold_different_outcomes():
@@ -113,7 +116,8 @@ def test_prebreak_trigger_and_track():
     assert oc.entry_price == 10.5
     assert not oc.stopped
     assert oc.exit_date == BASE_DATES[15]
-    assert np.isclose(oc.r, (10.0 - 10.5) / 1.0)  # 进场 10.5 → 出场 10.0
+    cost = _trade_cost(10.5, 10.0, True)
+    assert np.isclose(oc.r, (10.0 - 10.5 - cost) / 1.0, atol=1e-3)  # 进场 10.5 → 出场 10.0（扣成本）
 
 
 def test_prebreak_not_triggered():
@@ -140,7 +144,8 @@ def test_prebreak_trigger_then_stop():
     assert oc.entry_price == 10.5
     assert oc.exit_price == 9.5
     assert oc.exit_date == BASE_DATES[9]
-    assert np.isclose(oc.r, (9.5 - 10.5) / 1.0)
+    cost = _trade_cost(10.5, 9.5, True)
+    assert np.isclose(oc.r, (9.5 - 10.5 - cost) / 1.0, atol=1e-3)
 
 
 def test_prebreak_trigger_requires_strict_higher():

@@ -7,13 +7,14 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # 回测系统 包（R-005 独立项目）
 
 from 分析决策.分析.indicators import all_indicators
-from backtest.adapters.base import DataProvider, RiskModel, StrategyProvider
-from backtest.adapters.risk_model import DefaultRiskModel
-from backtest.engine import BacktestEngine
-from backtest.params import GRID_ANCHOR, BacktestParams
-from backtest.tracking import Signal
+from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
+from 回测系统.adapters.risk_model import DefaultRiskModel
+from 回测系统.engine import BacktestEngine
+from 回测系统.params import GRID_ANCHOR, BacktestParams
+from 回测系统.tracking import Signal
 from 策略.核心策略.samples.zuanqian_strategy import ZuanQianStrategy
 
 NEEDED = ["VOL_RATIO", "BODY_RATIO", "MA20", "MA5", "ATR"]

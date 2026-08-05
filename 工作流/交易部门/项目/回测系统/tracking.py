@@ -71,31 +71,44 @@ def _find_signal_index(df: pd.DataFrame, signal_date: pd.Timestamp) -> int:
     raise KeyError(f"信号日 {signal_date} 不在 {len(df)} 行K线中")
 
 
-# ── 交易成本（2026-08-04 老板确认费率）──
+# ── 交易成本（2026-08-04 老板确认费率；D2 倍率扩展见下）──
 # 股票：佣金 万1.3（最低 1 元）+ 印花税 卖出 万5（ETF 免）
 COMMISSION = 0.00013
 STAMP = 0.0005
+# 滑点基线 万1（2026-08-05 D2 方案引入：基线回测不含滑点，2 倍成本压力下按倍率翻倍计入）
+SLIPPAGE = 0.0001
 
 
-def _trade_cost(entry: float, exit_price: float, enable: bool) -> float:
+def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float = 1.0) -> float:
     """单笔交易成本（元/股口径：按成交金额比例折算）
 
     Args:
         entry: 进场价
         exit_price: 出场价
         enable: 是否启用成本模型
+        multiplier: 成本倍率（D2 压力测试=2.0；1.0=基线佣金+印花税）
 
     Returns:
         每股成本（用于 R 倍数扣减）
+
+    设计依据（方案 D 类 2026-08-05 老板拍板）：
+      - 基线（multiplier=1.0）：佣金 万1.3 + 印花税 万5，与 sim_capital/calc_trade_fee 口径一致，无滑点；
+      - 压力（multiplier=2.0）：佣金+印花税 ×2（万2.6+万10），滑点随倍率翻倍（万1 → 万2）；
+        数学上等价于"基线口径（含滑点 万1）×2"，压力只增不减。
     """
     if not enable:
         return 0.0
     buy_fee = entry * COMMISSION
     sell_fee = exit_price * (COMMISSION + STAMP)
-    return round(buy_fee + sell_fee, 6)
+    cost = (buy_fee + sell_fee) * multiplier
+    if multiplier > 1.0:
+        # D2 压力：滑点翻倍计入（万1 × multiplier → 万2 单边）
+        cost += (entry + exit_price) * SLIPPAGE * multiplier
+    return round(cost, 6)
 
 
-def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True) -> Outcome:
+def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True,
+                 cost_multiplier: float = 1.0) -> Outcome:
     """跟踪一笔信号在 hold 个交易日内的出场
 
     Args:
@@ -103,6 +116,7 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         df: 该股完整基础K线（日期/开盘/收盘/最高/最低/成交量）
         hold: 观察窗长度（交易日）
         enable_cost: 是否计入交易成本（佣金+印花税）
+        cost_multiplier: 成本倍率（D2 2倍成本压力测试用，2026-08-05）
 
     Returns:
         Outcome（预突破未触发时 triggered=False，不参与统计）
@@ -114,12 +128,12 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         return Outcome(hold, True, signal.close, signal.close, signal.date, False, 0.0)
 
     if signal.mode == "normal":
-        return _track_normal(signal, df, t, end, hold, enable_cost)
-    return _track_prebreak(signal, df, t, end, hold, enable_cost)
+        return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier)
+    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier)
 
 
 def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
-                  enable_cost: bool = True) -> Outcome:
+                  enable_cost: bool = True, cost_multiplier: float = 1.0) -> Outcome:
     """normal：T 收盘进场，窗口内 最低≤止损 → 止损出场；否则 hold 末收盘出场"""
     entry = signal.close
     stop = signal.stop
@@ -138,13 +152,13 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
         exit_date = pd.Timestamp(dates[end])
         stopped = False
 
-    cost = _trade_cost(entry, exit_price, enable_cost)
+    cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0
     return Outcome(hold, True, entry, round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))
 
 
 def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
-                    enable_cost: bool = True) -> Outcome:
+                    enable_cost: bool = True, cost_multiplier: float = 1.0) -> Outcome:
     """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后 最低≤stop → 止损，否则 hold 末收盘"""
     trigger = signal.trigger
     stop = signal.stop
@@ -176,6 +190,6 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
         exit_date = pd.Timestamp(dates[end])
         stopped = False
 
-    cost = _trade_cost(entry, exit_price, enable_cost)
+    cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / risk if risk > 0 else 0.0
     return Outcome(hold, True, round(float(entry), 4), round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))

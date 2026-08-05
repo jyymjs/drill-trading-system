@@ -47,6 +47,8 @@ class BacktestParams:
     max_workers: int = 5
     # 交易成本模型（佣金万1.3+印花税万5，2026-08-04 老板确认费率）
     enable_cost: bool = True
+    # 成本倍率（D2 2倍成本压力测试=2.0，2026-08-05 方案 D 类；1.0=基线）
+    cost_multiplier: float = 1.0
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -88,6 +90,8 @@ class BacktestParams:
         self.grades = sorted(set(self.grades))
         if not isinstance(self.max_workers, int) or self.max_workers < 1:
             raise ValueError(f"--max-workers 必须是 ≥1 的整数，收到: {self.max_workers!r}")
+        if not isinstance(self.cost_multiplier, (int, float)) or self.cost_multiplier < 1.0:
+            raise ValueError(f"--cost-multiplier 必须是 ≥1 的数值，收到: {self.cost_multiplier!r}")
         if self.dl_cands is not None:
             try:
                 cands = [int(x) for x in self.dl_cands.split(",")]
