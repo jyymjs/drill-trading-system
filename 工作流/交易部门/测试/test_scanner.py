@@ -147,6 +147,92 @@ def test_scan_single_stock_trigger_zero_not_broken(monkeypatch):
     assert entry["突破状态"] == "未突破"
 
 
+# ============ T-020: P2 放量阈值标注 ============
+
+def test_scan_single_stock_prebreak_volume_threshold(monkeypatch):
+    """T-020: prebreak 候选输出放量阈值 = 前20日均量×1.5（不含最新日，对齐 dn_confirm 回测口径）"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0), mode="prebreak")
+    assert entry is not None
+    # make_kline 成交量恒 1e6 → 前20日均量 1e6 → 放量阈值 = 1.5e6
+    assert entry["放量阈值"] == 1500000.0
+
+
+def test_scan_single_stock_volume_threshold_min_bars(monkeypatch):
+    """T-020: 恰好 60 根（扫描最低门槛）时放量阈值仍正常（前20根均量×1.5）"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(n=60, last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0), mode="prebreak")
+    assert entry is not None
+    # 60 根 → 不含最新日 20 根均量 1e6 → 阈值 1.5e6
+    assert entry["放量阈值"] == 1500000.0
+
+
+def test_scan_single_stock_normal_no_volume_threshold(monkeypatch):
+    """T-020: 放量阈值仅 prebreak 模式输出（normal 模式不含该字段）"""
+    monkeypatch.setattr(
+        scanner, "get_daily_kline",
+        lambda code, use_cache=True: make_kline(last_close=9.5))
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "贵州茅台"},
+        FakeStrategy(trigger_price=10.0), mode="normal")
+    assert entry is not None
+    assert "放量阈值" not in entry
+
+
+# ============ T-022: 当日扫描去重 ============
+
+def test_cmd_scan_skips_when_today_report_exists(monkeypatch, capsys):
+    """T-022: 当日已产出扫描报告 → cmd_scan 直接跳过（不执行扫描）"""
+    import main as main_mod
+
+    class Args:
+        strategy = "fake"
+        mode = "prebreak"
+        max_price = None
+
+    scanned = []
+    monkeypatch.setattr(main_mod, "_scan_report_already_today", lambda: "scan_result_20260806_031609.csv")
+    monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
+    monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": scanned.append(1) or [])
+
+    main_mod.cmd_scan(Args())
+
+    assert scanned == []  # 未触发扫描
+    out = capsys.readouterr().out
+    assert "跳过重复扫描" in out
+
+
+def test_cmd_scan_runs_when_no_today_report(monkeypatch, capsys):
+    """T-022: 当日无报告 → 正常执行扫描（幂等判断放行）"""
+    import main as main_mod
+
+    class Args:
+        strategy = "fake"
+        mode = "normal"
+        max_price = None
+
+    scanned = []
+    monkeypatch.setattr(main_mod, "_scan_report_already_today", lambda: None)
+    monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
+    monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": scanned.append(1) or [])
+    monkeypatch.setattr(main_mod, "save_results", lambda r, suffix="": None)
+    monkeypatch.setattr(main_mod, "print_results", lambda r, mode="normal": None)
+    monkeypatch.setattr(
+        "分析决策.风控.trade_guardian.discipline_report", lambda: "")
+
+    main_mod.cmd_scan(Args())
+
+    assert scanned == [1]  # 扫描执行了一次
+
+
 def test_scan_prebreak_marks_and_split(monkeypatch):
     """A2 端到端: scan prebreak——已突破被拆分，不进候选主表"""
     stocks = [{"code": f"60000{i}", "name": f"测试股{i}"} for i in range(1, 4)]

@@ -75,8 +75,30 @@ def _load_strategy(name: str):
         return None
 
 
+def _scan_report_already_today() -> str | None:
+    """当日是否已产出扫描报告（T-022 当日去重，2026-08-06）
+
+    幂等依据：OUTPUT_DIR（数据基础/output）下存在当日 scan_result_*.csv。
+    白天手动跑过 → 19:05 计划任务再跑时跳过，避免白跑 5 分钟 + 多份报告混淆。
+
+    Returns:
+        已产出的报告文件名（str），当日无报告返回 None
+    """
+    from 数据基础.配置.settings import OUTPUT_DIR
+    today = datetime.now().strftime("%Y%m%d")
+    for p in sorted(OUTPUT_DIR.glob(f"scan_result_{today}_*.csv"), reverse=True):
+        return p.name
+    return None
+
+
 def cmd_scan(args):
     """全市场扫描"""
+    # T-022 当日去重：已产出当日扫描报告 → 跳过重复扫描（Windows 计划任务 19:05 重复触发场景）
+    existing = _scan_report_already_today()
+    if existing:
+        print(f"当日扫描报告已产出（{existing}），跳过重复扫描（T-022 当日去重）")
+        print("如需强制重扫：删除当日 scan_result 文件后再运行")
+        return
     strategy = _load_strategy(args.strategy)
     if strategy is None:
         print(f"❌ 未找到策略: '{args.strategy}'")
