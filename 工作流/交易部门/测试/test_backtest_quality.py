@@ -274,10 +274,15 @@ def test_engine_cost_multiplier_passthrough():
 
     df = make_kline(400, seed=7)
     provider = _FakeProvider(df)
-    base = BacktestEngine(BacktestParams(codes=["000001"], interval=5, holds=[10]),
+    # 本测试只验证成本倍率传递：显式全关闸门（B1/C3/C4），排除执行层过滤干扰信号集合
+    base = BacktestEngine(BacktestParams(codes=["000001"], interval=5, holds=[10],
+                                         env_gate=False, volume_filter=False,
+                                         sentiment_gate=False),
                           provider=provider, strategy=_FakeNormal())
     stress = BacktestEngine(BacktestParams(codes=["000001"], interval=5, holds=[10],
-                                           cost_multiplier=2.0),
+                                           cost_multiplier=2.0,
+                                           env_gate=False, volume_filter=False,
+                                           sentiment_gate=False),
                             provider=provider, strategy=_FakeNormal())
 
     recs1 = base._process_stock("000001")

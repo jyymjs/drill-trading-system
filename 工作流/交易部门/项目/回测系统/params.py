@@ -53,16 +53,16 @@ class BacktestParams:
     # （买入后新高之后的回调低点）→ 止损上移到 低点×0.99；日线收盘判定；默认关=现有出场行为。
     # 先回测对照验证后上线（开/关对照实验见 c5_trail_compare.py）。
     moving_stop: bool = False
-    # B1 环境闸门 + C3 量能过滤（2026-08-05 老板拍板执行优化方案第3波）：
+    # B1 环境闸门 + C3 量能过滤 + C4 情绪闸门（2026-08-05 老板拍板执行优化方案第3波）：
     #   环境闸门：信号日主闸门指数（默认上证）当日跌幅跌破阈值（建议 -2%）→ 环境不利，
     #     模式 veto=一票否决 / downgrade=降一档（对照可选项）；
     #   量能过滤：信号日近 vol_window 日均成交额 < min_amount 万元 → 不进场（"无量直接不碰"）；
+    #   情绪闸门：信号日全市场下跌家数占比 > sent_threshold（建议 70%）→ 环境否决
+    #     （普跌日盲区实证：2026-05-29 全市场 71.4% 股票跌但上证仅 -0.73%，21 笔信号全亏
+    #     -20.3R——指数闸门管不了"家数普跌"；C4 2026-08-05 老板拍板，与指数闸门并列任一触发即否决）；
     #   实现于执行层（gate.py），不改 grade() 评级核心（评级与执行分离）；
-    #   默认开=正式接入（2026-08-05 回测对照 b1c3_compare.py：400只×3年，
-    #   全开组胜率 37.9%→42.9%、均R 0.062→0.181、累计R 1.8→3.8、回撤 5.1→3.6，
-    #   普跌日 2026-05-29 当天 21 笔信号全亏-20.3R 为指数闸门盲区（家数普跌≠指数暴跌），
-    #   情绪闸门（涨跌家数 C4）标注为后续扩展）；
-    #   关闭用 --no-env-gate / --no-volume-filter（对照实验用）。
+    #   默认开=正式接入（2026-08-05 回测对照 b1c3_compare/c4_sentiment_compare.py），
+    #   关闭用 --no-env-gate / --no-volume-filter / --no-sentiment-gate（对照实验用）。
     env_gate: bool = True
     env_drop_pct: float = -2.0      # 指数当日跌幅阈值（%，建议值）
     env_mode: str = "veto"          # veto=否决 / downgrade=降一档
@@ -76,6 +76,9 @@ class BacktestParams:
     #   实现于执行层（prbook_gate.py），不改 grade() 评级核心（评级与执行分离）；
     #   默认开=正式接入（对照实验用 --no-prbook-gate，见 c1_prbook_compare.py）。
     prbook_gate: bool = True
+    sentiment_gate: bool = True     # C4 情绪闸门开关（涨跌家数维度，与指数闸门并列）
+    sent_threshold: float = 70.0    # 全市场下跌家数占比阈值（%，建议值）
+    missing_sentiment: str = "pass" # 涨跌家数缺失：pass=放行并计数 / veto=否决
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -137,6 +140,11 @@ class BacktestParams:
             raise ValueError(f"--min-amount 必须 > 0（万元），收到: {self.min_amount!r}")
         if not isinstance(self.vol_window, int) or self.vol_window < 1:
             raise ValueError(f"--vol-window 必须是 ≥1 的整数，收到: {self.vol_window!r}")
+        # C4 情绪闸门参数校验（2026-08-05 第3波）
+        if not (0 < self.sent_threshold <= 100):
+            raise ValueError(f"--sent-threshold 必须是 (0,100] 的占比百分比，收到: {self.sent_threshold!r}")
+        if self.missing_sentiment not in ("pass", "veto"):
+            raise ValueError(f"--missing-sentiment 只能是 pass/veto，收到: {self.missing_sentiment!r}")
 
     # ── 参数快照 ──
 

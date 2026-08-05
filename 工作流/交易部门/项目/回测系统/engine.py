@@ -15,13 +15,16 @@ from dataclasses import dataclass, field
 import pandas as pd
 from tqdm import tqdm
 
+from 分析决策.市场环境.prbook_gate import (  # C1 财报日避让（2026-08-05 老板拍板）
+    prbook_verdict,
+    prbook_warn,
+)
 from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
 from 回测系统.adapters.data_provider import CacheDataProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel
 from 回测系统.adapters.strategy_provider import ZuanQianProvider
 from 回测系统.params import GRID_ANCHOR, BacktestParams, _parse_yyyymmdd
 from 回测系统.tracking import Signal, TrackedRecord, track_signal
-from 分析决策.市场环境.prbook_gate import prbook_verdict, prbook_warn  # C1 财报日避让（2026-08-05 老板拍板）
 
 
 @dataclass
@@ -32,7 +35,7 @@ class EngineResult:
     processed: int = 0        # 成功处理的股票数
     skipped: int = 0          # 无数据/异常跳过的股票数
     failed_codes: list[str] = field(default_factory=list)
-    gate_counts: dict = field(default_factory=dict)  # B1/C3 执行层过滤计数（veto_env/veto_volume/downgraded/missing/kept）
+    gate_counts: dict = field(default_factory=dict)  # B1/C3/C4 执行层过滤计数（veto_env/veto_sentiment/veto_volume/downgraded/missing/kept）
 
 
 class BacktestEngine:
@@ -51,12 +54,13 @@ class BacktestEngine:
         self.strategy = strategy or ZuanQianProvider()
         self.risk = risk or DefaultRiskModel()
         self.needed_cols = self.strategy.required_indicators()
-        # B1 环境闸门（2026-08-05 第3波）：执行层过滤计数 + 指数数据懒加载
-        self.gate_counts: dict = {"veto_env": 0, "veto_volume": 0,
+        # B1/C3/C4 环境闸门（2026-08-05 第3波）：执行层过滤计数 + 指数/涨跌家数数据懒加载
+        self.gate_counts: dict = {"veto_env": 0, "veto_sentiment": 0, "veto_volume": 0,
                                   "downgraded": 0, "missing": 0, "kept": 0,
                                   # C1 财报日避让（2026-08-05 老板拍板）：披露日否决/警示/无数据放行
                                   "veto_prbook": 0, "prbook_warn": 0, "prbook_missing": 0}
         self._index_df = None    # 主闸门指数日线（首次使用 env_gate 时加载）
+        self._breadth_df = None  # 全市场涨跌家数（首次使用 sentiment_gate 时加载，C4）
         self._prbook_map: dict = {}  # C1 预约披露 {code: 未披露行列表}（run() 内一次性加载；空=无数据放行）
 
     # ── 主入口 ──
@@ -133,8 +137,7 @@ class BacktestEngine:
                 if prbook_rows is None:
                     self.gate_counts["prbook_missing"] += 1   # 无该股披露数据 → 放行并计数
                 else:
-                    action, info = prbook_verdict(prbook_rows, sig_date)
-                    if action == "veto":
+                    if prbook_verdict(prbook_rows, sig_date)[0] == "veto":
                         self.gate_counts["veto_prbook"] += 1
                         continue
 
@@ -182,14 +185,21 @@ class BacktestEngine:
             self._index_df = load_index_daily(self.params.env_index)
         return self._index_df
 
-    def _apply_exec_gate(self, sig: Signal, window: pd.DataFrame) -> Signal | None:
-        """执行层判定（B1 环境闸门 + C3 量能过滤）——评级与执行分离
+    def _load_breadth_df(self):
+        """懒加载全市场涨跌家数（C4；缓存优先，无缓存走 pytdx 拉取）"""
+        if self._breadth_df is None:
+            from 分析决策.市场环境.index_data import load_market_breadth
+            self._breadth_df = load_market_breadth()
+        return self._breadth_df
 
-        - keep/missing → 原样放行（missing=数据缺口，按 missing_index 策略放行）
+    def _apply_exec_gate(self, sig: Signal, window: pd.DataFrame) -> Signal | None:
+        """执行层判定（B1 环境闸门 + C3 量能过滤 + C4 情绪闸门）——评级与执行分离
+
+        - keep/missing → 原样放行（missing=数据缺口，按各闸门 missing 策略放行）
         - downgrade → 降一档；若新评级不在 --grade 范围内 → 丢弃
-        - veto → 丢弃（环境/量能各计数）
+        - veto → 丢弃（指数/情绪/量能各计数）
         """
-        if not (self.params.env_gate or self.params.volume_filter):
+        if not (self.params.env_gate or self.params.volume_filter or self.params.sentiment_gate):
             self.gate_counts["kept"] += 1
             return sig
         from 分析决策.市场环境.gate import MarketGateConfig, exec_verdict
@@ -198,14 +208,18 @@ class BacktestEngine:
             drop_pct=self.params.env_drop_pct, mode=self.params.env_mode,
             volume_filter=self.params.volume_filter,
             min_amount=self.params.min_amount, vol_window=self.params.vol_window,
+            sentiment_gate=self.params.sentiment_gate,
+            sent_threshold=self.params.sent_threshold,
+            missing_sentiment=self.params.missing_sentiment,
         )
         index_df = self._load_index_df() if self.params.env_gate else None
-        action, info, src = exec_verdict(cfg, index_df, sig.date, sig.grade, window)
+        breadth_df = self._load_breadth_df() if self.params.sentiment_gate else None
+        action, info, src = exec_verdict(cfg, index_df, sig.date, sig.grade, window, breadth_df)
         if action == "keep":
             self.gate_counts["kept"] += 1
             return sig
         if action == "missing":
-            # 数据缺口（指数/成交额缺失）→ 放行并计数，避免数据问题误杀信号
+            # 数据缺口（指数/涨跌家数/成交额缺失）→ 放行并计数，避免数据问题误杀信号
             self.gate_counts["missing"] += 1
             return sig
         if action == "downgrade":
@@ -216,7 +230,7 @@ class BacktestEngine:
             sig.grade = new_grade
             return sig
         if action == "veto":
-            key = "veto_volume" if src == "volume" else "veto_env"
+            key = {"volume": "veto_volume", "sentiment": "veto_sentiment"}.get(src, "veto_env")
             self.gate_counts[key] += 1
             return None
         self.gate_counts["kept"] += 1
