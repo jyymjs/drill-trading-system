@@ -38,7 +38,7 @@ SCORE_SHORT = {"PT平台测试": "PT", "TY统一区间": "TY", "DN动能": "DN",
 FULL_BY_SHORT = {v: k for k, v in SCORE_SHORT.items()}
 
 
-def load_signals(csv_path: Path, only_codes: set[str] | None = None) -> tuple[list[Signal], list[dict]]:
+def load_signals(csv_path: Path, only_codes: set[str] | None = None) -> tuple[list[Signal], list[dict], list[int]]:
     """读基线 signals.csv → (Signal 列表, CSV 关版参照表)
 
     refs[i] = {hold: {"exit": float, "r": float, "stopped": bool}}（同源自检用：
@@ -202,6 +202,12 @@ def render_markdown(result: dict, holds: list[int], src: str, codes_n: int) -> s
     ]
     # 结论（数据说话）：以最长观察窗累计 R 净变化 + 误伤率判定
     lines += _verdict_section(result, holds)
+    # 附录：同源差异明细（质检 B3 修复：原实现 return 在附录之前，永不输出）
+    # 保持输出顺序：结论节在前，附录在后
+    if ss["ok"] != ss["checked"]:
+        lines += ["## 附录：同源差异明细（前 10 条）", ""]
+        lines += [f"- {m}" for m in ss["mismatches"]]
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -240,11 +246,6 @@ def _verdict_section(result: dict, holds: list[int]) -> list[str]:
         "",
     ]
     return lines
-    if ss["ok"] != ss["checked"]:
-        lines += ["## 附录：同源差异明细（前 10 条）", ""]
-        lines += [f"- {m}" for m in ss["mismatches"]]
-        lines.append("")
-    return "\n".join(lines)
 
 
 def main() -> int:
