@@ -258,11 +258,20 @@ def main() -> int:
         # mom20 复算（tighten_compare.enrich，duckdb 同口径，与 c23_capital_compare 一致）
         from 回测系统.tighten_compare import enrich
 
-        n_before = int((df["triggered_20d"] == 1).sum()) if "triggered_20d" in df.columns else len(df)
         df = enrich(df)
+        # 统计口径与 simulate_capital 内部一致（质检建议级修复 2026-08-06）：
+        # 先过滤触发集（mode + triggered_{hold}d），再套 C23 掩码——旧版对全表套掩码，
+        # 非触发行也会被计入留存，导致留存 >100%（实测 107.6%）荒谬数字
+        trig_col = f"triggered_{_hold_label(args.hold)}d"
+        if trig_col in df.columns:
+            triggered = df[(df["mode"] == args.mode) & (df[trig_col] == 1)]
+        else:
+            triggered = df
+        n_before = len(triggered)
+        kept = triggered[c23_mask(triggered)]
         df = df[c23_mask(df)]
-        print(f"[C23 过滤] 20d 触发信号 {n_before} → {len(df)} 笔（动量≤10% + 止损0.5~3元，"
-              f"留存 {len(df) / n_before:.1%}）")
+        print(f"[C23 过滤] {args.mode}/{args.hold} 触发信号 {n_before} → {len(kept)} 笔"
+              f"（动量≤10% + 止损0.5~3元，留存 {len(kept) / n_before:.1%}）")
     res = simulate_capital(df, args.capital, args.risk_ratio,
                            max_positions=args.max_positions, mode=args.mode,
                            hold=args.hold, grades=args.grades, c23=args.c23)

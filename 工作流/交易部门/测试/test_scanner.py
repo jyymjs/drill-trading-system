@@ -343,8 +343,8 @@ def test_scan_single_stock_c23_pass(monkeypatch):
 
 def test_scan_single_stock_c23_reject_momentum(monkeypatch):
     """C23: 动量>10% → 不达标（原因含动量）——触发价远离 20 日前收盘=追高"""
-    # last_close 12.0 时 iloc[-21] 收盘仍偏低 → 10.0 相对前第20根涨幅大？
-    # 用低 last_close 使前 20 根前收盘低 → 动量大：构造 last_close=8.2（接近起点）
+    # last_close=8.2（接近起点 8.0）→ iloc[-21] ≈ 8.16 → 动量 ≈ 22.6% > 10%，
+    # 恒走拒绝分支（质检建议级修复：旧版 if/else 弱断言未锁定前提）
     monkeypatch.setattr(
         scanner, "get_daily_kline",
         lambda code, use_cache=True: make_kline(last_close=8.2))
@@ -352,14 +352,10 @@ def test_scan_single_stock_c23_reject_momentum(monkeypatch):
         {"code": "600001", "name": "贵州茅台"},
         FakeStrategy(trigger_price=10.0), mode="prebreak")
     assert entry is not None
-    # 8.2 起点：iloc[-21] ≈ 8.2 + 79*0.0222 ≈ 9.95 → 10.0/9.95-1 ≈ 0.5% → 不超？
-    # 反向验证：直接断言"动量20日%"对应关系（数值由 _expected_mom20 决定）
     expected = _expected_mom20(100, 8.2, 10.0)
-    if expected > scanner.C23_MOM_MAX:
-        assert entry["C23"] == "不达标"
-        assert "动量" in entry["C23原因"]
-    else:
-        assert entry["C23"] == "达标"
+    assert expected > scanner.C23_MOM_MAX  # 前提锁定：22.6% > 10%，必走拒绝分支
+    assert entry["C23"] == "不达标"
+    assert "动量" in entry["C23原因"]
 
 
 def test_scan_single_stock_c23_reject_stop_near(monkeypatch):

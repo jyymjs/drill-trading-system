@@ -245,3 +245,44 @@ def test_simulate_capital_c23_filter():
     # 不开启 c23 → 三笔同日均进（持仓满 2 → 按 code 序前两笔成交；对照）
     res2 = simulate_capital(df, capital=10000, risk_ratio=0.015, max_positions=2)
     assert [t["code"] for t in res2["trades"]] == ["MOM", "NEAR"]
+
+
+def test_main_c23_stats_scope_triggered_only(monkeypatch, tmp_path, capsys):
+    """CLI --c23 打印统计口径 = 触发集内（先 mode+triggered 过滤再 C23 掩码）
+
+    质检建议级修复：旧版对全表套掩码统计，非触发行也被计入留存 → 留存 >100% 荒谬
+    （实测 107.6%）。场景构造：
+      - 触发集（prebreak & triggered_20d==1）：T1 达标 / M1 动量超 / SENT2 达标哨兵
+      - 非触发但满足 C23 掩码 2 行（X1/X2）——旧版 bug 会错误计入留存
+      - normal 模式触发 1 行（N1）——触发集（prebreak）之外，不计入
+    断言打印 = "3 → 2 笔（留存 66.7%）"：只统计触发集内行，留存 ≤ 100%。
+    """
+    import 回测系统.tighten_compare as tc
+    from 回测系统 import sim_capital as sc
+
+    rows = [
+        sig("T1", "2024-01-05", 10.0, 1.0, "2024-02-05", 11.0, 1.0, mom20=0.05),  # 触发且达标
+        sig("M1", "2024-01-08", 10.0, 1.0, "2024-02-08", 11.0, 1.0, mom20=0.20),  # 触发但动量超
+        {**sig("X1", "2024-01-05", 10.0, 1.0, "2024-02-05", 11.0, 1.0, mom20=0.05),
+         "triggered_20d": 0},   # 非触发但满足掩码（旧版会错误计入）
+        {**sig("X2", "2024-01-06", 10.0, 1.0, "2024-02-06", 11.0, 1.0, mom20=0.05),
+         "triggered_20d": 0},   # 非触发但满足掩码（旧版会错误计入）
+        {**sig("N1", "2024-01-07", 10.0, 1.0, "2024-02-07", 11.0, 1.0, mom20=0.05),
+         "mode": "normal"},     # normal 触发 → 触发集（prebreak）之外
+    ]
+    # C23 达标哨兵：高价股（1e6 元/股）→ 资金不足恒拒买，但留在 sub 推高 max_date
+    tail = pd.Timestamp("2024-02-08") + pd.Timedelta(days=3)
+    rows.append({**sig("SENT2", tail.strftime("%Y-%m-%d"), 1e6, 1.0,
+                       tail.strftime("%Y-%m-%d"), 1e6, 0.0, mom20=0.05)})
+
+    csv_path = tmp_path / "signals.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False, encoding="utf-8-sig")
+    monkeypatch.setattr(tc, "enrich", lambda df: df)  # 跳过 duckdb 复算（CSV 已含 mom20）
+    monkeypatch.setattr(sys, "argv", ["sim_capital.py", "--signals", str(csv_path),
+                                      "--mode", "prebreak", "--hold", "20d",
+                                      "--grades", "S", "--capital", "10000", "--c23"])
+    assert sc.main() == 0
+    out = capsys.readouterr().out
+    assert "[C23 过滤] prebreak/20d 触发信号 3 → 2 笔" in out, out
+    assert "留存 66.7%" in out, out
+    assert "107.6%" not in out
