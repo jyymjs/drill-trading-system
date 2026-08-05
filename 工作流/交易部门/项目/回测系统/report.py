@@ -212,6 +212,58 @@ def _prbook_section(records: list[TrackedRecord], gate_counts: dict | None,
     return "\n".join(lines)
 
 
+def _regime_section(records: list[TrackedRecord], index_df, holds: list[int]) -> str:
+    """市场状态分段节（T-021 · 防'牛市滤镜' 2026-08-06 老板拷问驱动）
+
+    规则（market_regime.py 注释即规则，白话版）：
+      - 用上证指数日线判定；牛 = 收盘站上 120 日均线 且 20 日均线高于 60 日
+        （多头排列 + 半年线之上）；熊 = 收盘跌破 120 日均线；其余 = 震荡
+      - 信号按"信号日"归属；只用 ≤ 信号日的指数数据（无前视，T+1 决策时点）
+      - 每段统计口径与全报告一致：1R 等权累计，胜 = R>0，盈亏比 = 盈利R和/亏损R和
+      - "未知" = 信号日不在指数日历（指数数据缺失，不参与牛熊占比）
+    """
+    if index_df is None:
+        return ("## 市场状态分段（防'牛市滤镜' · T-021）\n\n"
+                "> 未提供指数数据（上证指数缓存缺失/加载失败），本节跳过。\n\n")
+    from 回测系统.market_regime import REGIMES, regime_stats
+
+    st = regime_stats(records, index_df, holds)
+    if not st:
+        return ("## 市场状态分段（防'牛市滤镜' · T-021）\n\n"
+                "> 指数数据为空，本节跳过。\n\n")
+
+    total_sig = sum(b["n_signals"] for b in st.values())
+    lines = [
+        "## 市场状态分段（防'牛市滤镜' · T-021）",
+        "",
+        ("> 回测区间内按上证指数市场状态分段统计（规则：牛 = 收盘站上 120 日均线且 20 日均线 "
+         "> 60 日均线；熊 = 收盘跌破 120 日均线；其余 = 震荡。信号按信号日归属，只用当日及之前"
+         "指数数据，无前视）。看策略在各市场环境下的真实表现，防'整段牛市'的滤镜效应。"),
+        "",
+        f"- 统计组合共 **{total_sig}** 笔（信号数 × hold 观察窗，口径同总览）",
+        "",
+        "| 市场状态 | 时段 | 笔数 | 胜率 | 平均R | 累计R | 盈亏比 | 最大回撤 |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for regime in REGIMES:
+        b = st[regime]
+        span = f"{b['start'].date()} ~ {b['end'].date()}" if b["start"] is not None else "_（无信号）_"
+        pf = "∞" if b["profit_factor"] is None and b["total_r"] > 0 else (
+            "-" if b["profit_factor"] is None else f"{b['profit_factor']:.4f}")
+        lines.append(
+            f"| {regime} | {span} | {b['n_participate']} | {_fmt_rate(b['win_rate'])} | "
+            f"{b['avg_r']:.4f} | {b['total_r']:.4f} | {pf} | {b['max_drawdown']:.4f} |"
+        )
+    if "未知" in st and st["未知"]["n_signals"]:
+        u = st["未知"]
+        lines += [
+            "",
+            f"- 未知段：{u['n_signals']} 笔组合信号（信号日不在指数日历，未计入上表占比）",
+        ]
+    lines += ["", ""]
+    return "\n".join(lines)
+
+
 def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
     """normal vs prebreak 对比段"""
     lines = ["| 指标 | normal | prebreak |", "|---|---|---|"]
@@ -234,7 +286,8 @@ def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
 def write_report(path: Path, records: list[TrackedRecord],
                  buckets: dict[str, StatBlock], params: BacktestParams,
                  meta: dict | None = None,
-                 stress_records: list[TrackedRecord] | None = None) -> None:
+                 stress_records: list[TrackedRecord] | None = None,
+                 index_df=None) -> None:
     """写 report.md（含数据与样本口径说明 + D1/D2 质检节，满足风险提示要求）
 
     Args:
@@ -243,6 +296,7 @@ def write_report(path: Path, records: list[TrackedRecord],
         params: 回测参数
         meta: 运行元信息（股票数等）
         stress_records: D2 2倍成本（cost_multiplier=2.0）重跑产出；None=省略 D2 节
+        index_df: 上证指数日线（market_regime 市场状态分段用；None=跳过该节）
     """
     holds = params.holds
     modes = sorted({rec.signal.mode for rec in records} | {"normal", "prebreak"})
@@ -277,6 +331,9 @@ def write_report(path: Path, records: list[TrackedRecord],
 
     if "normal" in modes and "prebreak" in modes:
         lines += ["## normal vs prebreak 对比", "", _compare_table(records, holds), ""]
+
+    # 市场状态分段（T-021 防"牛市滤镜" 2026-08-06；指数数据缺失则跳过）
+    lines += [_regime_section(records, index_df, holds)]
 
     # C1 财报日避让（2026-08-05 老板拍板执行优化方案 C1 第一层）
     lines += [_prbook_section(records, meta.get("gate_counts"), params)]
