@@ -38,7 +38,7 @@ if [ -f "package.json" ]; then
   else
     echo "2/2 跳过（无 npm test 脚本）"
   fi
-elif [ -d "tests" ] || compgen -G "test_*.py" >/dev/null; then
+elif [ -d "tests" ] || [ -d "测试" ] || compgen -G "test_*.py" >/dev/null; then
   echo "2/2 测试 (Python)..."
   if command -v pytest &>/dev/null; then
     pytest --quiet --tb=short || { echo "❌ 测试"; exit 1; }

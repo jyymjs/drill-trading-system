@@ -53,6 +53,23 @@ class BacktestParams:
     # （买入后新高之后的回调低点）→ 止损上移到 低点×0.99；日线收盘判定；默认关=现有出场行为。
     # 先回测对照验证后上线（开/关对照实验见 c5_trail_compare.py）。
     moving_stop: bool = False
+    # B1 环境闸门 + C3 量能过滤（2026-08-05 老板拍板执行优化方案第3波）：
+    #   环境闸门：信号日主闸门指数（默认上证）当日跌幅跌破阈值（建议 -2%）→ 环境不利，
+    #     模式 veto=一票否决 / downgrade=降一档（对照可选项）；
+    #   量能过滤：信号日近 vol_window 日均成交额 < min_amount 万元 → 不进场（"无量直接不碰"）；
+    #   实现于执行层（gate.py），不改 grade() 评级核心（评级与执行分离）；
+    #   默认开=正式接入（2026-08-05 回测对照 b1c3_compare.py：400只×3年，
+    #   全开组胜率 37.9%→42.9%、均R 0.062→0.181、累计R 1.8→3.8、回撤 5.1→3.6，
+    #   普跌日 2026-05-29 当天 21 笔信号全亏-20.3R 为指数闸门盲区（家数普跌≠指数暴跌），
+    #   情绪闸门（涨跌家数 C4）标注为后续扩展）；
+    #   关闭用 --no-env-gate / --no-volume-filter（对照实验用）。
+    env_gate: bool = True
+    env_drop_pct: float = -2.0      # 指数当日跌幅阈值（%，建议值）
+    env_mode: str = "veto"          # veto=否决 / downgrade=降一档
+    env_index: str = "上证指数"     # 主闸门指数
+    volume_filter: bool = True      # C3 量能硬过滤开关
+    min_amount: float = 5000.0      # 日均成交额阈值（万元，建议值）
+    vol_window: int = 5             # 均额窗口（交易日，含信号日）
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -105,6 +122,15 @@ class BacktestParams:
                 raise ValueError(f"--dl-cands 需为 S,A,B 三个整数，收到: {self.dl_cands!r}")
             if not (cands[0] > cands[1] > cands[2]):
                 raise ValueError(f"--dl-cands 需严格降序（S>A>B），收到: {self.dl_cands!r}")
+        # B1 环境闸门参数校验（2026-08-05 第3波）
+        if self.env_drop_pct >= 0:
+            raise ValueError(f"--env-drop-pct 必须是负值（跌幅阈值），收到: {self.env_drop_pct!r}")
+        if self.env_mode not in ("veto", "downgrade"):
+            raise ValueError(f"--env-mode 只能是 veto/downgrade，收到: {self.env_mode!r}")
+        if not isinstance(self.min_amount, (int, float)) or self.min_amount <= 0:
+            raise ValueError(f"--min-amount 必须 > 0（万元），收到: {self.min_amount!r}")
+        if not isinstance(self.vol_window, int) or self.vol_window < 1:
+            raise ValueError(f"--vol-window 必须是 ≥1 的整数，收到: {self.vol_window!r}")
 
     # ── 参数快照 ──
 

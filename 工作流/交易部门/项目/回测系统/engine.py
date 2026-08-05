@@ -31,6 +31,7 @@ class EngineResult:
     processed: int = 0        # 成功处理的股票数
     skipped: int = 0          # 无数据/异常跳过的股票数
     failed_codes: list[str] = field(default_factory=list)
+    gate_counts: dict = field(default_factory=dict)  # B1/C3 执行层过滤计数（veto_env/veto_volume/downgraded/missing/kept）
 
 
 class BacktestEngine:
@@ -49,6 +50,10 @@ class BacktestEngine:
         self.strategy = strategy or ZuanQianProvider()
         self.risk = risk or DefaultRiskModel()
         self.needed_cols = self.strategy.required_indicators()
+        # B1 环境闸门（2026-08-05 第3波）：执行层过滤计数 + 指数数据懒加载
+        self.gate_counts: dict = {"veto_env": 0, "veto_volume": 0,
+                                  "downgraded": 0, "missing": 0, "kept": 0}
+        self._index_df = None  # 主闸门指数日线（首次使用 env_gate 时加载）
 
     # ── 主入口 ──
 
@@ -77,6 +82,7 @@ class BacktestEngine:
                         result.skipped += 1
                         result.failed_codes.append(f"{code}:{type(e).__name__}:{e}")
                     bar.update(1)
+        result.gate_counts = dict(self.gate_counts)
         return result
 
     # ── 单股处理 ──
@@ -117,6 +123,11 @@ class BacktestEngine:
                 sig = self._build_signal(code, sig_date, mode, window, close_arr[t])
                 if sig is None:
                     continue
+                # B1 环境闸门 + C3 量能过滤（执行层，2026-08-05 第3波）：
+                # 评级与执行分离——grade() 评级保持不变，此处只做否决/降级
+                sig = self._apply_exec_gate(sig, window)
+                if sig is None:
+                    continue
                 outcomes = {h: track_signal(sig, base, h, enable_cost=self.params.enable_cost,
                                             cost_multiplier=self.params.cost_multiplier,
                                             moving_stop=self.params.moving_stop)
@@ -125,6 +136,53 @@ class BacktestEngine:
         return records
 
     # ── 内部工具 ──
+
+    def _load_index_df(self):
+        """懒加载主闸门指数日线（B1；缓存优先，无缓存走 pytdx 拉取）"""
+        if self._index_df is None:
+            from 分析决策.市场环境.index_data import load_index_daily
+            self._index_df = load_index_daily(self.params.env_index)
+        return self._index_df
+
+    def _apply_exec_gate(self, sig: Signal, window: pd.DataFrame) -> Signal | None:
+        """执行层判定（B1 环境闸门 + C3 量能过滤）——评级与执行分离
+
+        - keep/missing → 原样放行（missing=数据缺口，按 missing_index 策略放行）
+        - downgrade → 降一档；若新评级不在 --grade 范围内 → 丢弃
+        - veto → 丢弃（环境/量能各计数）
+        """
+        if not (self.params.env_gate or self.params.volume_filter):
+            self.gate_counts["kept"] += 1
+            return sig
+        from 分析决策.市场环境.gate import MarketGateConfig, exec_verdict
+        cfg = MarketGateConfig(
+            enabled=self.params.env_gate, index=self.params.env_index,
+            drop_pct=self.params.env_drop_pct, mode=self.params.env_mode,
+            volume_filter=self.params.volume_filter,
+            min_amount=self.params.min_amount, vol_window=self.params.vol_window,
+        )
+        index_df = self._load_index_df() if self.params.env_gate else None
+        action, info, src = exec_verdict(cfg, index_df, sig.date, sig.grade, window)
+        if action == "keep":
+            self.gate_counts["kept"] += 1
+            return sig
+        if action == "missing":
+            # 数据缺口（指数/成交额缺失）→ 放行并计数，避免数据问题误杀信号
+            self.gate_counts["missing"] += 1
+            return sig
+        if action == "downgrade":
+            self.gate_counts["downgraded"] += 1
+            new_grade = str(info)
+            if new_grade not in self.params.grades:
+                return None
+            sig.grade = new_grade
+            return sig
+        if action == "veto":
+            key = "veto_volume" if src == "volume" else "veto_env"
+            self.gate_counts[key] += 1
+            return None
+        self.gate_counts["kept"] += 1
+        return sig
 
     def _active_modes(self) -> list[str]:
         if self.params.mode == "both":

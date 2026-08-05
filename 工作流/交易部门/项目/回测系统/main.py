@@ -44,6 +44,10 @@ def cmd_run(args) -> int:
         recompute_each_window=args.recompute_each_window,
         dl_cands=args.dl_cands,
         moving_stop=args.moving_stop,
+        env_gate=not args.no_env_gate, env_drop_pct=args.env_drop_pct,
+        env_mode=args.env_mode, env_index=args.env_index,
+        volume_filter=not args.no_volume_filter, min_amount=args.min_amount,
+        vol_window=args.vol_window,
     )
     try:
         params.validate()
@@ -175,6 +179,20 @@ def build_parser() -> argparse.ArgumentParser:
                        help="严格逐窗重算指标（对照验证慢路径）")
     run_p.add_argument("--moving-stop", action="store_true",
                        help="C5 移动止损（2026-08-05 老板拍板）：持仓中每确认新结构低点→止损上移低点×0.99；默认关（先回测对照后上线）")
+    run_p.add_argument("--no-env-gate", action="store_true",
+                       help="关闭 B1 环境闸门（2026-08-05 第3波，默认开=回测验证后正式接入）")
+    run_p.add_argument("--env-drop-pct", type=float, default=-2.0,
+                       help="指数当日跌幅阈值（%，默认 -2.0；建议值，回测验证）")
+    run_p.add_argument("--env-mode", default="veto", choices=["veto", "downgrade"],
+                       help="环境不利处理：veto=一票否决（默认）/ downgrade=降一档")
+    run_p.add_argument("--env-index", default="上证指数",
+                       help="主闸门指数（默认上证指数；可选 深证成指/创业板指）")
+    run_p.add_argument("--no-volume-filter", action="store_true",
+                       help="关闭 C3 量能硬过滤（2026-08-05 第3波，默认开=回测验证后正式接入）")
+    run_p.add_argument("--min-amount", type=float, default=5000.0,
+                       help="日均成交额阈值（万元，默认 5000；建议值，回测验证）")
+    run_p.add_argument("--vol-window", type=int, default=5,
+                       help="均额窗口（交易日，默认5，含信号日）")
 
     verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")
