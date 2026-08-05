@@ -2,8 +2,8 @@
 """回测独立项目 CLI（时光机）——把策略 V2 放回历史行情验证胜率/盈亏比
 
 用法:
-    python backtest/main.py run --start 20240601 --end 20260701 --mode both
-    python backtest/main.py verify --signals output/backtest/.../signals.csv --samples 20
+    python 回测系统/main.py run --start 20240601 --end 20260701 --mode both
+    python 回测系统/main.py verify --signals output/backtest/.../signals.csv --samples 20
 """
 import argparse
 import os
@@ -146,13 +146,13 @@ def cmd_verify(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python backtest/main.py",
+        prog="python 回测系统/main.py",
         description="回测独立项目（时光机）：策略 V2 历史验证",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例:
-  python backtest/main.py run --start 20240601 --end 20260701 --mode both
-  python backtest/main.py run --codes 000001 600000 --start 20250101 --end 20250601 --verify-samples 20
-  python backtest/main.py verify --signals output/backtest/full_full/signals.csv --samples 20 --seed 42""",
+  python 回测系统/main.py run --start 20240601 --end 20260701 --mode both
+  python 回测系统/main.py run --codes 000001 600000 --start 20250101 --end 20250601 --verify-samples 20
+  python 回测系统/main.py verify --signals output/backtest/full_full/signals.csv --samples 20 --seed 42""",
     )
     sub = parser.add_subparsers(dest="command")
 
