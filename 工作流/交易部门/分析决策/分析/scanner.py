@@ -97,6 +97,15 @@ def scan_single_stock(
                         else "未突破"
                     )
 
+                    # 2026-08-06 T-020：P2 放量条件（dn_confirm 回测 X=1.5 甜点）接入
+                    # 扫描候选——每只候选输出"放量阈值"（绝对成交量，单位同数据源=手），
+                    # 口径对齐 dn_confirm 回测"触发日前 20 日均量"：扫描时最新日视为潜在
+                    # 突破日 → 取不含最新日的前 20 根均量 × 1.5，每日用最新数据刷新。
+                    # 突破日成交量 > 放量阈值 才算放量达标（量比>1.5）。
+                    ref_vol = df["成交量"].iloc[max(0, len(df) - 21):len(df) - 1]
+                    ref_mean = float(ref_vol.mean()) if len(ref_vol) > 0 else 0.0
+                    entry["放量阈值"] = round(ref_mean * 1.5, 0) if ref_mean > 0 else 0
+
                 return entry
             return None
 
