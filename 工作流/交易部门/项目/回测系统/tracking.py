@@ -108,7 +108,7 @@ def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float
 
 
 def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True,
-                 cost_multiplier: float = 1.0) -> Outcome:
+                 cost_multiplier: float = 1.0, moving_stop: bool = False) -> Outcome:
     """跟踪一笔信号在 hold 个交易日内的出场
 
     Args:
@@ -117,6 +117,9 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         hold: 观察窗长度（交易日）
         enable_cost: 是否计入交易成本（佣金+印花税）
         cost_multiplier: 成本倍率（D2 2倍成本压力测试用，2026-08-05）
+        moving_stop: C5 移动止损开关（2026-08-05 老板拍板）：
+            持仓中每确认"新结构低点"（买入后新高之后的回调低点）→ 止损上移到 低点×0.99；
+            日线收盘判定（信号日视角）。默认关 = 现有「止损+hold到期收盘」行为。
 
     Returns:
         Outcome（预突破未触发时 triggered=False，不参与统计）
@@ -128,29 +131,77 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         return Outcome(hold, True, signal.close, signal.close, signal.date, False, 0.0)
 
     if signal.mode == "normal":
-        return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier)
-    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier)
+        return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop)
+    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop)
+
+
+# ── C5 移动止损（2026-08-05 老板拍板 · 方案 C5 · 先回测后上线）──
+# 出处：知识库《价格行为学入门·04 突破单和移动止损篇》（线索c 2026-07-24）核心方法
+#   "把止损不断移动到重要的低点——每确认一个新的结构低点（台阶式抬高），就把止损抬到它下方一点"；
+#   知识库《出场体系·六层出场》第 3 层移动获利硬规则："移动获利点必须在进场位正向"
+#   （做多新止损必须高于进场价，2023-03-04 老师原话，2026-08-04 补齐）。
+# 判定口径（C5 定案）：日线收盘判定（信号日视角）；先回测验证后上线，不直接改生产出场行为。
+
+def _track_window(high, low, close, dates, start, end, entry, stop,
+                  enable_cost: bool, cost_multiplier: float, moving_stop: bool):
+    """窗口内出场跟踪（含 C5 移动止损可选模式）
+
+    无移动止损（moving_stop=False，现有行为）：
+        逐日检查 最低≤止损 → 以止损价出场；否则 hold 末收盘出场。
+    移动止损（moving_stop=True，C5 定案）：
+        持仓中维护"最高价"与"候选结构低点"，逐日收盘判定：
+          ① 候选确认：昨日候选低点 今日最低不再创新低（low[j] > low[cand]）→ 结构低点确认，
+             止损上移到 低点×0.99（须高于当前止损 且 高于进场价——六层第3层正向硬规则）；
+          ② 止损检查：当日最低 ≤ 当前止损 → 以止损价出场；
+          ③ 新高更新：最高价刷新（"买入后新高"结构前提）；
+          ④ 候选更新：已创新高后 当日创回调新低 → 记为候选（连续下跌逐日更新到最低点，
+             直到某日不再创新低即确认）。
+        无前视：所有判定只用 ≤ j 日数据（候选确认在 j 日收盘后完成）。
+
+    Returns:
+        (exit_price, exit_date, stopped)
+    """
+    if not moving_stop:
+        for j in range(start, end + 1):
+            if low[j] <= stop:
+                return stop, pd.Timestamp(dates[j]), True
+        return close[end], pd.Timestamp(dates[end]), False
+
+    highest = entry          # 持仓期最高价（初始=进场价，"买入后新高"从此算起）
+    candidate = None         # 候选结构低点索引（需次日不再创新低才确认）
+    for j in range(start, end + 1):
+        # ① 候选确认（j 日收盘判定：不再创新低 → 结构低点成立）
+        if candidate is not None and low[j] > low[candidate]:
+            new_stop = round(low[candidate] * 0.99, 2)   # 低点下方 ×0.99 缓冲
+            if new_stop > stop and new_stop > entry:      # 高于当前止损 且 进场位正向（硬规则）
+                stop = new_stop
+            candidate = None
+        # ② 止损检查（当日最低触及 → 以当前止损价出场）
+        if low[j] <= stop:
+            return stop, pd.Timestamp(dates[j]), True
+        # ③ 新高更新（结构前提：必须有过买入后新高，回调低点才算"新结构低点"）
+        if high[j] > highest:
+            highest = high[j]
+        # ④ 候选更新：已创新高后 当日创回调新低（无候选比昨日低，有候选比候选低）
+        if highest > entry and low[j] < (low[candidate] if candidate is not None else low[j - 1]):
+            candidate = j
+    return close[end], pd.Timestamp(dates[end]), False
 
 
 def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
-                  enable_cost: bool = True, cost_multiplier: float = 1.0) -> Outcome:
-    """normal：T 收盘进场，窗口内 最低≤止损 → 止损出场；否则 hold 末收盘出场"""
+                  enable_cost: bool = True, cost_multiplier: float = 1.0,
+                  moving_stop: bool = False) -> Outcome:
+    """normal：T 收盘进场，窗口内跟踪出场（C5 移动止损可选）"""
     entry = signal.close
     stop = signal.stop
+    high = df["最高"].values
     low = df["最低"].values
     close = df["收盘"].values
     dates = df["日期"].values
 
-    for j in range(t + 1, end + 1):
-        if low[j] <= stop:
-            exit_price = stop
-            exit_date = pd.Timestamp(dates[j])
-            stopped = True
-            break
-    else:
-        exit_price = close[end]
-        exit_date = pd.Timestamp(dates[end])
-        stopped = False
+    exit_price, exit_date, stopped = _track_window(
+        high, low, close, dates, t + 1, end, entry, stop,
+        enable_cost, cost_multiplier, moving_stop)
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0
@@ -158,10 +209,10 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
 
 
 def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
-                    enable_cost: bool = True, cost_multiplier: float = 1.0) -> Outcome:
-    """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后 最低≤stop → 止损，否则 hold 末收盘"""
+                    enable_cost: bool = True, cost_multiplier: float = 1.0,
+                    moving_stop: bool = False) -> Outcome:
+    """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后跟踪出场（C5 移动止损可选）"""
     trigger = signal.trigger
-    stop = signal.stop
     risk = signal.risk
     high = df["最高"].values
     low = df["最低"].values
@@ -178,17 +229,10 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
         return Outcome(hold, False, 0.0, 0.0, None, False, 0.0)   # 未触发：不参与统计
 
     entry = trigger
-    # 2) 触发后跟踪出场（触发日次日 ~ hold 末）
-    for j in range(trig_idx + 1, end + 1):
-        if low[j] <= stop:
-            exit_price = stop
-            exit_date = pd.Timestamp(dates[j])
-            stopped = True
-            break
-    else:
-        exit_price = close[end]
-        exit_date = pd.Timestamp(dates[end])
-        stopped = False
+    # 2) 触发后跟踪出场（触发日次日 ~ hold 末；移动止损同 normal 口径）
+    exit_price, exit_date, stopped = _track_window(
+        high, low, close, dates, trig_idx + 1, end, entry, signal.stop,
+        enable_cost, cost_multiplier, moving_stop)
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / risk if risk > 0 else 0.0
