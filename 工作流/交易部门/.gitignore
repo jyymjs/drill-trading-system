@@ -43,8 +43,9 @@ output/*.csv
 output/*.png
 data/cache/
 
-# T-017 数据源升级 B 方案（P2 全量库，临时数据不入 git）
+# T-017 数据源升级 B 方案（P2 全量库 + P3 运行态文件，不入 git）
 data/t017_p2.duckdb
+data/duckdb_runtime/
 
 # 本地密钥配置（不提交）
 scripts/config.local.json
