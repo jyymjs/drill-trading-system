@@ -95,10 +95,21 @@ def cmd_run(args) -> int:
         stress_records = stress_result.records
         print(f"  [D2] 完成 | 信号 {len(stress_records)} 笔")
 
+    # 市场状态分段用指数（T-021 2026-08-06）：缓存优先复用，失败不阻断报告
+    index_df = None
+    try:
+        from 回测系统.market_regime import load_index_df
+        index_df = load_index_df(params.env_index)
+        if index_df is not None:
+            print(f"  [REGIME] 市场状态分段载入 {params.env_index}："
+                  f"{index_df['日期'].min().date()} ~ {index_df['日期'].max().date()}，{len(index_df)} 根")
+    except Exception as e:  # noqa: BLE001 - 指数缺失只跳过分段节，不影响回测主体
+        print(f"  ⚠ 市场状态分段数据未载入: {e}")
+
     write_report(report_path, result.records, _buckets(result.records, params), params,
                  meta={"processed": result.processed, "skipped": result.skipped,
                        "gate_counts": result.gate_counts},
-                 stress_records=stress_records)
+                 stress_records=stress_records, index_df=index_df)
     params.save_snapshot(str(params_path), strategy_info)
 
     # 蒙特卡洛版式报告（自动生成，复用 分析决策/跟踪/monte_carlo 渲染器）
