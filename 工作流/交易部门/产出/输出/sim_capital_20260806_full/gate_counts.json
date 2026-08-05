@@ -1,0 +1,11 @@
+{
+  "veto_env": 374,
+  "veto_sentiment": 3108,
+  "veto_volume": 2475,
+  "downgraded": 0,
+  "missing": 0,
+  "kept": 5615,
+  "veto_prbook": 3342,
+  "prbook_warn": 171,
+  "prbook_missing": 0
+}
