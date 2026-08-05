@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backtest.stats import StatBlock, group_stats, merge_monthly, mode_stats, _max_drawdown_from_r
-from backtest.tracking import Outcome, Signal, TrackedRecord
+from 回测系统.stats import StatBlock, group_stats, merge_monthly, mode_stats, _max_drawdown_from_r
+from 回测系统.tracking import Outcome, Signal, TrackedRecord
 
 
 def make_signal(code="600000", mode="normal", grade="S", date="2024-01-08") -> Signal:

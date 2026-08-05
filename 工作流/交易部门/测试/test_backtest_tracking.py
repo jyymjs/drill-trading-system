@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backtest.tracking import Signal, track_signal
+from 回测系统.tracking import Signal, track_signal
 
 
 def make_df(closes: list[float], highs=None, lows=None) -> pd.DataFrame:
