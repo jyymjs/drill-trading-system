@@ -139,13 +139,13 @@ class TestGateVerdict:
         c = cfg(mode="downgrade")
         df = make_index_df(["2024-06-03"], [-3.0])
         for g, expect in [("S", "A"), ("A", "B"), ("B", "C"), ("C", "C")]:
-            action, new_g = gate_verdict(c, df, SIG_DATE, g)
+            _action, new_g = gate_verdict(c, df, SIG_DATE, g)
             assert new_g == expect, f"{g} → {new_g}（期望 {expect}）"
 
     def test_指数数据缺失_pass放行(self):
         c = cfg(missing_index="pass")
         df = make_index_df(["2024-06-04"], [-3.0])  # 信号日无数据
-        action, info = gate_verdict(c, df, SIG_DATE, "S")
+        action, _info = gate_verdict(c, df, SIG_DATE, "S")
         assert action == "missing"
 
     def test_指数数据缺失_veto否决(self):
@@ -196,7 +196,7 @@ class TestVolumeVerdict:
     def test_无成交额列_缺口放行(self):
         c = cfg(volume_filter=True, min_amount=5000.0)
         df = pd.DataFrame({"日期": [SIG_DATE], "收盘": [10.0]})
-        action, info = volume_verdict(c, df)
+        action, _info = volume_verdict(c, df)
         assert action == "missing"
 
     def test_成交额全零_缺口放行(self):
@@ -217,14 +217,14 @@ class TestExecVerdict:
         c = cfg(enabled=True, volume_filter=True)
         idx = make_index_df(["2024-06-03"], [-3.0])
         win = make_window([100.0] * 5)  # 无量
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
         assert (action, src) == ("veto", "env")
 
     def test_环境放行_量能否决(self):
         c = cfg(enabled=True, volume_filter=True)
         idx = make_index_df(["2024-06-03"], [-1.0])
         win = make_window([100.0] * 5)
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
         assert (action, src) == ("veto", "volume")
 
     def test_降级模式_降级且量能过(self):
@@ -238,13 +238,13 @@ class TestExecVerdict:
         c = cfg(enabled=True, mode="downgrade", volume_filter=True)
         idx = make_index_df(["2024-06-03"], [-3.0])
         win = make_window([100.0] * 5)
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
         assert (action, src) == ("veto", "volume")
 
     def test_指数缺口_pass放行(self):
         c = cfg(enabled=True, missing_index="pass")
         idx = make_index_df(["2024-06-04"], [-3.0])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5))
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5))
         assert (action, src) == ("missing", "env")
 
 
@@ -307,7 +307,7 @@ class TestSentimentVerdict:
     def test_数据缺失_pass放行(self):
         c = cfg(sentiment_gate=True, missing_sentiment="pass")
         df = make_breadth_df([90.0], ["2024-06-04"])  # 信号日无数据
-        action, info = sentiment_verdict(c, df, SIG_DATE)
+        action, _info = sentiment_verdict(c, df, SIG_DATE)
         assert action == "missing"
 
     def test_数据缺失_veto否决(self):
@@ -336,21 +336,21 @@ class TestSentimentExecVerdict:
         c = cfg(enabled=True, sentiment_gate=True)
         idx = make_index_df(["2024-06-03"], [-3.0])
         breadth = make_breadth_df([40.0], ["2024-06-03"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("veto", "env")
 
     def test_双放行_量能过_keep(self):
         c = cfg(enabled=True, sentiment_gate=True, volume_filter=True)
         idx = make_index_df(["2024-06-03"], [-1.0])
         breadth = make_breadth_df([50.0], ["2024-06-03"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("keep", "none")
 
     def test_双放行_量能不过_否决volume(self):
         c = cfg(enabled=True, sentiment_gate=True, volume_filter=True)
         idx = make_index_df(["2024-06-03"], [-1.0])
         breadth = make_breadth_df([50.0], ["2024-06-03"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([100.0] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([100.0] * 5), breadth)
         assert (action, src) == ("veto", "volume")
 
     def test_指数降级模式_情绪放行_降级生效(self):
@@ -365,28 +365,28 @@ class TestSentimentExecVerdict:
         c = cfg(enabled=True, mode="downgrade", sentiment_gate=True)
         idx = make_index_df(["2024-06-03"], [-3.0])
         breadth = make_breadth_df([75.0], ["2024-06-03"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("veto", "sentiment")
 
     def test_情绪缺失_pass放行(self):
         c = cfg(enabled=True, sentiment_gate=True, missing_sentiment="pass")
         idx = make_index_df(["2024-06-03"], [-1.0])
         breadth = make_breadth_df([90.0], ["2024-06-04"])  # 信号日家数缺失
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("missing", "sentiment")
 
     def test_情绪缺失_veto否决(self):
         c = cfg(enabled=True, sentiment_gate=True, missing_sentiment="veto")
         idx = make_index_df(["2024-06-03"], [-1.0])
         breadth = make_breadth_df([90.0], ["2024-06-04"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("veto", "sentiment")
 
     def test_指数缺失_情绪放行_按指数策略(self):
         c = cfg(enabled=True, missing_index="pass", sentiment_gate=True)
         idx = make_index_df(["2024-06-04"], [-3.0])  # 信号日指数缺失
         breadth = make_breadth_df([50.0], ["2024-06-03"])
-        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
+        action, _info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5), breadth)
         assert (action, src) == ("missing", "env")
 
 

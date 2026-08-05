@@ -153,7 +153,7 @@ def sim_stats() -> str:
 
     rs = [float(r["r_multiple"]) for r in closed]
     wins = [r for r in closed if float(r["r_multiple"]) > 0]
-    losses = [r for r in closed if float(r["r_multiple"]) <= 0]
+    [r for r in closed if float(r["r_multiple"]) <= 0]
     # 连败
     max_streak = cur = 0
     for r in closed:

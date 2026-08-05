@@ -25,7 +25,7 @@ import re
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -87,7 +87,6 @@ class Config:
         self = cls()
 
         # 加载 .env 文件（如存在）
-        dotenv_loaded = False
         env_paths = [
             Path.cwd() / ".env",
             Path(__file__).parent / ".env",
@@ -99,7 +98,6 @@ class Config:
                     from dotenv import load_dotenv
                     load_dotenv(p, override=False)
                     log.info("已加载 .env 文件: %s", p)
-                    dotenv_loaded = True
                 except ImportError:
                     log.warning("python-dotenv 未安装，跳过 .env 加载，请 pip install python-dotenv")
                 break
@@ -489,7 +487,7 @@ class VideoProcessor:
         with open(list_file, "w", encoding="utf-8") as f:
             for seg in segments:
                 # ffmpeg concat 需要转义路径
-                escaped = seg.replace("\\", "\\\\").replace("'", "'\\''")
+                seg.replace("\\", "\\\\").replace("'", "'\\''")
                 f.write(f"file '{seg}'\n")
         cmd = [
             self.ffmpeg, "-f", "concat", "-safe", "0",
@@ -626,7 +624,7 @@ class VideoProcessor:
                 startupinfo=startupinfo,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
-            stdout, stderr = process.communicate(timeout=3600)
+            _stdout, stderr = process.communicate(timeout=3600)
             if process.returncode != 0:
                 err_text = stderr.decode("utf-8", errors="replace")[-1000:]
                 raise RuntimeError(f"ffmpeg {desc} 失败 (code {process.returncode}): {err_text}")

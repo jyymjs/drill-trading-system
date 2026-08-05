@@ -102,7 +102,7 @@ def boll_position(df: pd.DataFrame) -> str:
     if not all(c in df.columns for c in ["BOLL_UPPER", "BOLL_MID", "BOLL_LOWER"]):
         return "unknown"
     close = df["收盘"].iloc[-1]
-    upper, mid, lower = df["BOLL_UPPER"].iloc[-1], df["BOLL_MID"].iloc[-1], df["BOLL_LOWER"].iloc[-1]
+    upper, _mid, lower = df["BOLL_UPPER"].iloc[-1], df["BOLL_MID"].iloc[-1], df["BOLL_LOWER"].iloc[-1]
     if pd.isna(upper):
         return "unknown"
     if close >= upper:

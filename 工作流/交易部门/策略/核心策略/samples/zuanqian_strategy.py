@@ -657,7 +657,7 @@ class ZuanQianStrategy(BaseStrategy):
              "zone_ratio": float, "support": bool, "reason": str} 或 None
         """
         # 硬约束：独立结构必须存在（DL 至少 B——结构规模足够）
-        dl_g, dl_r = self._grade_dl(df)
+        dl_g, _dl_r = self._grade_dl(df)
         if dl_g in ("C",):
             return None
         # 一脉：筹码集中区（POC 集中度 ≥15% 或 筹码区集中）

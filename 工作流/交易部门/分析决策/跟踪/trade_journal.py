@@ -98,7 +98,7 @@ def trade_stats(trades: list[dict] | None = None) -> dict:
         recent = r_values[-20:]
         recent_wins = sum(1 for r in recent if r > 0)
         stats["rolling_win_rate_20"] = recent_wins / 20
-        recent_avg = sum(recent) / 20
+        sum(recent) / 20
         recent_win_avg = sum(r for r in recent if r > 0) / recent_wins if recent_wins > 0 else 0
         recent_loss_avg = sum(r for r in recent if r <= 0) / (20 - recent_wins) if 20 - recent_wins > 0 else 0
         stats["rolling_expectancy_20"] = (recent_wins/20)*recent_win_avg - ((20-recent_wins)/20)*abs(recent_loss_avg)

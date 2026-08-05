@@ -229,11 +229,11 @@ def render_terminal_report(result: dict, initial_capital: float = 100_000.0,
     if "error" in result:
         return f"SIMULATION ERROR: {result['error']}"
 
-    n_sim = result["n_simulations"]
+    result["n_simulations"]
     rng_r = risk_per_trade * initial_capital      # 每笔风险金额
     final_r = result["final_equities"]
     curves = np.cumsum(result["samples"], axis=1)  # 累计 R 曲线（含费用）
-    peak_curves = np.maximum.accumulate(curves, axis=1)
+    np.maximum.accumulate(curves, axis=1)
     min_equity_r = curves.min(axis=1)              # 每条路径最低累计 R
     ruin_r = (ruin_threshold_pct * initial_capital - initial_capital) / rng_r  # 破产 R 线
 
@@ -350,11 +350,11 @@ def plot_simulation(result: dict, save: bool = True) -> str:
     # 随机采样 100 条路径显示
     rng = np.random.default_rng(42)
     indices = rng.choice(len(final), min(100, len(final)), replace=False)
-    sample_data = np.zeros((len(indices), n))
+    np.zeros((len(indices), n))
     for idx_in_sim, idx_in_curves in enumerate(indices):
-        start = result["lower95"][0] if len(result["lower95"]) > 0 else 0
+        result["lower95"][0] if len(result["lower95"]) > 0 else 0
         # 生成模拟路径
-        r_values = result.get("r_values", None)
+        result.get("r_values", None)
     ax.set_facecolor("#141420")
     ax.set_title("模拟路径 (随机100条)", color="#ccc")
     ax.grid(alpha=0.1)

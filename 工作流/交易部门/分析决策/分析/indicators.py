@@ -365,7 +365,7 @@ def step_down_trace(df: pd.DataFrame, lookback: int = 20) -> dict:
             depth_pct = lower_shadow / max(body, 0.001)
 
             # 下一根必须是阳线反弹
-            next_body = abs(cl[i + 1] - op[i + 1])
+            abs(cl[i + 1] - op[i + 1])
             next_is_yang = cl[i + 1] > op[i + 1]
             next_hl = high[i + 1] - low[i + 1]
 
@@ -1073,7 +1073,7 @@ def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     peak = high.max()
     trough = low.min()
     bounce = (cur - trough) / trough if trough > 0 else 0
-    drawdown = (peak - cur) / peak if peak > 0 else 0
+    (peak - cur) / peak if peak > 0 else 0
     weak_bounce = bounce < 0.08
     # 3) 结构质量：横盘波幅（过低 = 死水无动能）
     rng = (peak - trough) / cur if cur > 0 else 0

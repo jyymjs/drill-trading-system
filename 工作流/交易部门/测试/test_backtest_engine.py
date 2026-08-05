@@ -66,7 +66,7 @@ class TestGrid:
         """信号日索引从 249 起、步长 interval，且窗口先截断"""
         df = make_kline(400, seed=3)
         params = make_params(interval=5, holds=[5])
-        engine = BacktestEngine(params, provider=_FakeProvider(df))
+        BacktestEngine(params, provider=_FakeProvider(df))
         # 网格 = range(249, 400, 5)
         assert list(range(GRID_ANCHOR, len(df), 5))[0] == GRID_ANCHOR
         assert (len(df) - GRID_ANCHOR) // 5 >= 1

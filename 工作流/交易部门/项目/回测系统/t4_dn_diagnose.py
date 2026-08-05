@@ -58,7 +58,7 @@ def main():
             continue
         try:
             df = all_indicators(df, needed_cols=strategy.required_indicators)
-            n = len(df)
+            len(df)
             if "VOL_RATIO" not in df.columns:
                 continue
             n_ok += 1

@@ -74,7 +74,6 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
     # 注意：pytdx 单次最多返回约 800 条，超过 3 年数据可能截断
     count = min(max(years * 250, 800), 800)
 
-    last_err = None
     for host, port in TDX_SERVERS:
         try:
             api = TdxHq_API()
@@ -123,8 +122,7 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
 
             return df
 
-        except Exception as e:
-            last_err = e
+        except Exception:
             continue
 
     return None

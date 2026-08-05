@@ -172,7 +172,7 @@ def plot_kline(
 
         title = f"{symbol} {name}" if name else symbol
 
-        fig, axes = mpf.plot(
+        fig, _axes = mpf.plot(
             df,
             type="candle",
             addplot=apds,

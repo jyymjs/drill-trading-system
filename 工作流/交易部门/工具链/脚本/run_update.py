@@ -44,7 +44,7 @@ def main():
     else:
         # 增量更新（批量API）
         def on_progress(current, total, code, name, status):
-            bar = "#" * (current * 40 // total) if total else ""
+            "#" * (current * 40 // total) if total else ""
             print(f"\r  [{current}/{total}] {'█'* (current * 30 // max(total,1))}{'.'* (30 - current * 30 // max(total,1))} {status}: {code}", end="", flush=True)
 
         result = incremental_update(mode=mode, include_etf=True, progress_callback=on_progress)

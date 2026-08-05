@@ -233,7 +233,7 @@ def cmd_track(args):
             pass
 
         risk_per = abs(entry_price - stop_loss)
-        r_mul = (exit_price - entry_price) / risk_per if risk_per > 0 else 0
+        (exit_price - entry_price) / risk_per if risk_per > 0 else 0
 
         # 计算交易成本
         from 分析决策.风控.capital import calc_trade_fee
@@ -397,7 +397,7 @@ def main():
                            help="策略模块名 (默认: zuanqian_strategy)")
 
     # market-review（R-008 市场环境复盘）
-    review_parser = subparsers.add_parser("market-review", help="市场环境复盘（指数一致性/周期/仓位建议）")
+    subparsers.add_parser("market-review", help="市场环境复盘（指数一致性/周期/仓位建议）")
 
     # track
     track_parser = subparsers.add_parser("track", help="交易记录管理")
