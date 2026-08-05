@@ -182,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--no-env-gate", action="store_true",
                        help="关闭 B1 环境闸门（2026-08-05 第3波，默认开=回测验证后正式接入）")
     run_p.add_argument("--env-drop-pct", type=float, default=-2.0,
-                       help="指数当日跌幅阈值（%，默认 -2.0；建议值，回测验证）")
+                       help="指数当日跌幅阈值（%%，默认 -2.0；建议值，回测验证）")
     run_p.add_argument("--env-mode", default="veto", choices=["veto", "downgrade"],
                        help="环境不利处理：veto=一票否决（默认）/ downgrade=降一档")
     run_p.add_argument("--env-index", default="上证指数",
