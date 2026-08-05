@@ -1,24 +1,36 @@
 """技术指标计算单元测试"""
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
-import sys
-import os
 
 # 确保能导入项目模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from 分析决策.分析.indicators import (
-    ma, ema, macd, rsi, kdj, boll,
-    volume_ratio, ma_cross, macd_cross,
-    atr, rolling_volatility,
-    body_to_range_series, body_to_range_ratio,
-    consecutive_count, profile_compactness,
-    platform_test_count, retracement_detect,
-    channel_detect, overshoot_detect,
-    support_resistance_levels, all_indicators,
+    all_indicators,
+    atr,
+    body_to_range_ratio,
+    body_to_range_series,
+    boll,
+    channel_detect,
+    consecutive_count,
+    ema,
+    kdj,
+    ma,
+    ma_cross,
+    macd,
+    overshoot_detect,
+    platform_test_count,
+    profile_compactness,
+    retracement_detect,
+    rolling_volatility,
+    rsi,
+    support_resistance_levels,
+    volume_ratio,
 )
-
 
 # ============================================================
 # 辅助：生成测试用的 K 线数据
@@ -99,7 +111,7 @@ class TestMACD:
 
     def test_macd_flat(self):
         s = pd.Series([10.0] * 50)
-        dif, dea, bar = macd(s)
+        dif, _dea, _bar = macd(s)
         # 平坦序列中 DIF ≈ 0
         assert abs(dif.iloc[-1]) < 1e-10
 
@@ -148,7 +160,7 @@ class TestKDJ:
     def test_kdj_j_divergence(self):
         """J 值偏离程度比 K/D 更大"""
         df = make_kline(100)
-        k, d, j = kdj(df["最高"], df["最低"], df["收盘"])
+        k, _d, j = kdj(df["最高"], df["最低"], df["收盘"])
         valid = pd.DataFrame({"k": k, "j": j}).dropna()
         assert valid["j"].std() > valid["k"].std()
 
@@ -213,7 +225,7 @@ class TestMACross:
         """短线下穿长线 → 死叉信号"""
         short = pd.Series([5, 4, 3, 2, 1, 0])
         long = pd.Series([0, 1, 2, 3, 4, 5])
-        signal = ma_cross(short, long)
+        ma_cross(short, long)
         cross_idx = (short > long).astype(int).diff()
         assert (cross_idx == -1).sum() == 1  # 恰好一次死叉
 

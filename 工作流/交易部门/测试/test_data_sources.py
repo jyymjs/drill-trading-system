@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from 数据基础.duckdb.data_sources import cninfo as CI
 from 数据基础.duckdb.data_sources import cls as CLS
+from 数据基础.duckdb.data_sources import cninfo as CI
 from 数据基础.duckdb.data_sources import store as DS
 
 # 巨潮公告接口样例响应（2026-08-05 实测字段结构）
@@ -186,9 +186,9 @@ def con(tmp_path):
 
 def test_schema_created(con):
     """建表：announcements/prbook/news_flash 三表均有 PK"""
-    got = set(r[0] for r in con.execute(
+    got = {r[0] for r in con.execute(
         "SELECT DISTINCT table_name FROM duckdb_constraints() "
-        "WHERE constraint_type='PRIMARY KEY'").fetchall())
+        "WHERE constraint_type='PRIMARY KEY'").fetchall()}
     assert {"announcements", "prbook", "news_flash"} <= got
 
 

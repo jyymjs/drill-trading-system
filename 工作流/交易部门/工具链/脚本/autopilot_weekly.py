@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 周会视频全自动接力处理
 
@@ -149,7 +148,7 @@ def main():
             todo.append(v)
 
     log("=" * 60)
-    log(f"周会视频自动接力 — 启动")
+    log("周会视频自动接力 — 启动")
     log(f"  总数: {len(videos)} | 已完成: {len(done)} | 待处理: {len(todo)}")
     log(f"  并行: {args.parallel}路 | 帧间隔: {args.frame_interval}s")
     log("=" * 60)
@@ -200,11 +199,11 @@ def main():
     log("=" * 60)
     log(f"[DONE] 全部完成！总耗时: {total_min:.0f}分 | 成功: {len(ok)}/{len(results)}")
     if fail:
-        log(f"  失败列表:")
+        log("  失败列表:")
         for f in fail:
             log(f"    {f['video']}: {f['status']} — {f['stderr'][:100]}")
     if ok:
-        log(f"  产出文件:")
+        log("  产出文件:")
         for o in ok:
             log(f"    {mark_complete(Path(o['path']))}")
     log("=" * 60)

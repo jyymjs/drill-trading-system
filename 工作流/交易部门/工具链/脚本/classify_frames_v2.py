@@ -3,7 +3,12 @@
 安全版帧分类：先分类所有帧并记录结果，最后再删除非图表帧。
 防止中途中断导致数据丢失。
 """
-import os, base64, time, json, sys
+import base64
+import json
+import os
+import sys
+import time
+
 from openai import OpenAI
 
 FRAMES_DIR = sys.argv[1]
@@ -65,7 +70,7 @@ with open(RESULT_FILE, "w") as f:
 chart_count = sum(1 for v in results.values() if v == "chart")
 other_count = sum(1 for v in results.values() if v == "other")
 error_count = sum(1 for v in results.values() if v == "error")
-print(f"\n=== 统计 ===")
+print("\n=== 统计 ===")
 print(f"  K线图(chart): {chart_count}")
 print(f"  非图表(other): {other_count}")
 print(f"  错误: {error_count}")

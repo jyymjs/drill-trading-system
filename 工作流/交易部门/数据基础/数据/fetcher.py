@@ -12,10 +12,16 @@ duckdb 分支统一前复权口径（因子自算 qfq），为主链路默认数
 技术形态识别（DL/PT/LK/TY）对复权不敏感，但均线/价格阈值可能有轻微偏差。
 """
 from datetime import datetime, timedelta
-import pandas as pd
+
 import numpy as np
-from 数据基础.配置.settings import KLINE_ADJUST, KLINE_CACHE_DAYS, KLINE_YEARS, STOCK_LIST_CACHE_DAYS
+import pandas as pd
 from 数据基础.数据.cache import read_cache, write_cache
+from 数据基础.配置.settings import (
+    KLINE_ADJUST,
+    KLINE_CACHE_DAYS,
+    KLINE_YEARS,
+    STOCK_LIST_CACHE_DAYS,
+)
 
 # ── pytdx ──
 try:
@@ -35,7 +41,7 @@ TDX_SERVERS = [
 
 def _get_market_code(symbol: str) -> int:
     """获取 pytdx 市场代码：0=深圳 1=上海"""
-    if symbol.startswith("6") or symbol.startswith("5"):
+    if symbol.startswith(("6", "5")):
         return 1
     return 0
 
@@ -68,7 +74,6 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
     # 注意：pytdx 单次最多返回约 800 条，超过 3 年数据可能截断
     count = min(max(years * 250, 800), 800)
 
-    last_err = None
     for host, port in TDX_SERVERS:
         try:
             api = TdxHq_API()
@@ -117,8 +122,7 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
 
             return df
 
-        except Exception as e:
-            last_err = e
+        except Exception:
             continue
 
     return None
@@ -129,7 +133,7 @@ def _fetch_by_pytdx(symbol: str, years: int = KLINE_YEARS) -> pd.DataFrame | Non
 # ════════════════════════════════════════════════════════════
 
 def _baostock_prefix(symbol: str) -> str:
-    if symbol.startswith("6") or symbol.startswith("51"):
+    if symbol.startswith(("6", "51")):
         return "sh."
     return "sz."
 
@@ -357,7 +361,7 @@ def _get_stock_list_baostock() -> list[dict]:
             typ = s[4]
             status = s[5]
             if typ == "1" and status == "1" and \
-               (code.startswith("sh.6") or code.startswith("sz.0") or code.startswith("sz.3")):
+               (code.startswith(("sh.6", "sz.0", "sz.3"))):
                 clean_code = code.replace("sh.", "").replace("sz.", "")
                 stocks.append({"code": clean_code, "name": name})
         bs.logout()
@@ -422,4 +426,3 @@ def get_bulk_day(date: str | None = None, include_etf: bool = True) -> pd.DataFr
 
 def _import_error_hint():
     """baostock bulk API 已废弃，提示用户使用 pytdx"""
-    pass

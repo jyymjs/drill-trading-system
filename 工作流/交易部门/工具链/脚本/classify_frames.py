@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """对帧目录做K线图/非图表分类，只保留K线图帧"""
-import os, base64, time, sys
+import base64
+import os
+import sys
+import time
+
 from openai import OpenAI
 
 FRAMES_DIR = sys.argv[1] if len(sys.argv) > 1 else ""
 if not FRAMES_DIR or not os.path.isdir(FRAMES_DIR):
-    print(f"用法: python classify_frames.py <帧目录>")
+    print("用法: python classify_frames.py <帧目录>")
     sys.exit(1)
 
 API_KEY = os.environ.get("ZHIPU_API_KEY", "")

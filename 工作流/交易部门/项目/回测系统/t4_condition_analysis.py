@@ -6,8 +6,8 @@
   2. S 档数量效应：S 个数 0-6 的平均 R——「至少 3 个 S」是否合理
   3. 综合 S 级信号的条件构成
 """
-import sys
 import io
+import sys
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 import pandas as pd

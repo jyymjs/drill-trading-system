@@ -29,7 +29,7 @@ def price_above_ma(df: pd.DataFrame, ma_col: str = "MA20") -> bool:
     return df["收盘"].iloc[-1] > df[ma_col].iloc[-1]
 
 
-def price_above_ma_all(df: pd.DataFrame, ma_cols: list[str] = None) -> bool:
+def price_above_ma_all(df: pd.DataFrame, ma_cols: list[str] | None = None) -> bool:
     """收盘价在所有指定均线上方（多头排列）"""
     if ma_cols is None:
         ma_cols = ["MA5", "MA10", "MA20", "MA60"]
@@ -102,7 +102,7 @@ def boll_position(df: pd.DataFrame) -> str:
     if not all(c in df.columns for c in ["BOLL_UPPER", "BOLL_MID", "BOLL_LOWER"]):
         return "unknown"
     close = df["收盘"].iloc[-1]
-    upper, mid, lower = df["BOLL_UPPER"].iloc[-1], df["BOLL_MID"].iloc[-1], df["BOLL_LOWER"].iloc[-1]
+    upper, _mid, lower = df["BOLL_UPPER"].iloc[-1], df["BOLL_MID"].iloc[-1], df["BOLL_LOWER"].iloc[-1]
     if pd.isna(upper):
         return "unknown"
     if close >= upper:

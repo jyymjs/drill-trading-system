@@ -16,7 +16,6 @@
 """
 from __future__ import annotations
 
-import io
 import sys
 import unicodedata as _ud
 from datetime import datetime

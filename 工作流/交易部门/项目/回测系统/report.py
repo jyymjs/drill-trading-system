@@ -104,7 +104,7 @@ def _mode_section(records: list[TrackedRecord], buckets: dict[str, StatBlock],
         "",
         f"- 信号数：**{n_signals}** 笔（×{len(holds)} 个观察窗 = 统计组合 {m['n_signals']} 笔）",
         f"- 触发率（prebreak）：**{_fmt_rate(m['trigger_rate'])}**（{m['n_triggered']}/{m['n_signals']}）"
-        if mode == "prebreak" else f"- 进场：信号日 T 收盘价成交，全部参与统计",
+        if mode == "prebreak" else "- 进场：信号日 T 收盘价成交，全部参与统计",
         f"- 参与统计：{m['n_participate']} 笔",
         f"- 胜率（R>0）：**{_fmt_rate(m['win_rate'])}**（{m['n_win']}/{m['n_participate']}）",
         f"- 平均R：**{m['avg_r']:.4f}**　累计R：{m['total_r']:.4f}",
@@ -148,9 +148,9 @@ def _consistency_section(records: list[TrackedRecord], holds: list[int]) -> str:
     return "\n".join([
         "## 分段一致性检查（D1 · 防过拟合）",
         "",
-        "> 回测区间按时间切前后两半（各 ≥1.5 年，覆盖牛熊段）；两半累计 R 同为正 → 合格；"
+        ("> 回测区间按时间切前后两半（各 ≥1.5 年，覆盖牛熊段）；两半累计 R 同为正 → 合格；"
         "前正后负 → 过拟合嫌疑（标黄）；前负后正 → 风格适应慢（正常接受，不判罪）；"
-        "S 级策略必须前后半同为正。（方案 D 类 2026-08-05 老板拍板）",
+        "S 级策略必须前后半同为正。（方案 D 类 2026-08-05 老板拍板）"),
         "",
         f"- {head}",
         "",
@@ -170,8 +170,8 @@ def _stress_section(base_records: list[TrackedRecord],
     return "\n".join([
         "## 2 倍成本压力测试（D2 · 成本敏感体检）",
         "",
-        "> 佣金万1.3+印花税万5+滑点全 ×2（万2.6+万10+滑点翻倍万2）同参数重跑（main.py 双跑引擎，"
-        "非推算）；2 倍成本下年化 R 仍为正 → 抗压合格，≤0 → 利润太薄实盘必亏。（方案 D 类 2026-08-05 老板拍板）",
+        ("> 佣金万1.3+印花税万5+滑点全 ×2（万2.6+万10+滑点翻倍万2）同参数重跑（main.py 双跑引擎，"
+        "非推算）；2 倍成本下年化 R 仍为正 → 抗压合格，≤0 → 利润太薄实盘必亏。（方案 D 类 2026-08-05 老板拍板）"),
         "",
         f"- 信号跨度 {r['years']:.2f} 年（1R 等权累计口径，跨模式/评级/hold）",
         "",
@@ -201,8 +201,8 @@ def _prbook_section(records: list[TrackedRecord], gate_counts: dict | None,
     lines = [
         "## 财报日避让（C1 第一层 · 预约披露日）",
         "",
-        f"> 2026-08-05 老板拍板执行《量化体系优化方案》C1 项：预约披露日不新开仓；"
-        f"已持仓跨披露日 → 警示不强制平仓。本回测 C1 开关：**{state}**。",
+        (f"> 2026-08-05 老板拍板执行《量化体系优化方案》C1 项：预约披露日不新开仓；"
+        f"已持仓跨披露日 → 警示不强制平仓。本回测 C1 开关：**{state}**。"),
         "",
         f"- 披露日否决：**{gc.get('veto_prbook', 0)}** 笔（信号日=预约披露日，未开仓）",
         f"- 持仓警示：**{n_warn}** 笔（持仓期内跨过预约披露日，详见 signals.csv prbook_warn 列）",

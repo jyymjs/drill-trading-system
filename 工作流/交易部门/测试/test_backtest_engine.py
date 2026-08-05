@@ -10,11 +10,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # 回测系统 包（R-005 独立项目）
 
 from 分析决策.分析.indicators import all_indicators
-from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
+from 回测系统.adapters.base import DataProvider, StrategyProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel
 from 回测系统.engine import BacktestEngine
 from 回测系统.params import GRID_ANCHOR, BacktestParams
-from 回测系统.tracking import Signal
 from 策略.核心策略.samples.zuanqian_strategy import ZuanQianStrategy
 
 NEEDED = ["VOL_RATIO", "BODY_RATIO", "MA20", "MA5", "ATR"]
@@ -40,7 +39,7 @@ def make_kline(n: int = 400, seed: int = 42) -> pd.DataFrame:
 
 
 def make_params(**kw) -> BacktestParams:
-    base = dict(codes=["000001"], interval=5, holds=[5, 10])
+    base = {"codes": ["000001"], "interval": 5, "holds": [5, 10]}
     base.update(kw)
     return BacktestParams(**base)
 
@@ -67,9 +66,9 @@ class TestGrid:
         """信号日索引从 249 起、步长 interval，且窗口先截断"""
         df = make_kline(400, seed=3)
         params = make_params(interval=5, holds=[5])
-        engine = BacktestEngine(params, provider=_FakeProvider(df))
+        BacktestEngine(params, provider=_FakeProvider(df))
         # 网格 = range(249, 400, 5)
-        assert list(range(GRID_ANCHOR, len(df), 5))[0] == GRID_ANCHOR
+        assert next(iter(range(GRID_ANCHOR, len(df), 5))) == GRID_ANCHOR
         assert (len(df) - GRID_ANCHOR) // 5 >= 1
 
     def test_data_too_short_skipped(self):

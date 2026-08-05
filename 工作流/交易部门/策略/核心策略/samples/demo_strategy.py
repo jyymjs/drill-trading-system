@@ -11,8 +11,8 @@ from 策略.核心策略.base import BaseStrategy
 from 策略.核心策略.conditions import (
     has_ma_cross,
     price_above_ma,
-    volume_increase,
     rsi_in_range,
+    volume_increase,
 )
 
 

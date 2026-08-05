@@ -15,7 +15,6 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 import requests
-
 from 数据基础.duckdb.data_sources.config import (
     CLS_PAGE,
     CLS_TIMEOUT,

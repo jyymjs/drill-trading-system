@@ -1,6 +1,6 @@
 """技术指标计算 - 纯 pandas 实现"""
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def ma(series: pd.Series, n: int) -> pd.Series:
@@ -180,13 +180,13 @@ def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int 
     overshoot_positions = set()
     for i in range(10, n - 5):
         # 局部最高点
+        # 检查局部最高点后是否回落超过2%
         if (highs_window[i] > highs_window[i-1]
                 and highs_window[i] >= highs_window[i-2]
                 and highs_window[i] > highs_window[i+1]
-                and highs_window[i] > highs_window[i+2]):
-            # 检查是否回落超过2%
-            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
-                overshoot_positions.add(i)
+                and highs_window[i] > highs_window[i+2]
+                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02):
+            overshoot_positions.add(i)
 
     levels = []
     counts = []
@@ -230,8 +230,7 @@ def profile_compactness(df: pd.DataFrame, window: int = 20) -> float:
     Returns:
         紧凑度评分 0~1
     """
-    if len(df) < window:
-        window = len(df)
+    window = min(window, len(df))
     recent = df.tail(window)
     hl = recent["最高"] - recent["最低"]
     body = (recent["收盘"] - recent["开盘"]).abs()
@@ -366,7 +365,7 @@ def step_down_trace(df: pd.DataFrame, lookback: int = 20) -> dict:
             depth_pct = lower_shadow / max(body, 0.001)
 
             # 下一根必须是阳线反弹
-            next_body = abs(cl[i + 1] - op[i + 1])
+            abs(cl[i + 1] - op[i + 1])
             next_is_yang = cl[i + 1] > op[i + 1]
             next_hl = high[i + 1] - low[i + 1]
 
@@ -616,15 +615,15 @@ def overshoot_detect(df: pd.DataFrame, window: int = 60) -> dict:
     local_high_idx = -1
     local_high_val = 0
     for i in range(10, n - 5):  # 排除边界
+        # 检查这个高点后是否回落超过2%
         if (recent_high[i] > recent_high[i - 1]
                 and recent_high[i] >= recent_high[i - 2]
                 and recent_high[i] > recent_high[i + 1]
-                and recent_high[i] > recent_high[i + 2]):
-            # 检查这个高点后是否回落超过2%
-            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
-                if recent_high[i] > local_high_val:
-                    local_high_val = recent_high[i]
-                    local_high_idx = i
+                and recent_high[i] > recent_high[i + 2]
+                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02
+                and recent_high[i] > local_high_val):
+            local_high_val = recent_high[i]
+            local_high_idx = i
 
     # 过高点：创了收盘新高后回落
     if local_high_idx >= 0:
@@ -974,8 +973,7 @@ def accumulation_zone(df: pd.DataFrame, n_bins: int = 30, top_ratio: float = 0.6
     for j in range(len(ps)):
         while i <= j and cum[j] - (cum[i - 1] if i > 0 else 0.0) >= top_ratio:
             span = ps[j] - ps[i]
-            if span < best_span:
-                best_span = span
+            best_span = min(best_span, span)
             i += 1
     zone_ratio = float(best_span / full) if full > 0 else 1.0
     concentrated = zone_ratio < 0.4
@@ -1075,7 +1073,7 @@ def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     peak = high.max()
     trough = low.min()
     bounce = (cur - trough) / trough if trough > 0 else 0
-    drawdown = (peak - cur) / peak if peak > 0 else 0
+    (peak - cur) / peak if peak > 0 else 0
     weak_bounce = bounce < 0.08
     # 3) 结构质量：横盘波幅（过低 = 死水无动能）
     rng = (peak - trough) / cur if cur > 0 else 0

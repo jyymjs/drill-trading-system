@@ -8,11 +8,13 @@
   3. 模拟每条序列的资金曲线
   4. 输出置信区间（95%），评估长期稳定性
 """
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 
 # 中文字体（Windows 微软雅黑；缺失时退回默认，仅图表显示问题不影响功能）
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
@@ -28,8 +30,8 @@ except ImportError:
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 
 
-def simulate(trades: list[dict] = None, n_simulations: int = 10000,
-             n_trades_per_run: int = None,
+def simulate(trades: list[dict] | None = None, n_simulations: int = 10000,
+             n_trades_per_run: int | None = None,
              fee_per_trade_r: float = 0.02) -> dict:
     """蒙特卡洛模拟（含交易成本）
 
@@ -112,8 +114,7 @@ def simulate(trades: list[dict] = None, n_simulations: int = 10000,
         cur = 0
         for is_neg in row:
             cur = cur + 1 if is_neg else 0
-            if cur > max_streak:
-                max_streak = cur
+            max_streak = max(max_streak, cur)
         streaks[i] = max_streak
 
     return {
@@ -228,11 +229,11 @@ def render_terminal_report(result: dict, initial_capital: float = 100_000.0,
     if "error" in result:
         return f"SIMULATION ERROR: {result['error']}"
 
-    n_sim = result["n_simulations"]
+    result["n_simulations"]
     rng_r = risk_per_trade * initial_capital      # 每笔风险金额
     final_r = result["final_equities"]
     curves = np.cumsum(result["samples"], axis=1)  # 累计 R 曲线（含费用）
-    peak_curves = np.maximum.accumulate(curves, axis=1)
+    np.maximum.accumulate(curves, axis=1)
     min_equity_r = curves.min(axis=1)              # 每条路径最低累计 R
     ruin_r = (ruin_threshold_pct * initial_capital - initial_capital) / rng_r  # 破产 R 线
 
@@ -349,11 +350,11 @@ def plot_simulation(result: dict, save: bool = True) -> str:
     # 随机采样 100 条路径显示
     rng = np.random.default_rng(42)
     indices = rng.choice(len(final), min(100, len(final)), replace=False)
-    sample_data = np.zeros((len(indices), n))
+    np.zeros((len(indices), n))
     for idx_in_sim, idx_in_curves in enumerate(indices):
-        start = result["lower95"][0] if len(result["lower95"]) > 0 else 0
+        result["lower95"][0] if len(result["lower95"]) > 0 else 0
         # 生成模拟路径
-        r_values = result.get("r_values", None)
+        result.get("r_values", None)
     ax.set_facecolor("#141420")
     ax.set_title("模拟路径 (随机100条)", color="#ccc")
     ax.grid(alpha=0.1)
@@ -406,7 +407,7 @@ def plot_simulation(result: dict, save: bool = True) -> str:
         f"  盈利概率: {result['prob_profit']:.1%}"
     )
     fig.text(0.5, 0.01, stats_text, ha="center", fontsize=9, color="#888",
-             bbox=dict(boxstyle="round", facecolor="#141420", edgecolor="#333"))
+             bbox={"boxstyle": "round", "facecolor": "#141420", "edgecolor": "#333"})
 
     plt.tight_layout(rect=(0, 0.06, 1, 1))
 

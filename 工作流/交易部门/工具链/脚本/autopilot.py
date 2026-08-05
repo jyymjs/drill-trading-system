@@ -3,8 +3,11 @@
 autopilot.py — 自动监控并接力处理视频
 检测到有视频完成后，自动启动下一个优先视频
 """
-import subprocess, sys, os, time, glob, re
-from pathlib import Path
+import glob
+import os
+import subprocess
+import sys
+import time
 
 VIDEO_DIR = "D:/BaiduNetdiskDownload/路肖南/钻潜交易内训"
 OUTPUT_DIR = "C:/Users/32032/Desktop/deepseek/工作流/交易部门/输出"
@@ -54,7 +57,7 @@ def get_running_pids() -> set:
                 running.add(pid)
             except OSError:
                 pass  # 进程已结束
-        except (ValueError, IOError):
+        except (OSError, ValueError):
             pass
     return running
 

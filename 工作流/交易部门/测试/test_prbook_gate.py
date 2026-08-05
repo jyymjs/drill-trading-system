@@ -132,7 +132,6 @@ class TestLoadPrbookMap:
     def con(self, tmp_path):
         """临时 duckdb 库（含 prbook 表与测试数据）"""
         import duckdb
-
         from 数据基础.duckdb.data_sources import store as DS
         db = tmp_path / "t_prbook.duckdb"
         c = duckdb.connect(str(db))

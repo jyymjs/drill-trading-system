@@ -108,7 +108,7 @@ def group_stats(records: list[TrackedRecord], holds: list[int]) -> dict[str, Sta
 def merge_monthly(buckets: dict[str, StatBlock], mode: str) -> dict[str, int]:
     """某模式全部等级合并的月度分布（信号集中度）"""
     merged: Counter = Counter()
-    for key, block in buckets.items():
+    for block in buckets.values():
         if block.mode == mode:
             for m, c in block.monthly.items():
                 merged[m] += c
@@ -122,7 +122,7 @@ def mode_stats(records: list[TrackedRecord], mode: str, holds: list[int]) -> dic
     for rec in records:
         if rec.signal.mode != mode:
             continue
-        for hold, oc in rec.outcomes.items():
+        for oc in rec.outcomes.values():
             n_sig += 1
             if oc.participate():
                 n_trig += 1

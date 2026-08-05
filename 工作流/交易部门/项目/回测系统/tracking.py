@@ -183,8 +183,7 @@ def _track_window(high, low, close, dates, start, end, entry, stop,
         if low[j] <= stop:
             return stop, pd.Timestamp(dates[j]), True
         # ③ 新高更新（结构前提：必须有过买入后新高，回调低点才算"新结构低点"）
-        if high[j] > highest:
-            highest = high[j]
+        highest = max(highest, high[j])
         # ④ 候选更新：已创新高后 当日创回调新低（无候选比昨日低，有候选比候选低）
         if highest > entry and low[j] < (low[candidate] if candidate is not None else low[j - 1]):
             candidate = j

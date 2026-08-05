@@ -8,11 +8,11 @@
 from pathlib import Path
 
 import pandas as pd
-
 from 分析决策.分析.indicators import all_indicators
-from 回测系统.adapters.base import DataProvider
 from 数据基础.数据.cache import cache_path
 from 数据基础.数据.fetcher import get_daily_kline
+
+from 回测系统.adapters.base import DataProvider
 
 
 class CacheDataProvider(DataProvider):

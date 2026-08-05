@@ -6,16 +6,15 @@
 记录文件：journal/sim_journal.csv（独立于实盘 trade_journal.csv）
 """
 import csv
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from 分析决策.风控.position import Position
-from 分析决策.风控.capital import get_capital, max_risk_per_trade, calc_trade_fee
 from 分析决策.风控 import exit_manager as em
+from 分析决策.风控.capital import calc_trade_fee, get_capital, max_risk_per_trade
+from 分析决策.风控.position import Position
 
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
 SIM_FILE = JOURNAL_DIR / "sim_journal.csv"
@@ -154,7 +153,7 @@ def sim_stats() -> str:
 
     rs = [float(r["r_multiple"]) for r in closed]
     wins = [r for r in closed if float(r["r_multiple"]) > 0]
-    losses = [r for r in closed if float(r["r_multiple"]) <= 0]
+    [r for r in closed if float(r["r_multiple"]) <= 0]
     # 连败
     max_streak = cur = 0
     for r in closed:

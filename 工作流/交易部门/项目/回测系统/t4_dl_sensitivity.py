@@ -16,7 +16,6 @@
 """
 import argparse
 import os
-import sys
 
 import pandas as pd
 
@@ -98,7 +97,7 @@ def main():
     out = []
     out.append(f"T-4.2 DL 阈值敏感性分析（{len(df)} 信号）")
     out.append(f"数据：{args.signals}")
-    out.append(f"口径：仅统计 triggered=1；胜率=r>0；R=盈亏/信号日risk；DL 阈值 S=90/A=70/B=60")
+    out.append("口径：仅统计 triggered=1；胜率=r>0；R=盈亏/信号日risk；DL 阈值 S=90/A=70/B=60")
     out.append("")
 
     for mode in ("normal", "prebreak"):

@@ -23,11 +23,11 @@ from datetime import datetime
 
 import pandas as pd
 from tqdm import tqdm
-
 from 分析决策.市场环境.prbook_gate import (  # C1 财报日避让（2026-08-05 老板拍板）
     prbook_verdict,
     prbook_warn,
 )
+
 from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
 from 回测系统.adapters.data_provider import CacheDataProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel
@@ -279,9 +279,7 @@ class BacktestEngine:
         """--start/--end 只过滤记录（不改网格）"""
         if self.params.start and d.date() < _parse_yyyymmdd(self.params.start):
             return False
-        if self.params.end and d.date() > _parse_yyyymmdd(self.params.end):
-            return False
-        return True
+        return not (self.params.end and d.date() > _parse_yyyymmdd(self.params.end))
 
     def _build_signal(self, code: str, sig_date: pd.Timestamp, mode: str,
                       window: pd.DataFrame, close_t: float) -> Signal | None:

@@ -45,7 +45,7 @@ def main():
 
     risk_amt = args.capital * args.risk_ratio          # 单笔风险额（元）
     max_risk_per_share = risk_amt / 100                 # 每股风险上限（整手 100 股）
-    entry_col, exit_col = f"entry_{args.hold}", f"exit_{args.hold}"
+    _entry_col, exit_col = f"entry_{args.hold}", f"exit_{args.hold}"
     r_col = f"r_{args.hold}"
 
     balance = args.capital

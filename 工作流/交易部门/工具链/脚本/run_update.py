@@ -8,12 +8,14 @@
 
 此脚本可被 Windows 任务计划程序定时执行，实现每日自动更新。
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
-from 数据基础.数据.updater import incremental_update, update_all_stocks, get_cache_stats
+
+from 数据基础.数据.updater import get_cache_stats, incremental_update, update_all_stocks
 from 数据基础.配置.stock_pool import get_all_stocks
 
 
@@ -42,7 +44,7 @@ def main():
     else:
         # 增量更新（批量API）
         def on_progress(current, total, code, name, status):
-            bar = "#" * (current * 40 // total) if total else ""
+            "#" * (current * 40 // total) if total else ""
             print(f"\r  [{current}/{total}] {'█'* (current * 30 // max(total,1))}{'.'* (30 - current * 30 // max(total,1))} {status}: {code}", end="", flush=True)
 
         result = incremental_update(mode=mode, include_etf=True, progress_callback=on_progress)

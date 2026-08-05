@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 batch_process.py — 批量并行处理多个交易教学视频
 
@@ -21,7 +20,6 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime
 from pathlib import Path
 
 logging.basicConfig(
@@ -174,7 +172,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     log.info("=" * 60)
-    log.info(f"批量处理启动")
+    log.info("批量处理启动")
     log.info(f"  视频数量: {len(videos)}")
     log.info(f"  并行数: {args.parallel}")
     log.info(f"  输出目录: {output_dir}")
@@ -214,7 +212,7 @@ def main():
     failed = [r for r in results if r["status"] != "success"]
 
     log.info("=" * 60)
-    log.info(f"📊 批量处理完成")
+    log.info("📊 批量处理完成")
     log.info(f"  总耗时: {total_elapsed:.0f} 秒 ({total_elapsed/60:.1f} 分钟)")
     log.info(f"  成功: {len(success)} / {len(results)}")
     if failed:

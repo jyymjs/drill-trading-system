@@ -5,9 +5,9 @@
 - 校验：无重复 + 尾部缺口（未到最新交易日的股票清单）
 """
 import pandas as pd
+from 数据基础.duckdb.config import DB_PATH
 
 import duckdb
-from 数据基础.duckdb.config import DB_PATH
 
 DAILY_COLS = ["symbol", "date", "open", "high", "low", "close", "vol", "amount"]
 XDXR_COLS = ["symbol", "date", "category", "name", "fenhong", "peigujia",

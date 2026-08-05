@@ -1,9 +1,7 @@
 """交易记录系统 — 记录每笔真实交易，计算统计指标"""
 import csv
 import os
-from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from 分析决策.风控.position import TradeRecord
 
@@ -46,14 +44,13 @@ def get_all_trades() -> list[dict]:
     try:
         with open(TRADES_FILE, "r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                trades.append(row)
+            trades = list(reader)
     except (FileNotFoundError, StopIteration):
         pass
     return trades
 
 
-def trade_stats(trades: Optional[list[dict]] = None) -> dict:
+def trade_stats(trades: list[dict] | None = None) -> dict:
     """计算交易统计数据"""
     if trades is None:
         trades = get_all_trades()
@@ -100,7 +97,7 @@ def trade_stats(trades: Optional[list[dict]] = None) -> dict:
         recent = r_values[-20:]
         recent_wins = sum(1 for r in recent if r > 0)
         stats["rolling_win_rate_20"] = recent_wins / 20
-        recent_avg = sum(recent) / 20
+        sum(recent) / 20
         recent_win_avg = sum(r for r in recent if r > 0) / recent_wins if recent_wins > 0 else 0
         recent_loss_avg = sum(r for r in recent if r <= 0) / (20 - recent_wins) if 20 - recent_wins > 0 else 0
         stats["rolling_expectancy_20"] = (recent_wins/20)*recent_win_avg - ((20-recent_wins)/20)*abs(recent_loss_avg)

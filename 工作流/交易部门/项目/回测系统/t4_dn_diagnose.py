@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import numpy as np
 import pandas as pd
-
 from 分析决策.分析.indicators import all_indicators
 from 策略.核心策略.samples.zuanqian_strategy import ZuanQianStrategy
 
@@ -59,7 +58,7 @@ def main():
             continue
         try:
             df = all_indicators(df, needed_cols=strategy.required_indicators)
-            n = len(df)
+            len(df)
             if "VOL_RATIO" not in df.columns:
                 continue
             n_ok += 1
@@ -77,9 +76,7 @@ def main():
             if v < 1.1 or b < 0.03:
                 fail_reason["量比不过" if v < 1.1 else "实体不过"] += 1
             else:
-                if v >= 2.5 and b >= 0.05:
-                    fail_reason["通过"] += 1
-                elif v >= 1.5 and b >= 0.04:
+                if v >= 2.5 and b >= 0.05 or v >= 1.5 and b >= 0.04:
                     fail_reason["通过"] += 1
                 else:
                     fail_reason["通过"] += 1  # B 档也通过（但可能降级）
@@ -98,25 +95,21 @@ def main():
     print("\n1. 最后一根 K 线量比分布（对照阈值 S=2.5 A=1.5 B=1.1）")
     print(f"   P50={pct(last_vol,50):.2f}  P75={pct(last_vol,75):.2f}  P90={pct(last_vol,90):.2f}  "
           f"P95={pct(last_vol,95):.2f}  P99={pct(last_vol,99):.2f}  max={max(last_vol):.2f}")
-    print("   ≥2.5 比例: {:.1%}   ≥1.5 比例: {:.1%}   ≥1.1 比例: {:.1%}".format(
-        np.mean(np.array(last_vol) >= 2.5), np.mean(np.array(last_vol) >= 1.5),
-        np.mean(np.array(last_vol) >= 1.1)))
+    print(f"   ≥2.5 比例: {np.mean(np.array(last_vol) >= 2.5):.1%}   ≥1.5 比例: {np.mean(np.array(last_vol) >= 1.5):.1%}   ≥1.1 比例: {np.mean(np.array(last_vol) >= 1.1):.1%}")
 
     print("\n2. 最近 5 根最大量比分布（启动 K 可能是前几根）")
     print(f"   P50={pct(max5_vol,50):.2f}  P75={pct(max5_vol,75):.2f}  P90={pct(max5_vol,90):.2f}  "
           f"P95={pct(max5_vol,95):.2f}  P99={pct(max5_vol,99):.2f}")
-    print("   ≥2.5 比例: {:.1%}   ≥1.5 比例: {:.1%}".format(
-        np.mean(np.array(max5_vol) >= 2.5), np.mean(np.array(max5_vol) >= 1.5)))
+    print(f"   ≥2.5 比例: {np.mean(np.array(max5_vol) >= 2.5):.1%}   ≥1.5 比例: {np.mean(np.array(max5_vol) >= 1.5):.1%}")
 
     print("\n3. 最后一根实体比分布（对照阈值 S≥5% A≥4% B≥3%）")
     print(f"   P50={pct(last_body,50):.2%}  P75={pct(last_body,75):.2%}  P90={pct(last_body,90):.2%}  "
           f"P95={pct(last_body,95):.2%}")
-    print("   ≥5% 比例: {:.1%}   ≥3% 比例: {:.1%}".format(
-        np.mean(np.array(last_body) >= 0.05), np.mean(np.array(last_body) >= 0.03)))
+    print(f"   ≥5% 比例: {np.mean(np.array(last_body) >= 0.05):.1%}   ≥3% 比例: {np.mean(np.array(last_body) >= 0.03):.1%}")
 
     print("\n4. 最近 5 根最大实体比")
     print(f"   P50={pct(max5_body,50):.2%}  P75={pct(max5_body,75):.2%}  P90={pct(max5_body,90):.2%}")
-    print("   ≥5% 比例: {:.1%}".format(np.mean(np.array(max5_body) >= 0.05)))
+    print(f"   ≥5% 比例: {np.mean(np.array(max5_body) >= 0.05):.1%}")
 
     print("\n5. grade() 实际 DN 评级分布: ", dn_grades)
     print("   判定链模拟失败原因: ", fail_reason)
@@ -138,7 +131,7 @@ def main():
         fp.write(f"实体 P50/75/90/95: {pct(last_body,50):.2%}/{pct(last_body,75):.2%}/{pct(last_body,90):.2%}/{pct(last_body,95):.2%}\n")
         fp.write(f"DN 评级分布: {dn_grades}\n")
         fp.write(f"失败原因: {fail_reason}\n")
-    print(f"\n报告已写入 产出/输出/t4/t4_dn_diagnose.txt")
+    print("\n报告已写入 产出/输出/t4/t4_dn_diagnose.txt")
 
 
 if __name__ == "__main__":

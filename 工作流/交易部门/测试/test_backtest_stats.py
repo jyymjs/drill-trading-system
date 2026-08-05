@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # 回测系统 包（R-005 独立项目）
 
-from 回测系统.stats import StatBlock, group_stats, merge_monthly, mode_stats, _max_drawdown_from_r
+from 回测系统.stats import _max_drawdown_from_r, group_stats, merge_monthly, mode_stats
 from 回测系统.tracking import Outcome, Signal, TrackedRecord
 
 

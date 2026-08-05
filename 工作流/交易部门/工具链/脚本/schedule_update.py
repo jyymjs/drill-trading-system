@@ -7,10 +7,10 @@
     python scripts/schedule_update.py --remove           # 删除定时任务
     python scripts/schedule_update.py --status           # 查看任务状态
 """
-import sys
+import argparse
 import os
 import subprocess
-import argparse
+import sys
 
 TASK_NAME = "交易部-数据更新"
 

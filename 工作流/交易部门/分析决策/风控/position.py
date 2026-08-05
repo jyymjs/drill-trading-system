@@ -1,7 +1,6 @@
 """持仓数据模型"""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -15,7 +14,7 @@ class Position:
     direction: str = "long"         # long / short
     market: str = "stock"           # stock/crypto/forex/futures（出场体系按方向/市场区分，2026-08-04）
     entry_price: float = 0.0        # 进场价
-    entry_time: Optional[datetime] = None  # 进场时间
+    entry_time: datetime | None = None  # 进场时间
     volume: int = 0                 # 股数
     initial_stop: float = 0.0       # 原始止损价
     current_stop: float = 0.0       # 当前止损价（动态更新）
@@ -26,7 +25,7 @@ class Position:
     grade_at_entry: str = ""        # 进场时评级
     status: str = "open"            # open / closed
     exit_price: float = 0.0         # 平仓价
-    exit_time: Optional[datetime] = None  # 平仓时间
+    exit_time: datetime | None = None  # 平仓时间
     exit_reason: str = ""           # 离场原因
     entry_fee: float = 0.0          # 进场手续费
     exit_fee: float = 0.0           # 出场手续费

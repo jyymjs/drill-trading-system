@@ -8,11 +8,8 @@
 层面4: 追踪获利 — 36%回调缓冲（≥5R时）
 主动: 拐点三特征 — 斜率骤涨/短时大幅/成交量放大
 """
-from datetime import datetime
-from typing import Optional
 import numpy as np
 import pandas as pd
-
 from 分析决策.风控.position import Position
 
 
@@ -32,7 +29,7 @@ def calc_initial_stop(ty_low: float, ty_high: float, direction: str = "long",
         return round(ty_high * 1.005, 2)
 
 
-def check_breakeven(position: Position, current_price: float) -> Optional[float]:
+def check_breakeven(position: Position, current_price: float) -> float | None:
     """层面2：平价保护检测
 
     当 R倍数 ≥ 1.0 时，止损移至成本位。
@@ -51,7 +48,7 @@ def check_breakeven(position: Position, current_price: float) -> Optional[float]
     return None
 
 
-def check_trailing_stop(position: Position, df: pd.DataFrame) -> Optional[float]:
+def check_trailing_stop(position: Position, df: pd.DataFrame) -> float | None:
     """层面3：移动获利 — 基于拐点
 
     在回调后再次破前高时，将止损上移到拐点下方。
@@ -156,7 +153,7 @@ def check_trailing_stop(position: Position, df: pd.DataFrame) -> Optional[float]
         return round(new_stop, 2) if new_stop < position.entry_price else round(position.entry_price - 0.01, 2)
 
 
-def check_36pct_trail(position: Position) -> Optional[float]:
+def check_36pct_trail(position: Position) -> float | None:
     """层面4：36%追踪获利
 
     当 R倍数 ≥ 5 且无合适移动获利点时触发。
@@ -230,7 +227,7 @@ def detect_active_exit(df: pd.DataFrame, lookback: int = 5) -> dict:
     return {"signal": signal, "features": features, "strength": strength}
 
 
-def calc_take_profit(position: Position) -> Optional[float]:
+def calc_take_profit(position: Position) -> float | None:
     """止盈价计算（老师口径，2026-08-04 补齐）
 
     所有市场空头 + 外汇无论多空 = 波段 5R 止盈
@@ -298,13 +295,8 @@ def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
     position.update_price(high, low, close)
 
     # 检查层面1：价格是否触碰止损
-    if position.direction == "long" and low <= position.current_stop:
-        result = {"should_exit": True, "reason": f"止损触发(层面1)",
-                  "exit_price": position.current_stop, "stop_update": None,
-                  "take_profit": result["take_profit"], "action": "full_exit", "zone": result["zone"]}
-        return result
-    elif position.direction == "short" and high >= position.current_stop:
-        result = {"should_exit": True, "reason": f"止损触发(层面1)",
+    if position.direction == "long" and low <= position.current_stop or position.direction == "short" and high >= position.current_stop:
+        result = {"should_exit": True, "reason": "止损触发(层面1)",
                   "exit_price": position.current_stop, "stop_update": None,
                   "take_profit": result["take_profit"], "action": "full_exit", "zone": result["zone"]}
         return result

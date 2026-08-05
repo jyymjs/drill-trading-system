@@ -20,7 +20,6 @@ import time
 from datetime import datetime
 
 import requests
-
 from 数据基础.duckdb.data_sources.config import (
     CNINFO_ANN_PAGE,
     CNINFO_ANN_URL,
@@ -158,7 +157,7 @@ def default_section_time(today=None) -> str:
     return f"{t.year}-09-30"
 
 
-def fetch_prbook(symbol: str = None, section_time: str = None,
+def fetch_prbook(symbol: str | None = None, section_time: str | None = None,
                  market: str = PRBOOK_MARKET) -> list[dict]:
     """定期报告预约披露查询（巨潮官方"预约披露"页面接口）
 

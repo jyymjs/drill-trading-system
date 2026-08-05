@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-
 from 数据基础.duckdb.store import open_db
 
 

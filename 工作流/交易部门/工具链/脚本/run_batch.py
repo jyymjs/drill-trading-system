@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """启动并行批量处理"""
-import subprocess, sys, os, time
+import os
+import subprocess
+import sys
 
 DIR = "D:/BaiduNetdiskDownload/路肖南/钻潜交易内训"
 KEY = "f6de857c9a5f45acafd3be75cdbb7e62.IQQmrpKGiX65q70J"
