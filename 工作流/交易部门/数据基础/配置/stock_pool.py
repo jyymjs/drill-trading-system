@@ -17,6 +17,30 @@ def get_stock_names(stocks: list[dict]) -> dict[str, str]:
     return {s["code"]: s["name"] for s in stocks}
 
 
+def is_st_name(name: str) -> bool:
+    """判断股票名称是否为 ST/*ST（品种筛选一票否决）
+
+    2026-08-06 实战发现：全市场扫描候选混入 ST 股（600079 当日出现在 S 级），
+    老板拍板接入一票否决——老师规则：ST/*ST 可能跳空跳过止损
+    （知识库：品种筛选/知识卡.md）。
+
+    可靠 ST 标记源评估：当前数据源（baostock/akshare）仅返回 code+name，
+    无独立 ST 标记/证券类别字段，故以名称前缀判断。
+    A 股 ST 标记恒位于名称前缀，覆盖格式：ST / *ST / SST / S*ST / NST 等。
+    局限：以名称为准——摘帽后名称移除 ST 自动放行，戴帽后名称含 ST 即被过滤；
+    若交易所将来调整 ST 标记格式需同步本函数。
+
+    Args:
+        name: 股票名称（如 "ST 中昌"、"*ST 美尚"、"贵州茅台"）
+
+    Returns:
+        True = 该股票属于 ST/*ST，应一票否决
+    """
+    n = (name or "").replace(" ", "").upper()
+    # ST 标记恒出现在名称前 4 字符（ST / *ST / SST / S*ST / NST）
+    return "ST" in n[:4]
+
+
 # 常见ETF名称映射（补充bulk数据中缺失的名称）
 _ETF_NAMES = {
     "510050": "上证50ETF", "510300": "沪深300ETF", "510500": "中证500ETF",

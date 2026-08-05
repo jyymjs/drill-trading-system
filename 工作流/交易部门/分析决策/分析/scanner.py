@@ -13,7 +13,7 @@ from 数据基础.配置.settings import (
     SCAN_PROGRESS,
     SCAN_RETRY,
 )
-from 数据基础.配置.stock_pool import get_all_stocks, get_etf_list
+from 数据基础.配置.stock_pool import get_all_stocks, get_etf_list, is_st_name
 from 策略.核心策略.base import BaseStrategy
 
 
@@ -86,6 +86,17 @@ def scan_single_stock(
                     entry["TY高"] = result.get("ty_high", 0)
                     entry["TY低"] = result.get("ty_low", 0)
 
+                    # 2026-08-06 实战发现：已突破（现价≥触发价）的股票也进了
+                    # prebreak 候选——挂条件单会立即成交=追高，失去预突破意义。
+                    # 老板拍板：标注"突破状态"供下游拆分（候选主表只留未突破，
+                    # 已突破行保留供研究，不参与挂单候选）。
+                    trigger = result.get("trigger_price", 0)
+                    entry["突破状态"] = (
+                        "已突破"
+                        if trigger > 0 and latest.get("收盘", 0) >= trigger
+                        else "未突破"
+                    )
+
                 return entry
             return None
 
@@ -134,6 +145,16 @@ def scan(
         stocks = get_all_stocks()
     logger.info("股票池数量: %d 只", len(stocks))
 
+    # 2026-08-06 实战发现：ST 股混入扫描候选（600079 当日出现在 S 级），
+    # 老板拍板接入品种筛选一票否决——ST/*ST 可能跳空跳过止损
+    # （知识库：品种筛选/知识卡.md）。在池级过滤（省去无效拉取），
+    # 判定以名称为准（数据源无独立 ST 标记字段，见 stock_pool.is_st_name）。
+    st_removed = [s for s in stocks if is_st_name(s.get("name", ""))]
+    if st_removed:
+        stocks = [s for s in stocks if not is_st_name(s.get("name", ""))]
+        logger.info("ST/*ST 一票否决: 剔除 %d 只（例: %s）",
+                    len(st_removed), "、".join(f"{s['name']}({s['code']})" for s in st_removed[:5]))
+
     results = []
     total = len(stocks)
 
@@ -167,3 +188,21 @@ def scan(
 
     logger.info("扫描完成 | 符合条件: %d 只", len(results))
     return results
+
+
+def split_prebreak_results(results: list[dict]) -> tuple[list[dict], list[dict]]:
+    """拆分预突破结果为（未突破候选, 已突破研究）
+
+    2026-08-06 实战发现 + 老板拍板：prebreak 扫描应只输出"未突破"
+    （现价 < 触发价）的候选；已突破（现价 ≥ 触发价）的挂单会立即成交
+    = 追高，失去预突破意义，不参与挂单候选，但保留标注供研究。
+
+    Args:
+        results: scan() 的 prebreak 模式输出（含"突破状态"标记）
+
+    Returns:
+        (candidates, broken): 未突破候选主表 / 已突破研究列表
+    """
+    candidates = [r for r in results if r.get("突破状态") != "已突破"]
+    broken = [r for r in results if r.get("突破状态") == "已突破"]
+    return candidates, broken

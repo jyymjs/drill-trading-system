@@ -88,10 +88,16 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
     print(table)
 
 
-def save_results(results: list[dict]) -> str:
-    """保存结果到 CSV"""
+def save_results(results: list[dict], suffix: str = "") -> str:
+    """保存结果到 CSV
+
+    Args:
+        results: 扫描结果列表
+        suffix: 文件名后缀（如 "_broken" 保存已突破研究行；
+                2026-08-06 老板拍板：已突破不参与挂单候选但保留供研究）
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = OUTPUT_DIR / f"scan_result_{timestamp}.csv"
+    path = OUTPUT_DIR / f"scan_result_{timestamp}{suffix}.csv"
 
     df = pd.DataFrame(results)
     df.to_csv(path, index=False, encoding="utf-8-sig")
