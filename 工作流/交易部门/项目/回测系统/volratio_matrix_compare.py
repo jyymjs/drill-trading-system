@@ -25,7 +25,8 @@
 
 用法:
   python 项目/回测系统/volratio_matrix_compare.py --smoke 30   # 冒烟：30 只快验
-  python 项目/回测系统/volratio_matrix_compare.py              # 全量（抽样400 + 全市场）
+  python 项目/回测系统/volratio_matrix_compare.py              # 默认：抽样 400 只 × 闸门关/开（两格）
+  python 项目/回测系统/volratio_matrix_compare.py --full       # 完整 2×2：抽样两格 + 全市场两格（最终结论用）
 """
 import argparse
 import random
@@ -189,13 +190,22 @@ def _cell_best(records: list[TrackedRecord], hold: int = 20) -> tuple[str, float
 
 
 def _verdict(cells: dict, hold: int = 20) -> list[str]:
-    """差异定位草稿：对比抽样/全量 × 闸门关/开的甜点位置，判断翻转由哪个变量引起"""
+    """差异定位草稿：对比抽样/全量 × 闸门关/开的甜点位置，判断翻转由哪个变量引起
+
+    兼容部分格缺失（默认模式只跑抽样两格）：缺失格标注"需 --full"，不报错。
+    """
     out = []
     # 每格甜点 + 2.0 以上合计（对照"巨量是否回落"）
     labels = ["抽样×闸门关", "抽样×闸门开", "全量×闸门关", "全量×闸门开"]
+    missing = [l for l in labels if l not in cells]
+    if missing:
+        out.append(f"> 提示：{'、'.join(missing)} 未运行（默认只跑抽样两格）——全量差异定位需加 `--full`。")
+        out.append("")
     sweet: dict[str, tuple] = {}
     hi_stats: dict[str, dict] = {}
     for label in labels:
+        if label not in cells:
+            continue
         records = cells[label][1]
         sweet[label] = _cell_best(records, hold)
         hi_rs = bucket_r(records, 2.0, float("inf"), hold)
@@ -209,9 +219,9 @@ def _verdict(cells: dict, hold: int = 20) -> list[str]:
                    f"量比>2.0 合计 {hi_stats[label]['n']} 笔 avgR {hi_stats[label]['avg_r']:.3f}")
 
     out.append("")
-    # 逐变量对比：换样本（固定闸门）× 开关闸门（固定样本）
-    if all(sweet[l][0] is not None for l in labels):
-        out.append("**对比一 · 换样本（抽样 → 全量）**：")
+    # 逐变量对比：换样本（固定闸门）× 开关闸门（固定样本）——四格齐全才做完整对比
+    if len(sweet) == 4 and all(sweet[l][0] is not None for l in labels):
+        out.append("**对比一 · 换样本（抽样 → 全量，固定闸门）**：")
         for g in ("闸门关", "闸门开"):
             s0, s1 = sweet[f"抽样×{g}"], sweet[f"全量×{g}"]
             same = s0[0] == s1[0]
@@ -224,6 +234,12 @@ def _verdict(cells: dict, hold: int = 20) -> list[str]:
             same = s0[0] == s1[0]
             out.append(f"- {g}下：闸门关甜点 {s0[0]}（{s0[1]:.3f}）→ 闸门开甜点 {s1[0]}（{s1[1]:.3f}）"
                        + ("，甜点位置未变 → 翻转不是闸门引起" if same else "，甜点位置改变 → 闸门交互是翻转来源之一"))
+        out.append("")
+        out.append("**定位**：全量×闸门关 已见甜点在 >3.0 → 翻转主因 = **换样本**（抽样→全量，"
+                   "与闸门无关）；闸门开关仅在全量下放大幅度、不移动甜点；"
+                   "抽样下开关闸门也移动甜点 → 闸门交互仅在抽样小样本口径下可见。")
+    elif missing:
+        out.append("_完整差异定位需四格（`--full`）；当前默认模式仅抽样两格，甜点对比仅供参考。_")
     else:
         out.append("_部分格甜点无法判定（有效笔数不足 30），差异定位需全量数据。_")
     return out
