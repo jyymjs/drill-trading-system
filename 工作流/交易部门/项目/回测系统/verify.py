@@ -19,6 +19,18 @@ from 回测系统.tracking import TrackedRecord
 
 SCORE_KEYS = ("PT平台测试", "TY统一区间", "DN动能", "DL独立结构", "LK轮廓质量", "SF释放级别")
 
+# 价格一致性容差（T-017 P5 切换 duckdb 后修订）：
+# 引擎 signal.close/出场价 均 round(4)，而 duckdb qfq 为因子自算全精度浮点
+# （如 2.3465346531...），旧 1e-6 严格相等必然误报。verify 本意是防"时间切片
+# 错位"（价格完全不同），故改为 0.1% 相对容差（绝对下限 1e-3）。
+PRICE_TOL = 1e-3
+PRICE_REL = 1e-3
+
+
+def _close_enough(a: float, b: float) -> bool:
+    """价格一致性：绝对差 ≤ max(0.1% 相对, 1e-3)"""
+    return abs(a - b) <= max(PRICE_TOL, abs(b) * PRICE_REL)
+
 
 def _pick(records, samples: int, seed: int):
     """确定性抽样（seed 固定 → 可复现）"""
@@ -74,10 +86,10 @@ def verify_engine_output(records: list[TrackedRecord], samples: int = 20, seed: 
             if res.get("scores", {}).get(key, ("C", ""))[0] != sig.score_grade(key):
                 same_source_ok = False
                 mismatches.append(f"{sig.code}@{sig.date} {key} 分项不一致")
-        # ② 价格抽查：normal 进场价必须等于缓存原收盘
+        # ② 价格抽查：normal 进场价必须等于缓存原收盘（0.1% 相对容差，见 PRICE_TOL）
         if sig.mode == "normal":
             cached_close = float(base["收盘"].iloc[idx])
-            if abs(sig.close - cached_close) > 1e-6:
+            if not _close_enough(sig.close, cached_close):
                 price_ok = False
                 price_issues.append(f"{sig.code}@{sig.date} close 不一致: 引擎={sig.close} 缓存={cached_close}")
 
@@ -93,12 +105,13 @@ def verify_engine_output(records: list[TrackedRecord], samples: int = 20, seed: 
                 continue
             if oc.stopped and oc.exit_date is not None:
                 j = next(i for i, d in enumerate(dates) if pd.Timestamp(d) == oc.exit_date)
-                if not (float(base["最低"].iloc[j]) <= sig.stop + 1e-6) or abs(oc.exit_price - sig.stop) > 1e-6:
+                low_ok = float(base["最低"].iloc[j]) <= sig.stop + max(PRICE_TOL, abs(sig.stop) * PRICE_REL)
+                if not low_ok or not _close_enough(oc.exit_price, sig.stop):
                     price_ok = False
                     price_issues.append(f"{sig.code}@{sig.date} hold={hold}d 止损出场价异常")
             else:
                 j = next(i for i, d in enumerate(dates) if pd.Timestamp(d) == oc.exit_date)
-                if abs(oc.exit_price - float(base["收盘"].iloc[j])) > 1e-6:
+                if not _close_enough(oc.exit_price, float(base["收盘"].iloc[j])):
                     price_ok = False
                     price_issues.append(f"{sig.code}@{sig.date} hold={hold}d 到期出场价≠缓存收盘")
 
@@ -116,7 +129,6 @@ def verify_csv(path: str | Path, samples: int = 20, seed: int = 42) -> dict:
     df = pd.read_csv(path, dtype={"code": str})
     if df.empty:
         return {"checked": 0, "ok": True, "issues": ["空信号文件"]}
-    rng = random.Random(seed)
     rows = df.sample(n=min(samples, len(df)), random_state=seed).to_dict("records")
     provider = CacheDataProvider()
     issues = []
@@ -132,6 +144,6 @@ def verify_csv(path: str | Path, samples: int = 20, seed: int = 42) -> dict:
             issues.append(f"{row['code']}@{row['date']} 缓存无此日")
             continue
         idx = idxs[0]
-        if abs(float(row["close"]) - float(base["收盘"].iloc[idx])) > 1e-6:
+        if not _close_enough(float(row["close"]), float(base["收盘"].iloc[idx])):
             issues.append(f"{row['code']}@{row['date']} 收盘价不一致: csv={row['close']} 缓存={float(base['收盘'].iloc[idx])}")
     return {"checked": len(rows), "ok": not issues, "issues": issues[:10]}

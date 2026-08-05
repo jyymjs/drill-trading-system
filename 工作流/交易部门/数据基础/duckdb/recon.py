@@ -29,6 +29,7 @@ from 数据基础.duckdb.config import (
     RECON_SEED,
     RUNTIME_DIR,
 )
+from 数据基础.duckdb.reader import compute_qfq, read_daily_raw, read_xdxr
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -37,49 +38,6 @@ CUT = pd.Timestamp(RECON_ERA_CUT)
 
 def to_sina_symbol(symbol: str) -> str:
     return f"sh{symbol}" if symbol.startswith(("6", "9")) else f"sz{symbol}"
-
-
-def load_daily(con, sym):
-    df = con.execute("SELECT date, open, high, low, close, vol, amount FROM daily "
-                     "WHERE symbol=? ORDER BY date", [sym]).df()
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-def load_xdxr(con, sym):
-    df = con.execute("""SELECT date, fenhong, peigujia, songzhuangu, peigu FROM xdxr
-        WHERE symbol=? AND category=1 ORDER BY date""", [sym]).df()
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-def compute_qfq(daily, xdxr):
-    """等比复权因子法自算前复权（P1/P2 同款算法，P2 抽样已验证）"""
-    d = daily.copy()
-    if d.empty:
-        return d
-    d["factor"] = 1.0
-    if xdxr is not None and len(xdxr):
-        x = xdxr.copy()
-        x["d"] = x["fenhong"].fillna(0) / 10.0
-        x["s"] = x["songzhuangu"].fillna(0) / 10.0
-        x["r"] = x["peigu"].fillna(0) / 10.0
-        x["p"] = x["peigujia"].fillna(0)
-        x = x.merge(d[["date", "close"]].rename(columns={"close": "close_t"}),
-                    on="date", how="left")
-        x["prev_close"] = np.nan
-        idx = d["date"].searchsorted(x["date"])
-        valid = (idx > 0) & (idx <= len(d))
-        x.loc[valid, "prev_close"] = d["close"].iloc[idx[valid] - 1].values
-        x = x.dropna(subset=["prev_close"])
-        for _, row in x.iterrows():
-            pre = row["prev_close"]
-            f = (pre - row["d"] + row["p"] * row["r"]) / (pre * (1 + row["s"] + row["r"]))
-            if not np.isfinite(f) or f <= 0:
-                continue
-            d.loc[d["date"] < row["date"], "factor"] *= f
-    d["qfq_close"] = d["close"] * d["factor"]
-    return d
 
 
 def fetch_sina_qfq(sym, cache_dir):
@@ -112,7 +70,9 @@ def recon(db_path: str = str(DB_PATH), sample_n: int = RECON_SAMPLE,
     cache_dir = RUNTIME_DIR / "sina_qfq_recon"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    all_symbols = [r[0] for r in con.execute("SELECT DISTINCT symbol FROM daily").fetchall()]
+    # ORDER BY symbol：固定种子下抽样顺序可复现（T-017 P5 收尾项 6）
+    all_symbols = [r[0] for r in con.execute(
+        "SELECT DISTINCT symbol FROM daily ORDER BY symbol").fetchall()]
     rng = random.Random(RECON_SEED)
     rest = [s for s in all_symbols if s not in RECON_MUST]
     rng.shuffle(rest)
@@ -125,8 +85,8 @@ def recon(db_path: str = str(DB_PATH), sample_n: int = RECON_SAMPLE,
         if sina is None:
             sina_fail.append(sym)
             continue
-        daily = load_daily(con, sym)
-        xdxr = load_xdxr(con, sym)
+        daily = read_daily_raw(con, sym)
+        xdxr = read_xdxr(con, sym)
         self_df = compute_qfq(daily, xdxr)
         m = self_df[["date", "close", "qfq_close"]].merge(
             sina[["date", "close"]].rename(columns={"close": "sina_close"}),

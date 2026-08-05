@@ -1,13 +1,15 @@
-"""数据获取 - pytdx(通达信直连) + baostock + akshare 三数据源
+"""数据获取 - duckdb(权威源, T-017 P5) + pytdx(通达信直连) + baostock + akshare
 
-数据源优先级：
-  1. pytdx（通达信协议直连，最快 ~0.1-0.3秒/只，推荐）→ 不复权数据
-  2. baostock（~2-3秒/只，fallback）→ 前复权(adjustflag=2)
-  3. akshare（最慢，最后备选）→ 前复权(qfq)
+数据源优先级（2026-08-05 P5 主链路切换）：
+  1. duckdb 库（数据基础/data/t017_p2.duckdb，全量历史 1990 起）→ 原始价 + 因子自算 qfq
+  2. CSV 缓存（已 deprecated，降级为 fallback；旧文件保留可读，网络回退时仍写）
+  3. pytdx（通达信协议直连，最快 ~0.1-0.3秒/只）→ 不复权数据
+  4. baostock（~2-3秒/只，fallback）→ 前复权(adjustflag=2)
+  5. akshare（最慢，最后备选）→ 前复权(qfq)
 
-注意：三数据源复权方式不一致（pytdx不复权/baostock前复权/akshare前复权）。
+注意：网络三源复权方式不一致（pytdx不复权/baostock前复权/akshare前复权），
+duckdb 分支统一前复权口径（因子自算 qfq），为主链路默认数据。
 技术形态识别（DL/PT/LK/TY）对复权不敏感，但均线/价格阈值可能有轻微偏差。
-若需要精确复权一致性，建议统一使用前复权并关闭 pytdx fallback。
 """
 from datetime import datetime, timedelta
 import pandas as pd
@@ -201,6 +203,20 @@ def _fetch_by_akshare(symbol: str, start: str, end: str, adjust: str = "qfq") ->
 #  对外接口
 # ════════════════════════════════════════════════════════════
 
+def _fetch_from_duckdb(symbol: str, start: str, end: str) -> pd.DataFrame | None:
+    """duckdb 优先分支（T-017 P5 主链路切换）：原始价 + 因子自算 qfq
+
+    库缺失 / 该股未入库 / 请求窗口超出库内覆盖 → None，由调用方回退
+    CSV 缓存 → 网络链路。任何异常不阻断主链路（回退兜底）。
+    """
+    try:
+        from 数据基础.duckdb.reader import read_kline
+        df = read_kline(symbol, start=start, end=end)
+        return df if df is not None and not df.empty else None
+    except Exception:  # noqa: BLE001 - 库缺失/损坏一律回退，主链路不受影响
+        return None
+
+
 def get_daily_kline(
     symbol: str,
     start_date: str | None = None,
@@ -210,15 +226,17 @@ def get_daily_kline(
 ) -> pd.DataFrame:
     """获取日K线数据
 
-    数据源优先级: pytdx(最快) → baostock → akshare(最慢)
-    支持缓存，默认 1 天有效。
+    数据源优先级（P5 主链路切换后）:
+      duckdb（权威源，因子自算 qfq）→ CSV 缓存（deprecated fallback）→
+      pytdx(最快) → baostock → akshare(最慢)
+    函数签名保持不变（调用方零改动）。
 
     Args:
         symbol: 股票代码（如 "000001"）
         start_date: 开始日期 "YYYYMMDD"，默认 3 年前
         end_date: 结束日期 "YYYYMMDD"，默认今天
-        adjust: 复权方式（仅 akshare 支持）
-        use_cache: 是否使用缓存
+        adjust: 复权方式（仅网络 akshare 分支支持；duckdb 分支恒自算 qfq）
+        use_cache: 是否使用 CSV 缓存
 
     Returns:
         DataFrame: 日期/开盘/收盘/最高/最低/成交量/成交额/振幅/涨跌幅/涨跌额/换手率
@@ -226,7 +244,12 @@ def get_daily_kline(
     end = end_date or datetime.now().strftime("%Y%m%d")
     start = start_date or (datetime.now() - timedelta(days=365 * KLINE_YEARS)).strftime("%Y%m%d")
 
-    # 尝试缓存
+    # 1) duckdb 优先（T-017 P5）：全量历史权威源，命中直接返回
+    df = _fetch_from_duckdb(symbol, start, end)
+    if df is not None and not df.empty:
+        return df
+
+    # 2) 尝试 CSV 缓存（已 deprecated：降级为 fallback，以 duckdb 为准）
     if use_cache:
         cached = read_cache(symbol, max_days=KLINE_CACHE_DAYS)
         if cached is not None and not cached.empty:
@@ -238,22 +261,22 @@ def get_daily_kline(
                 mask = (cached["日期"] >= start_dt) & (cached["日期"] <= end_dt)
                 return cached[mask].reset_index(drop=True)
 
-    # 1) 尝试 pytdx（最快）——先缓存全量再过滤，提高后续命中率
+    # 3) 尝试 pytdx（最快）——先缓存全量再过滤，提高后续命中率
     df = _fetch_by_pytdx(symbol)
     if df is not None and not df.empty:
         if use_cache:
-            write_cache(symbol, df)
+            write_cache(symbol, df)   # deprecated CSV 层，仅网络回退时写
         _apply_date_filter(df, start, end)
         return df
 
-    # 2) 尝试 baostock
+    # 4) 尝试 baostock
     df = _fetch_by_baostock(symbol, start, end)
     if df is not None and not df.empty:
         if use_cache:
             write_cache(symbol, df)
         return df
 
-    # 3) 尝试 akshare（最慢）
+    # 5) 尝试 akshare（最慢）
     df = _fetch_by_akshare(symbol, start, end, adjust)
     if df is not None and not df.empty:
         if use_cache:

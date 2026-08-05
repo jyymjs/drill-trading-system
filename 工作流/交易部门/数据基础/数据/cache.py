@@ -1,4 +1,10 @@
-"""本地缓存管理"""
+"""本地缓存管理
+
+⚠️ deprecated（T-017 P5 主链路切换，2026-08-05）：
+  权威数据源已切换为 duckdb 库（数据基础/data/t017_p2.duckdb，全量历史 + 因子自算 qfq）。
+  本 CSV 层降级为历史 fallback——不删除（旧文件保留可读，供对照/回退），
+  读取仅发生在 duckdb 未命中之后；网络回退分支仍写缓存以便下次复用。
+"""
 import os
 from datetime import datetime, timedelta
 import pandas as pd
