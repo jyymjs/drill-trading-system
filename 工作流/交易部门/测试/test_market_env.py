@@ -65,6 +65,32 @@ def make_breadth_df(ratios: list[float], dates: list[str]) -> pd.DataFrame:
 
 SIG_DATE = pd.Timestamp("2024-06-03")  # 2024-06-03 周一（交易日）
 
+
+class _FakeTdxApi:
+    """mock pytdx TdxHq_API：按预置批次返回 get_index_bars，记录调用次数
+
+    - 每批返回后弹出；批次耗尽后恒返回最后一批（模拟服务器旧数据不变）
+    - 批次按"最近→最老"预置（与真实协议 offset 语义一致）
+    """
+
+    def __init__(self, batches: list[list[dict]]):
+        self._batches = list(batches)
+        self.calls = 0
+
+    def connect(self, *args, **kwargs) -> bool:
+        return True
+
+    def get_index_bars(self, category, market, code, offset, count):
+        self.calls += 1
+        if not self._batches:
+            return []
+        if len(self._batches) > 1:
+            return self._batches.pop(0)
+        return self._batches[0]
+
+    def disconnect(self) -> None:
+        pass
+
 # ── 指数涨跌幅提取 ──
 
 
@@ -238,6 +264,42 @@ class TestExecVerdict:
         c = cfg(enabled=True, missing_index="pass")
         idx = make_index_df(["2024-06-04"], [-3.0])
         action, info, src = exec_verdict(c, idx, SIG_DATE, "S", make_window([5e8] * 5))
+        assert (action, src) == ("missing", "env")
+
+    # ── P1 质检修复（2026-08-06）：量能缺口不得吞掉环境降级 ──
+
+    def test_降级模式_量能缺口_降级不被吞(self):
+        """P1 回归核心：downgrade 模式 + 指数暴跌 + 量能数据缺口
+        → 必须返回 downgrade（原逻辑 v_action=="missing" 提前短路返回 missing，吞掉环境降级）"""
+        c = cfg(enabled=True, mode="downgrade", volume_filter=True)
+        idx = make_index_df(["2024-06-03"], [-3.0])
+        win = make_window([0.0] * 5)  # 成交额全零 → 量能缺口
+        action, new_g, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        assert (action, new_g, src) == ("downgrade", "A", "env")
+
+    def test_降级模式_量能缺口_信号日无成交额列(self):
+        """P1 同场景另一缺口形态：窗口缺成交额列"""
+        c = cfg(enabled=True, mode="downgrade", volume_filter=True)
+        idx = make_index_df(["2024-06-03"], [-3.0])
+        win = pd.DataFrame({"日期": [SIG_DATE], "收盘": [10.0]})  # 无成交额列
+        action, new_g, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        assert (action, new_g, src) == ("downgrade", "A", "env")
+
+    def test_环境放行_量能缺口_返回missing(self):
+        """P1 回归：环境未触发（无降级/缺口）时，量能缺口仍返回 missing（放行语义不变）"""
+        c = cfg(enabled=True, mode="downgrade", volume_filter=True)
+        idx = make_index_df(["2024-06-03"], [-1.0])
+        win = make_window([0.0] * 5)
+        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
+        assert (action, src) == ("missing", "volume")
+        assert "无成交额" in (info or "")
+
+    def test_指数缺口_量能缺口_指数优先(self):
+        """P1 优先级：环境缺口（指数缺失）优先于量能缺口（更重大的数据问题先报）"""
+        c = cfg(enabled=True, missing_index="pass", volume_filter=True)
+        idx = make_index_df(["2024-06-04"], [-3.0])  # 信号日指数缺失
+        win = make_window([0.0] * 5)
+        action, info, src = exec_verdict(c, idx, SIG_DATE, "S", win)
         assert (action, src) == ("missing", "env")
 
 
@@ -496,6 +558,119 @@ class TestIndexData:
                             lambda *a, **k: fake.copy())
         df = load_index_daily("上证指数", cache_dir=tmp_path, require_breadth=True)
         assert df["上涨家数"].iloc[0] == 1508  # 已重拉含家数列
+
+    # ── P2 质检修复（2026-08-06）：_pull_index_all 满批时按 min_date 提前终止 ──
+
+    @staticmethod
+    def _make_bars(end: str, n: int) -> list[dict]:
+        """生成 n 根 pytdx 风格 bar（最新在前，倒序）；供 mock get_index_bars
+
+        - end 为批内**最新**日期：date_range(end=...) 向前数 n 个工作日，
+          批内最早 ≈ end 前 n 个交易日（此前误用 start 向后生成，批内最早恒为
+          start 当天，导致满批时 never 突破 min_date → 无限拉批死循环）
+        """
+        dates = sorted(pd.date_range(end=end, periods=n, freq="B"), reverse=True)
+        return [{"datetime": d.strftime("%Y-%m-%d") + " 15:00",
+                 "year": d.year, "month": d.month, "day": d.day,
+                 "open": 3000.0, "close": 3000.0, "high": 3010.0,
+                 "low": 2990.0, "vol": 1e8, "amount": 3e11} for d in dates]
+
+    def test_pull_满批覆盖min_date_提前终止(self, monkeypatch):
+        """P2 核心：满批 800 根且批内最早日期已 ≤ min_date → 只拉一批就 break
+        （原逻辑把 need 检查放在 len(bars)<PULL_BATCH 内，满批时永不提前终止）"""
+        from 分析决策.市场环境.index_data import _PULL_BATCH, _pull_index_all
+
+        first = self._make_bars("2024-06-01", _PULL_BATCH)   # 满批：最早 2020 年附近
+        api = _FakeTdxApi([first])
+        monkeypatch.setattr("pytdx.hq.TdxHq_API", lambda: api)
+        df = _pull_index_all(1, "000001", min_date="20230101")
+        assert api.calls == 1            # 提前 break：只调一次
+        assert not df.empty
+        # 覆盖达成：need 过滤后最早即 2023 年首个工作日（2023-01-01 为周日）
+        assert df["日期"].min() < pd.Timestamp("2023-02-01")
+
+    def test_pull_满批未覆盖_继续拉下一批(self, monkeypatch):
+        """P2 回归：满批但批内最早日期仍晚于 min_date → 继续拉下一批"""
+        from 分析决策.市场环境.index_data import _PULL_BATCH, _pull_index_all
+
+        batch1 = self._make_bars("2024-06-01", _PULL_BATCH)   # 最早 ≈ 2021-04 > 2016
+        batch2 = self._make_bars("2018-01-01", _PULL_BATCH)   # 最早 ≈ 2014-11 ≤ 2016
+        api = _FakeTdxApi([batch1, batch2])
+        monkeypatch.setattr("pytdx.hq.TdxHq_API", lambda: api)
+        df = _pull_index_all(1, "000001", min_date="20160101")
+        assert api.calls == 2            # 第二批最早 ≤ 2016 → 终止
+        # 覆盖达成：need 过滤后最早即 2016 年首个工作日（2016-01-01 为假期）
+        assert df["日期"].min() < pd.Timestamp("2016-02-01")
+
+    def test_pull_不足一批_拉完即停(self, monkeypatch):
+        """P2 回归：不足一批（已到最早）→ 不循环"""
+        from 分析决策.市场环境.index_data import _pull_index_all
+
+        short = self._make_bars("2024-06-01", 100)   # 不足一批
+        api = _FakeTdxApi([short])
+        monkeypatch.setattr("pytdx.hq.TdxHq_API", lambda: api)
+        df = _pull_index_all(1, "000001", min_date="20200101")
+        assert api.calls == 1
+        assert len(df) == 100
+
+    # ── P3 质检修复（2026-08-06）：缓存新鲜度（expected_end） ──
+
+    def test_expected_end_未覆盖_触发拉取(self, tmp_path, monkeypatch):
+        """P3 核心：缓存最新日期早于 expected_end → 视为过期重新拉取"""
+        self._write_cache(tmp_path, dates=["2024-06-01", "2024-06-02", "2024-06-03"])
+        fake = pd.DataFrame({
+            "日期": pd.to_datetime(["2024-06-20", "2024-06-21"]),
+            "开盘": [3000.0, 3001.0], "收盘": [3000.0, 3001.0],
+            "最高": [3010.0, 3011.0], "最低": [2990.0, 2991.0],
+            "成交量": [1e8, 1e8], "成交额": [3e11, 3e11],
+            "涨跌幅": [0.0, 0.03],
+        })
+        monkeypatch.setattr("分析决策.市场环境.index_data._pull_index_all",
+                            lambda *a, **k: fake.copy())
+        df = load_index_daily("上证指数", cache_dir=tmp_path, expected_end="20240630")
+        assert df["日期"].max() == pd.Timestamp("2024-06-21")  # 已重拉
+        # 重拉结果已回写缓存
+        assert _cache_path(1, "000001", tmp_path).exists()
+
+    def test_expected_end_已覆盖_缓存命中(self, tmp_path, monkeypatch):
+        """P3 回归：缓存最新日期 ≥ expected_end → 命中复用（不联网）"""
+        self._write_cache(tmp_path, dates=["2024-06-01", "2024-06-02", "2024-06-03"])
+        monkeypatch.setattr("分析决策.市场环境.index_data._pull_index_all",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("不应联网")))
+        df = load_index_daily("上证指数", cache_dir=tmp_path, expected_end="20240603")
+        assert len(df) == 3
+
+    def test_expected_end_None_不查新鲜度(self, tmp_path, monkeypatch):
+        """P3 兼容：expected_end=None（旧调用）→ 仅查起始覆盖，命中缓存"""
+        self._write_cache(tmp_path, dates=["2024-06-01", "2024-06-02", "2024-06-03"])
+        monkeypatch.setattr("分析决策.市场环境.index_data._pull_index_all",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("不应联网")))
+        df = load_index_daily("上证指数", cache_dir=tmp_path)
+        assert len(df) == 3
+
+    def test_load_market_breadth_expected_end_透传(self, tmp_path, monkeypatch):
+        """P3 透传：load_market_breadth 的 expected_end 同样触发重拉（C4 家数新鲜度）"""
+        for market, code in [(1, "000001"), (0, "399001")]:
+            path = _cache_path(market, code, tmp_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame({
+                "日期": pd.to_datetime(["2024-01-02"]),
+                "开盘": [3000.0], "收盘": [3000.0], "最高": [3001.0], "最低": [2999.0],
+                "成交量": [1e8], "成交额": [3e11], "涨跌幅": [0.0],
+                "上涨家数": [1000], "下跌家数": [1000],
+            }).to_csv(path, index=False, encoding="utf-8-sig")
+        fake = pd.DataFrame({
+            "日期": pd.to_datetime(["2024-02-01"]),
+            "开盘": [3000.0], "收盘": [3000.0], "最高": [3001.0], "最低": [2999.0],
+            "成交量": [1e8], "成交额": [3e11], "涨跌幅": [0.0],
+            "上涨家数": [1000], "下跌家数": [1000],
+        })
+        monkeypatch.setattr("分析决策.市场环境.index_data._pull_index_all",
+                            lambda *a, **k: fake.copy())
+        df = load_market_breadth(cache_dir=tmp_path, expected_end="20240131")
+        assert df["日期"].max() == pd.Timestamp("2024-02-01")  # 已重拉（旧缓存 01-02 < 期望 01-31）
 
     def test_配置校验(self):
         with pytest.raises(ValueError):

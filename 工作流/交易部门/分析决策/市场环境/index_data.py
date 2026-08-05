@@ -49,7 +49,8 @@ def _cache_path(market: int, code: str, cache_dir: Path | None = None) -> Path:
 
 def load_index_daily(name: str = "上证指数", cache_dir: Path | None = None,
                      min_date: str | None = None, force_refresh: bool = False,
-                     require_breadth: bool = False) -> pd.DataFrame:
+                     require_breadth: bool = False,
+                     expected_end: str | None = None) -> pd.DataFrame:
     """加载指数日线（本地缓存优先，缺失/覆盖不足 → pytdx 拉取后写缓存）
 
     Args:
@@ -59,6 +60,9 @@ def load_index_daily(name: str = "上证指数", cache_dir: Path | None = None,
         force_refresh: 强制联网重拉（忽略缓存）
         require_breadth: 需要涨跌家数列（C4 情绪闸门）；旧缓存缺 上涨家数/下跌家数 列
             → 视为过期重新拉取（C4 上线前的老缓存无家数列）
+        expected_end: 期望最近日期 "YYYYMMDD"（None=不检查新鲜度，P3 质检修复 2026-08-06）：
+            缓存最新日期早于该日期 → 视为过期重新拉取（旧逻辑只查起始覆盖，
+            缓存永久复用不自动更新，尾部信号日指数/家数缺口被静默放行）
 
     Returns:
         中文列 DataFrame：日期/开盘/收盘/最高/最低/成交量/成交额/涨跌幅
@@ -72,7 +76,7 @@ def load_index_daily(name: str = "上证指数", cache_dir: Path | None = None,
 
     if not force_refresh and path.exists():
         df = pd.read_csv(path, parse_dates=["日期"])
-        if not df.empty and _cache_ok(df, min_date) and _breadth_cols_ok(df, require_breadth):
+        if not df.empty and _cache_ok(df, min_date, expected_end) and _breadth_cols_ok(df, require_breadth):
             return df
 
     # 缓存缺失/过期 → pytdx 拉取全量（分段）
@@ -92,12 +96,20 @@ def load_index_daily(name: str = "上证指数", cache_dir: Path | None = None,
     return raw
 
 
-def _cache_ok(df: pd.DataFrame, min_date: str | None) -> bool:
-    """缓存是否覆盖所需区间：数据非空且起始不晚于 min_date"""
-    if min_date is None:
-        return True
-    need = pd.Timestamp(min_date)
-    return bool(df["日期"].min() <= need)
+def _cache_ok(df: pd.DataFrame, min_date: str | None,
+              expected_end: str | None = None) -> bool:
+    """缓存是否覆盖所需区间且足够新鲜（P3 质检修复 2026-08-06）
+
+    - 起始覆盖：数据非空且起始不晚于 min_date（原语义）
+    - 新鲜度：expected_end 非 None 时，缓存最新日期不早于 expected_end——
+      只查起始覆盖会让缓存永久复用不自动更新（缺尾部数据 → 最近信号日指数
+      /家数缺口被静默放行）；force_refresh 语义保留（显式强制优先于本检查）
+    """
+    # 任一所需覆盖未达成（起始晚于 min_date / 最新早于 expected_end）→ 过期
+    return not (
+        (min_date is not None and df["日期"].min() > pd.Timestamp(min_date))
+        or (expected_end is not None and df["日期"].max() < pd.Timestamp(expected_end))
+    )
 
 
 def _breadth_cols_ok(df: pd.DataFrame, require: bool) -> bool:
@@ -128,15 +140,25 @@ def _pull_index_all(market: int, code: str, min_date: str | None = None) -> pd.D
                 continue
             rows = []
             offset = 0
+            last_earliest = None
             while True:
                 bars = api.get_index_bars(9, market, code, offset, _PULL_BATCH)
                 if not bars:
                     break
                 rows.extend(bars)
-                if need is not None and len(bars) < _PULL_BATCH:
-                    # 已到最早（不足一批）或已覆盖 min_date
-                    if pd.Timestamp(f"{bars[-1]['year']:04d}-{bars[-1]['month']:02d}-{bars[-1]['day']:02d}") <= need:
+                # P2 质检修复（2026-08-06）：满批时也检查批内最早日期（bars[-1]，倒序返回）
+                # ——原逻辑把 need 检查放在 len(bars) < _PULL_BATCH 内，数据量大时每批恒满 800，
+                #   min_date 早已被覆盖却永不提前 break，白白拉满全量历史。
+                if need is not None:
+                    earliest = pd.Timestamp(
+                        f"{bars[-1]['year']:04d}-{bars[-1]['month']:02d}-{bars[-1]['day']:02d}")
+                    if earliest <= need:
                         break
+                    # 防呆：批次最早日期未随 offset 前进（数据源异常/恒返回同批）
+                    # → 终止，避免 offset 无限增长死循环拉同一批数据
+                    if last_earliest is not None and earliest == last_earliest:
+                        break
+                    last_earliest = earliest
                 offset += _PULL_BATCH
                 if len(bars) < _PULL_BATCH:
                     break
@@ -185,7 +207,8 @@ def _bars_to_cn(rows: list) -> pd.DataFrame:
 
 
 def load_market_breadth(cache_dir: Path | None = None, min_date: str | None = None,
-                        force_refresh: bool = False) -> pd.DataFrame:
+                        force_refresh: bool = False,
+                        expected_end: str | None = None) -> pd.DataFrame:
     """加载全市场涨跌家数日线（沪+深，本地缓存优先，缺列/覆盖不足 → pytdx 拉取）
 
     口径：上涨家数 = 上证指数（沪）up + 深证成指（深）up；下跌家数同理。
@@ -196,6 +219,8 @@ def load_market_breadth(cache_dir: Path | None = None, min_date: str | None = No
         cache_dir: 缓存目录（默认 数据基础/data/index_cache/；测试可注入临时目录）
         min_date: 需要的起始日期 "YYYYMMDD"（None=全量）
         force_refresh: 强制联网重拉（忽略缓存）
+        expected_end: 期望最近日期 "YYYYMMDD"（None=不检查新鲜度；透传 load_index_daily，
+            P3 质检修复 2026-08-06：缓存旧于该日期 → 重新拉取）
 
     Returns:
         DataFrame：日期/上涨家数/下跌家数/下跌占比(%)（升序）
@@ -204,7 +229,8 @@ def load_market_breadth(cache_dir: Path | None = None, min_date: str | None = No
     parts = []
     for name in BREADTH_INDEXES:
         df = load_index_daily(name, cache_dir=cache_dir, min_date=min_date,
-                              force_refresh=force_refresh, require_breadth=True)
+                              force_refresh=force_refresh, require_breadth=True,
+                              expected_end=expected_end)
         if df.empty:
             return pd.DataFrame(columns=["日期", "上涨家数", "下跌家数", "下跌占比"])
         parts.append(df[["日期", "上涨家数", "下跌家数"]])

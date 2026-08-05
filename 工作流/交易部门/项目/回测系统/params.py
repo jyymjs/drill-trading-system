@@ -43,8 +43,8 @@ class BacktestParams:
     dl_cands: str | None = None
     # 只跑指定代码（冒烟/验收用）；None=股票池全量
     codes: list[str] | None = None
-    # 并发线程数
-    max_workers: int = 5
+    # 并发进程数（2026-08-06 线程→进程升级；默认 6 = 6 物理核，12 超线程由 OS 调度）
+    max_workers: int = 6
     # 交易成本模型（佣金万1.3+印花税万5，2026-08-04 老板确认费率）
     enable_cost: bool = True
     # 成本倍率（D2 2倍成本压力测试=2.0，2026-08-05 方案 D 类；1.0=基线）

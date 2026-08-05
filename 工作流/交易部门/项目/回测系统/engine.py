@@ -1,4 +1,12 @@
-"""回测引擎：逐股滚动评分主循环（ThreadPoolExecutor 5 线程 + tqdm）
+"""回测引擎：逐股滚动评分主循环（ProcessPoolExecutor 多进程并行 + tqdm）
+
+并发模型（2026-08-06 老板拍板：AMD 卡生态不可用 → CPU 多进程先行，吃满 6 核 12 线程）：
+  - 由 ThreadPoolExecutor 5 线程（GIL 受限 ≈1 核有效）升级为 ProcessPoolExecutor
+    多进程：指标计算/评级纯 CPU 部分真实并行，实测提速 3-4 倍（见 commit message）；
+  - duckdb 单文件多进程只读安全：provider.load 每调用新建只读连接（read_kline），
+    回测全程无写库路径（指数/家数缓存写入发生在主进程预加载阶段）；
+  - Windows spawn 安全：initializer 注入共享引擎 + 各直接运行入口 __main__ 保护；
+  - 闸门计数按"每任务增量"收集合并，结果与线程池版一致（EngineResult 结构不变）。
 
 无前视纪律：
   1. 默认路径：指标全序列一次向量化（向后看算子）→ 每个信号日 T 先 df.iloc[:t+1] 截断再评级；
@@ -9,8 +17,9 @@
 """
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import datetime
 
 import pandas as pd
 from tqdm import tqdm
@@ -66,7 +75,13 @@ class BacktestEngine:
     # ── 主入口 ──
 
     def run(self, codes: list[str] | None = None) -> EngineResult:
-        """执行回测（codes 优先取显式入参；None 时用 params.codes；再 None 用全股票池）"""
+        """执行回测（codes 优先取显式入参；None 时用 params.codes；再 None 用全股票池）
+
+        多进程并行（2026-08-06 线程池升级）：
+        - 指数/家数/披露映射主进程一次性预加载（P3 新鲜度检查在此完成）→
+          initializer 注入 worker 进程只读共享，避免每进程重复联网/读缓存；
+        - 每任务返回 (记录, 闸门计数增量)，主进程按股合并——结果与线程池版一致。
+        """
         if codes is None:
             codes = self.params.codes
         if codes is None:
@@ -78,22 +93,29 @@ class BacktestEngine:
             return result
 
         if self.params.prbook_gate:
-            self._load_prbook_map(codes)  # C1 预约披露一次性加载（线程共享只读）
+            self._load_prbook_map(codes)  # C1 预约披露一次性加载（worker 共享只读）
+        if self.params.env_gate:
+            self._load_index_df()  # B1 指数（P3：新鲜度检查一次完成）
+        if self.params.sentiment_gate:
+            self._load_breadth_df()  # C4 涨跌家数（同上）
+        result.gate_counts = {k: 0 for k in self.gate_counts}  # 主进程累加器（9 键对齐）
 
-        with ThreadPoolExecutor(max_workers=self.params.max_workers) as executor:
-            futures = {executor.submit(self._process_stock, code): code for code in codes}
+        with ProcessPoolExecutor(max_workers=self.params.max_workers,
+                                 initializer=_mp_init, initargs=(self,)) as executor:
+            futures = {executor.submit(_mp_process_stock, code): code for code in codes}
             with tqdm(total=len(futures), desc="backtest", unit="stk") as bar:
                 for fut in as_completed(futures):
                     code = futures[fut]
                     try:
-                        recs = fut.result()
+                        recs, counts = fut.result()
                         result.records.extend(recs)
                         result.processed += 1
+                        for k, v in counts.items():
+                            result.gate_counts[k] += v
                     except Exception as e:  # 单股异常不中断整体
                         result.skipped += 1
                         result.failed_codes.append(f"{code}:{type(e).__name__}:{e}")
                     bar.update(1)
-        result.gate_counts = dict(self.gate_counts)
         return result
 
     # ── 单股处理 ──
@@ -178,18 +200,30 @@ class BacktestEngine:
         db_path = getattr(self.provider, "db_path", None)
         self._prbook_map = load_prbook_map(codes, db_path=db_path)
 
+    def _index_expected_end(self) -> str:
+        """闸门数据新鲜度底线（P3 质检修复 2026-08-06 接入）：
+        - 回测指定 --end → 指数/家数缓存须覆盖到结束日；
+        - 未指定（跑全量到数据末端）→ 底线=今天，缓存旧于最近交易日 → 重新拉取，
+          避免缓存永久复用导致尾部信号日指数/家数数据缺口被静默放行。
+        """
+        if self.params.end:
+            return self.params.end
+        # 本地时区 aware 时间（DTZ005 合规）；A股按北京时间自然日判断新鲜度
+        return datetime.now().astimezone().strftime("%Y%m%d")
+
     def _load_index_df(self):
         """懒加载主闸门指数日线（B1；缓存优先，无缓存走 pytdx 拉取）"""
         if self._index_df is None:
             from 分析决策.市场环境.index_data import load_index_daily
-            self._index_df = load_index_daily(self.params.env_index)
+            self._index_df = load_index_daily(self.params.env_index,
+                                              expected_end=self._index_expected_end())
         return self._index_df
 
     def _load_breadth_df(self):
         """懒加载全市场涨跌家数（C4；缓存优先，无缓存走 pytdx 拉取）"""
         if self._breadth_df is None:
             from 分析决策.市场环境.index_data import load_market_breadth
-            self._breadth_df = load_market_breadth()
+            self._breadth_df = load_market_breadth(expected_end=self._index_expected_end())
         return self._breadth_df
 
     def _apply_exec_gate(self, sig: Signal, window: pd.DataFrame) -> Signal | None:
@@ -271,3 +305,31 @@ class BacktestEngine:
                       trigger=float(res.get("trigger_price", 0.0)),
                       stop=float(res.get("stop_loss", 0.0)),
                       risk=float(res.get("risk_per_share", 0.0)))
+
+
+# ── 多进程 worker 层（ProcessPool 专用，2026-08-06）──
+# worker 进程启动时经 initializer 注入一次只读共享引擎（含主进程预加载的
+# 指数/家数 DataFrame、C1 披露映射），避免逐任务重复 pickle 大对象；
+# Windows spawn 下 worker 仅 import 本模块（无顶层副作用）+ 执行 initializer，安全。
+_MP_ENGINE: BacktestEngine | None = None
+
+
+def _mp_init(engine: BacktestEngine) -> None:
+    """进程池 worker 初始化：注入只读共享引擎（每进程恰一次）"""
+    global _MP_ENGINE
+    _MP_ENGINE = engine
+
+
+def _mp_process_stock(code: str) -> tuple[list[TrackedRecord], dict]:
+    """进程池单股任务：返回 (记录列表, 该股闸门计数增量)
+
+    - gate_counts 是 worker 内引擎实例的累积计数器（跨任务持续累加），
+      取执行前后快照差值作为该股增量，主进程按股合并——结果与线程池版一致；
+    - 抛出的异常由主进程 as_completed 捕获（单股异常不中断整体）。
+    """
+    eng = _MP_ENGINE
+    before = dict(eng.gate_counts)
+    recs = eng._process_stock(code)
+    after = eng.gate_counts
+    diff = {k: after[k] - before.get(k, 0) for k in after}
+    return recs, diff

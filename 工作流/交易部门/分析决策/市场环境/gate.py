@@ -233,8 +233,10 @@ def exec_verdict(cfg: MarketGateConfig, index_df: pd.DataFrame,
     v_action, v_info = volume_verdict(cfg, window)
     if v_action == "veto":
         return (v_action, v_info, "volume")
-    if v_action == "missing":
-        return (v_action, v_info, "volume")
+    # 量能缺口（P1 质检修复 2026-08-06）：不立即 return，先走完环境降级分支——
+    # 原逻辑 v_action=="missing" 提前短路，会吞掉 downgrade 模式的指数降级
+    # （数据缺口放行 ≠ 环境有利；降级语义不应被量能缺数吞掉）。
+    v_missing = v_info if v_action == "missing" else None
     if g_action == "downgrade":
         return (g_action, g_info, "env")
     if g_action == "missing":
@@ -247,6 +249,9 @@ def exec_verdict(cfg: MarketGateConfig, index_df: pd.DataFrame,
         if cfg.missing_sentiment == "veto":
             return ("veto", s_info, "sentiment")
         return (s_action, s_info, "sentiment")
+    if v_missing is not None:
+        # 环境/情绪均放行（无降级/无缺口）时，量能缺口才独立返回（放行并计数语义不变）
+        return ("missing", v_missing, "volume")
     return ("keep", None, "none")
 
 

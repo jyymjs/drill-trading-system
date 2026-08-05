@@ -217,3 +217,43 @@ class TestSameSource:
             assert sig.trigger == native["trigger_price"]
             assert sig.stop == native["stop_loss"]
             assert sig.risk == native["risk_per_share"]
+
+
+# ============================================================
+# 多进程 run()（2026-08-06：ThreadPoolExecutor → ProcessPoolExecutor）
+# ============================================================
+
+
+class TestRunParallel:
+    """run() 进程池路径：与逐股串行基准指纹一致（结果一致性回归保护）"""
+
+    @staticmethod
+    def _fingerprint(records) -> list[tuple]:
+        return sorted((r.signal.code, str(r.signal.date.date()), r.signal.mode,
+                       r.signal.grade, round(r.signal.close, 4)) for r in records)
+
+    def test_run_mp_与逐股串行一致(self):
+        """进程池 run() 与串行 _process_stock 汇总：记录指纹/计数/统计完全一致
+        （闸门全关，避免联网；Windows spawn 由 pytest 环境兜底验证）"""
+        df = make_kline(400, seed=7)
+        params = make_params(codes=["000001", "000002", "000003"], interval=5,
+                             holds=[5, 10], max_workers=2,
+                             env_gate=False, volume_filter=False,
+                             sentiment_gate=False, prbook_gate=False)
+        mp_res = BacktestEngine(params, provider=_FakeProvider(df)).run()
+        # 串行基准：逐股直接处理（不经进程池），计数在主进程实例上累计
+        ser_eng = BacktestEngine(params, provider=_FakeProvider(df))
+        ser_recs: list = []
+        for code in params.codes:
+            ser_recs.extend(ser_eng._process_stock(code))
+
+        assert mp_res.processed == 3 and mp_res.skipped == 0
+        assert len(mp_res.records) == len(ser_recs)
+        assert self._fingerprint(mp_res.records) == self._fingerprint(ser_recs)
+        assert mp_res.gate_counts == ser_eng.gate_counts
+
+    def test_run_mp_空列表返回空结果(self):
+        """codes 为空 → 直接返回空 EngineResult（不启动进程池）"""
+        params = make_params(codes=[], max_workers=2)
+        res = BacktestEngine(params, provider=_FakeProvider(make_kline(400))).run()
+        assert res.processed == 0 and res.records == []
