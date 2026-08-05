@@ -48,6 +48,8 @@ def cmd_run(args) -> int:
         env_mode=args.env_mode, env_index=args.env_index,
         volume_filter=not args.no_volume_filter, min_amount=args.min_amount,
         vol_window=args.vol_window,
+        sentiment_gate=not args.no_sentiment_gate, sent_threshold=args.sent_threshold,
+        missing_sentiment=args.missing_sentiment,
     )
     try:
         params.validate()
@@ -193,6 +195,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="日均成交额阈值（万元，默认 5000；建议值，回测验证）")
     run_p.add_argument("--vol-window", type=int, default=5,
                        help="均额窗口（交易日，默认5，含信号日）")
+    run_p.add_argument("--no-sentiment-gate", action="store_true",
+                       help="关闭 C4 情绪闸门（涨跌家数，2026-08-05 老板拍板，默认开）")
+    run_p.add_argument("--sent-threshold", type=float, default=70.0,
+                       help="全市场下跌家数占比阈值（%%，默认 70；建议值，普跌日实证 2026-05-29=71.4%）")
+    run_p.add_argument("--missing-sentiment", default="pass", choices=["pass", "veto"],
+                       help="涨跌家数数据缺失：pass=放行（默认）/ veto=否决")
 
     verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")

@@ -109,6 +109,7 @@ def run_group(label: str, env_gate: bool, volume_filter: bool, codes: list[str],
         start=start, end=end, mode="normal", interval=5,
         holds=[5, 10, 20], grades=["S"], codes=codes, max_workers=5,
         env_gate=env_gate, volume_filter=volume_filter,
+        sentiment_gate=False,  # C4 实验见 c4_sentiment_compare.py，本实验对照组不受情绪闸门污染
     )
     engine = BacktestEngine(params)
     result = engine.run()
@@ -166,6 +167,7 @@ def run_day_window(day: str, window_days: int, codes: list[str]) -> dict:
             start=start, end=end, mode="normal", interval=1,
             holds=[20], grades=["S", "A", "B"], codes=codes, max_workers=5,
             env_gate=eg, volume_filter=vf,
+            sentiment_gate=False,  # C4 实验见 c4_sentiment_compare.py，本实验对照组不受情绪闸门污染
         )
         result = BacktestEngine(params).run()
         day_recs = [r for r in result.records
