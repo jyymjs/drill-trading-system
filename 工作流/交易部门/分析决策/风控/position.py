@@ -13,6 +13,7 @@ class Position:
     symbol: str                     # 股票代码
     name: str = ""                  # 股票名称
     direction: str = "long"         # long / short
+    market: str = "stock"           # stock/crypto/forex/futures（出场体系按方向/市场区分，2026-08-04）
     entry_price: float = 0.0        # 进场价
     entry_time: Optional[datetime] = None  # 进场时间
     volume: int = 0                 # 股数

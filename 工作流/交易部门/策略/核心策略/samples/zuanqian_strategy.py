@@ -23,7 +23,8 @@ from 分析决策.分析.indicators import (
     platform_test_count, profile_compactness,
     retracement_detect, channel_detect, overshoot_detect,
     pixelation_score, step_down_trace, conflict_zscore,
-    flatness_score, reaction_quality
+    flatness_score, reaction_quality,
+    poc_level, accumulation_zone, support_bounce,
 )
 
 
@@ -37,10 +38,13 @@ class ZuanQianStrategy(BaseStrategy):
 
     # ── 评级阈值 ──
 
-    # DL 独立结构（K线根数阈值）
-    DL_S = 120
-    DL_A = 90
+    # DL 独立结构（K线根数阈值）——2026-08-04 T-4.3 裁决：一档化，根数仅作 ≥60 通过门槛
+    # （T-4.2 验证：70+ 根 0.448R 差于 60-69 根 0.596R（prebreak/20d），「结构越大越被充分定价」；
+    #   评级维度交还结构紧凑度 DL_RANGE，2026-08-04 老板确认 T-4.3 方案1）
+    DL_S = 60
+    DL_A = 60
     DL_B = 60
+    DL_CANDS = (60, 60, 60)   # 独立结构候选根数（S/A/B），_grade_dl 使用（T-4.3 一档化：仅容差区分）
     DL_RANGE_S = 0.20
     DL_RANGE_A = 0.30
     DL_RANGE_B = 0.35
@@ -63,11 +67,14 @@ class ZuanQianStrategy(BaseStrategy):
     TY_RANGE_A = 0.05
     TY_RANGE_B = 0.08
 
-    # DN 动能（量比, 实体比）——基于至多3根合并规则
+    # DN 动能（相对量比, decisive）——基于至多3根合并规则（T-4.2 重写：相对比较口径）
+    # 老师：动能 = 与之前调整段的强弱对比（相对比较）+ 收完（影线少/阳线连续），非绝对量比/实体门槛
+    # 相对量比 = 启动K合并窗口均量 ÷ 前面调整段日均量（1.0=持平，1.5=明显放量）
+    # decisive = 阳线占比*0.5 + 实体/振幅均值*0.5（收完/坚决度）
     # 1根单K达标=S(强突破), 2根合并达标=A(良好), 3根合并达标=B(边缘)
-    DN_S = (2.5, 0.05)   # 单根→强冲突感
-    DN_A = (1.5, 0.04)   # 2根合并→中等
-    DN_B = (1.1, 0.03)   # 3根合并→偏弱
+    DN_S = (1.5, 0.50)   # 单根→强冲突感
+    DN_A = (1.2, 0.45)   # 2根合并→中等
+    DN_B = (1.0, 0.40)   # 3根合并→偏弱
 
     # SF 释放级别（涨幅阈值）
     SF_FULL_RELEASE = 0.40  # 完全释放排除阈值
@@ -175,9 +182,9 @@ class ZuanQianStrategy(BaseStrategy):
                 low = low[pos:]
                 close = close[pos:]
 
-        candidates = [(120, self.DL_RANGE_S, 'S'),
-                      (90, self.DL_RANGE_A, 'A'),
-                      (60, self.DL_RANGE_B, 'B')]
+        candidates = [(self.DL_CANDS[0], self.DL_RANGE_S, 'S'),
+                      (self.DL_CANDS[1], self.DL_RANGE_A, 'A'),
+                      (self.DL_CANDS[2], self.DL_RANGE_B, 'B')]
         for bars, max_range, grade in candidates:
             if n < bars + 10:
                 continue
@@ -202,7 +209,7 @@ class ZuanQianStrategy(BaseStrategy):
 
         统计价格对同一水平位的有效测试次数。
         """
-        test_count = platform_test_count(df, tolerance=0.01, min_gap=3)
+        test_count = platform_test_count(df, tolerance=0.005, min_gap=8)  # T-4.4 校准：原 0.01/3 致 99% S 虚高
         if test_count >= self.PT_S:
             return 'S', f"{test_count}次有效平台测试"
         elif test_count >= self.PT_A:
@@ -308,9 +315,11 @@ class ZuanQianStrategy(BaseStrategy):
             window = df.tail(n)
             dn_start_idx = n_total - n
 
-            # 合并量比
-            vol_ratios = window["VOL_RATIO"].dropna().values if "VOL_RATIO" in df.columns else [0]
-            vol = vol_ratios.mean() if len(vol_ratios) > 0 else 0
+            # 合并量比（相对口径：启动K窗口均量 vs 前面调整段日均量）
+            window_vol = float(window["成交量"].sum())
+            ref = df["成交量"].iloc[:dn_start_idx]
+            ref_mean = float(ref.tail(20).mean()) if len(ref) > 0 else 0.0
+            vol = window_vol / (ref_mean * n) if ref_mean > 0 else 0.0
 
             # 合并实体
             first_open = window["开盘"].iloc[0]
@@ -335,10 +344,10 @@ class ZuanQianStrategy(BaseStrategy):
             except Exception:
                 pass
 
-            # 三个维度都达标才算通过
-            if vol >= v_min and body >= b_min:
+            # 判定通过：相对量比达标 且 收完度达标（实体仅展示，不设门槛——老师语义）
+            if vol >= v_min and decisive >= b_min:
                 base_grade = grade
-                base_reason = f"量比{vol:.2f}x, 实体{body:.1%}(并{n}根), z={conflict_z:.1f}"
+                base_reason = f"量比{vol:.2f}x, 收完{decisive:.2f}(并{n}根), 实体{body:.1%}, z={conflict_z:.1f}"
 
                 # 冲突感加分/降级
                 if conflict_z >= self.CZ_S and base_grade != 'S':
@@ -369,7 +378,7 @@ class ZuanQianStrategy(BaseStrategy):
 
                 return base_grade, base_reason
 
-        return 'C', f"量比{vol_ratios.mean():.2f}x, 实体{body:.1%}, z={conflict_z:.1f}(不达标)"
+        return 'C', f"量比{vol:.2f}x, 实体{body:.1%}, z={conflict_z:.1f}(不达标)"
 
     def _find_last_ty_index(self, df: pd.DataFrame) -> int | None:
         """查找最后一个统一区间的结束位置
@@ -538,7 +547,15 @@ class ZuanQianStrategy(BaseStrategy):
         grade = self._calculate_overall_grade(scores, bonus)
         match = grade in ('S', 'A', 'B')
 
-        return {"grade": grade, "scores": scores, "dl_start": dl_start, "match": match}
+        # 意图模式标注（独立模式，不影响标准评级；供报告/prebreak 使用）
+        intent = None
+        try:
+            intent = self._check_intent_mode(df)
+        except Exception:
+            intent = None
+
+        return {"grade": grade, "scores": scores, "dl_start": dl_start, "match": match,
+                "intent": intent}
 
     def _calculate_overall_grade(self, scores: dict, bonus: int = 0) -> str:
         """根据各条件评级计算综合评级
@@ -567,6 +584,11 @@ class ZuanQianStrategy(BaseStrategy):
                 return 'C'
             return 'B'
 
+        # ── T-4.4 裁决（2026-08-04 老板确认完整方案）：去掉「DL 必须 S」硬规则 ──
+        # 原 T-4.5 老师硬规则（"DL 必须 S，没有后面的选项"）经 T-4.3 一档化后失真——
+        # DL≠S 仅代表容差稍大，回测质量反而更好（DL=S 0.210 vs 非S 0.270，normal/20d）；
+        # DL≠S 不再压 B，按正常条件组合评级
+
         # 计算各等级数量
         s_count = sum(1 for g in grades if g == 'S')
         a_count = sum(1 for g in grades if g == 'A')
@@ -575,8 +597,10 @@ class ZuanQianStrategy(BaseStrategy):
         # 2024年规则修正：全部A级无一S → 降为B（老师不会关注均A交易）
         all_a_no_s = (s_count == 0 and b_count == 0 and a_count == len(grades))
 
-        # S级：全部≥A，且至少3个S
-        if s_count >= 3 and b_count == 0:
+        # S级（T-4.4 数据校准）：3-4个S + PT必须S + TY≠S + SF≠S
+        # （模拟验证：S∈[3,4]=0.266峰值、5S=-0.021亏钱；TY=S负贡献、SF=S最毒、PT=S唯一强正贡献）
+        pt_g, ty_g, sf_g = grades[0], grades[1], grades[5]
+        if 3 <= s_count <= 4 and b_count == 0 and pt_g == 'S' and ty_g != 'S' and sf_g != 'S':
             return 'S'
 
         # A级：全部≥A 或 仅1个B
@@ -594,6 +618,52 @@ class ZuanQianStrategy(BaseStrategy):
             return 'B'
 
         return 'C'
+
+    # ── 意图模式（内训第14节两脉流程，2026-08-04 补课代码化） ──
+
+    def _check_intent_mode(self, df: pd.DataFrame) -> dict | None:
+        """意图模式判定（量化版）
+
+        一脉：独立结构 → 筹码集中区 → POC 验证 → 有利突破或依托
+        二脉：关键位三次测试（放宽：可不在一结构内） → 有利突破或明显反应回踩
+        硬约束：被回踩/被破位的必须是独立结构（DL≥B 视为结构存在）
+
+        Returns:
+            {"mode": "intent", "poc": float, "concentration": float,
+             "zone_ratio": float, "support": bool, "reason": str} 或 None
+        """
+        # 硬约束：独立结构必须存在（DL 至少 B——结构规模足够）
+        dl_g, dl_r = self._grade_dl(df)
+        if dl_g in ("C",):
+            return None
+        # 一脉：筹码集中区（POC 集中度 ≥15% 或 筹码区集中）
+        poc = poc_level(df)
+        acc = accumulation_zone(df)
+        zone_ok = poc["concentration"] > 0.15 or acc["concentrated"]
+        if not zone_ok:
+            return None
+        # 有利突破或依托（老师：意图模式必须看懂行情，禁止当标准模式卡条件）
+        # 收紧：依托必须真实（支撑反弹），反应必须质量 good（不取宽松 has_reaction）
+        bounce = support_bounce(df)
+        react = reaction_quality(df)
+        support_ok = bounce.get("has_support", False) or react.get("quality") == "good"
+        if not support_ok:
+            return None
+        parts = []
+        if acc.get("poc_near_current"):
+            parts.append("POC近当前")
+        if bounce.get("has_support"):
+            parts.append(bounce.get("reason", "依托"))
+        if react.get("has_reaction"):
+            parts.append("明显反应")
+        return {
+            "mode": "intent",
+            "poc": round(poc["poc"], 3),
+            "concentration": round(poc["concentration"], 3),
+            "zone_ratio": round(acc["zone_ratio"], 3),
+            "support": bool(bounce.get("has_support", False)),
+            "reason": "/".join(parts) if parts else "筹码集中+反应",
+        }
 
     def quick_prefilter(self, df: pd.DataFrame) -> bool:
         """快速预过滤（课程标准版）"""
@@ -761,7 +831,8 @@ class ZuanQianStrategy(BaseStrategy):
 
         s_count = sum(1 for g in grades if g == 'S')
 
-        if s_count >= 3:
+        # S级（T-4.4 同步校准）：3-4个S + TY≠S + SF≠S（TY/SF 的 S 档负贡献）
+        if 3 <= s_count <= 4 and grades[1] != 'S' and grades[4] != 'S':
             return 'S'
         if s_count >= 2:
             return 'A'

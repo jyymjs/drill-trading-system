@@ -892,3 +892,260 @@ def all_indicators(df: pd.DataFrame,
         c["MAD20"] = mad(c["收盘"], 20)
 
     return result
+
+
+# ══════════════════════════════════════════════════════════
+# 意图模式检测（内训第14节两脉流程，2026-08-04 补课代码化）
+# 一脉：独立结构 → 筹码集中区 → 成交量分布验证 POC → 有利突破或依托
+# 二脉：关键位置三次测试 → 有利突破或明显反应回踩
+# 硬约束：被回踩/被破位的必须是独立结构
+# ══════════════════════════════════════════════════════════
+
+def poc_level(df: pd.DataFrame, n_bins: int = 30, window: int = 120) -> dict:
+    """POC（成交量分布控制点）检测
+
+    老师（内训第8节）：价格停留时间长的价位 = 共识区；筹码集中度高 = 未来走势有规律
+    POC = 成交量加权价格分布的最大点（量价分箱，每箱累加箱内成交量）
+
+    Args:
+        df: K线DataFrame
+        n_bins: 价格分箱数
+        window: 参与计算的最近K线数
+
+    Returns:
+        {"poc": float, "concentration": float, "top3": [float,...]}
+        concentration = POC箱成交量占比（越高越集中）
+    """
+    w = min(window, len(df))
+    if w < 30:
+        return {"poc": 0.0, "concentration": 0.0, "top3": []}
+    d = df.tail(w)
+    # 典型价（含最高/最低的加权代表价）——价格停留时间近似
+    prices = (d["最高"].values + d["最低"].values + d["收盘"].values) / 3.0
+    vols = d["成交量"].values.astype(float)
+    hist, edges = np.histogram(prices, bins=n_bins, weights=vols)
+    total = hist.sum()
+    if total <= 0:
+        return {"poc": 0.0, "concentration": 0.0, "top3": []}
+    # POC = 最大量箱中点
+    peak = int(np.argmax(hist))
+    poc = (edges[peak] + edges[peak + 1]) / 2.0
+    concentration = float(hist[peak] / total)
+    # 前3大量箱（多筹码集中区识别）
+    top3_idx = np.argsort(hist)[-3:][::-1]
+    top3 = [float((edges[i] + edges[i + 1]) / 2.0) for i in sorted(top3_idx)]
+    return {"poc": float(poc), "concentration": concentration, "top3": top3}
+
+
+def accumulation_zone(df: pd.DataFrame, n_bins: int = 30, top_ratio: float = 0.6,
+                      window: int = 120) -> dict:
+    """筹码集中区检测：覆盖 top_ratio 成交量的最窄价格带占总价格带比例
+
+    老师（内训第8节）：筹码集中度高 = 趋势延展更优；"停留时间长 = 共识"
+    zone_ratio 越小 = 筹码越集中
+
+    Args:
+        df: K线DataFrame
+        n_bins: 价格分箱数
+        top_ratio: 覆盖的成交量比例（0.6 = 60% 成交量）
+        window: 最近K线数
+
+    Returns:
+        {"concentrated": bool, "zone_ratio": float, "poc_near_current": bool}
+        concentrated = zone_ratio < 0.4（60%量在 40% 价格带内 = 集中）
+    """
+    w = min(window, len(df))
+    if w < 30:
+        return {"concentrated": False, "zone_ratio": 1.0, "poc_near_current": False}
+    d = df.tail(w)
+    prices = (d["最高"].values + d["最低"].values + d["收盘"].values) / 3.0
+    vols = d["成交量"].values.astype(float)
+    total = vols.sum()
+    if total <= 0:
+        return {"concentrated": False, "zone_ratio": 1.0, "poc_near_current": False}
+    # 按价格排序，滑动窗口找覆盖 top_ratio 成交量的最窄价格带
+    order = np.argsort(prices)
+    ps = prices[order]
+    vs = vols[order]
+    cum = np.cumsum(vs) / total
+    full = ps[-1] - ps[0] if ps[-1] > ps[0] else 1.0
+    best_span = full
+    i = 0
+    for j in range(len(ps)):
+        while i <= j and cum[j] - (cum[i - 1] if i > 0 else 0.0) >= top_ratio:
+            span = ps[j] - ps[i]
+            if span < best_span:
+                best_span = span
+            i += 1
+    zone_ratio = float(best_span / full) if full > 0 else 1.0
+    concentrated = zone_ratio < 0.4
+    # POC 是否接近当前价（当前价在 POC 附近 = 正在关键位）
+    poc = poc_level(df, n_bins=n_bins, window=window)["poc"]
+    cur = float(d["收盘"].iloc[-1])
+    poc_near = abs(cur - poc) / poc < 0.05 if poc > 0 else False
+    return {"concentrated": concentrated, "zone_ratio": zone_ratio, "poc_near_current": poc_near}
+
+
+def support_bounce(df: pd.DataFrame, levels: list[float] | None = None,
+                   tol: float = 0.02, lookback: int = 15) -> dict:
+    """依托/支撑反弹检测
+
+    老师（2024-06-03拍板定义）：依托 = 关键位附近直接有力突破起稳；
+    回踩 = 脱离后明显下探再确认（"向下踩的轨迹必须存在"）
+    本函数检测：近期回调到关键位附近后是否有"支撑反弹"特征（下影线 + 收回）
+
+    Args:
+        df: K线DataFrame
+        levels: 关键价位列表（缺省用支撑阻力检测）
+        tol: 关键位容差（比例）
+        lookback: 近期窗口K线数
+
+    Returns:
+        {"has_support": bool, "bounce": float, "level": float|None, "reason": str}
+    """
+    w = min(lookback, len(df))
+    if w < 10:
+        return {"has_support": False, "bounce": 0.0, "level": None, "reason": "数据不足"}
+    d = df.tail(w)
+    high = d["最高"].values
+    low = d["最低"].values
+    close = d["收盘"].values
+    if levels is None or len(levels) == 0:
+        levels = support_resistance_levels(df)
+    if len(levels) == 0:
+        return {"has_support": False, "bounce": 0.0, "level": None, "reason": "无关键位"}
+    # 近期最低点
+    min_idx = int(np.argmin(low))
+    min_p = float(low[min_idx])
+    if min_p <= 0:
+        return {"has_support": False, "bounce": 0.0, "level": None, "reason": "价格异常"}
+    # 低点是否贴近某个关键位
+    near_level = None
+    for lv in levels:
+        if lv > 0 and abs(lv - min_p) / lv <= tol:
+            near_level = float(lv)
+            break
+    if near_level is None:
+        return {"has_support": False, "bounce": 0.0, "level": None, "reason": "低点不在关键位附近"}
+    # 下影线确认（最低点那根的收盘在低点上方）
+    rng = high[min_idx] - min_p
+    has_shadow = rng > 0 and (close[min_idx] - min_p) / rng > 0.5
+    # 反弹确认：低点后收盘高于低点一定幅度（向下踩后收回 = 轨迹存在）
+    after_close = close[min_idx:]
+    bounce = (after_close[-1] - min_p) / min_p if len(after_close) >= 2 else 0.0
+    has_support = has_shadow and bounce > 0.03
+    reason = f"依托{bounce:.1%}(关键位{near_level:.2f})" if has_support else f"回调无依托(bounce={bounce:.1%})"
+    return {"has_support": has_support, "bounce": float(bounce), "level": near_level, "reason": reason}
+
+
+# ══════════════════════════════════════════════════════════
+# 环境判定与逆转检测（2026-08-04 补课代码化）
+# 0.5R 环境判定：老师（2024-06-22/29）"环境不好（右下角）→ 0.5R"
+# A 段逆转 3:1：内训第六节 "完全逆转 = 动能四要素至少 3:1 胜过最后一段运行"
+# ══════════════════════════════════════════════════════════
+
+def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
+    """市场环境质量判定（0.5R 机制的环境部分）
+
+    老师（2024-06-22/29）：环境好（非右下角）→ 正常 1R；环境不好（右下角）→ 0.5R
+    右下角特征量化：结构质量低（近期弱势）+ 反弹无力（低点不断下移/横盘无动能）
+
+    Args:
+        df: K线DataFrame
+        window: 环境评估窗口
+
+    Returns:
+        {"quality": "good"/"weak"/"bad", "signal": float, "reason": str}
+        good → 1R；weak/bad → 0.5R（环境差降仓）
+    """
+    w = min(window, len(df))
+    if w < 30:
+        return {"quality": "good", "signal": 0.0, "reason": "数据不足默认正常"}
+    d = df.tail(w)
+    close = d["收盘"].values
+    high = d["最高"].values
+    low = d["最低"].values
+    # 1) 近期趋势：窗口内低点是否持续下移（右下角 = 弱势下行/横盘无动能）
+    half = w // 2
+    low_front = low[:half].min()
+    low_back = low[half:].min()
+    down_trend = low_back <= low_front * 0.97  # 后半段创新低 ≥3%
+    # 2) 反弹力度：窗口内最大反弹 vs 最大回撤
+    cur = close[-1]
+    peak = high.max()
+    trough = low.min()
+    bounce = (cur - trough) / trough if trough > 0 else 0
+    drawdown = (peak - cur) / peak if peak > 0 else 0
+    weak_bounce = bounce < 0.08
+    # 3) 结构质量：横盘波幅（过低 = 死水无动能）
+    rng = (peak - trough) / cur if cur > 0 else 0
+    stagnant = rng < 0.10
+    # 综合判定（右下角 = 弱势 + 反弹无力）
+    bad_flags = [down_trend, weak_bounce, stagnant]
+    n_bad = sum(bad_flags)
+    if n_bad >= 2:
+        quality = "bad"
+        reason = f"环境差(右下角): 创新低{down_trend}/反弹弱{weak_bounce}/横盘{stagnant}"
+    elif n_bad == 1:
+        quality = "weak"
+        reason = f"环境偏弱: {[f for f,b in zip(['下行','弱反弹','横盘'],bad_flags) if b]}"
+    else:
+        quality = "good"
+        reason = "环境正常"
+    return {"quality": quality, "signal": float(n_bad), "reason": reason}
+
+
+def reversal_3to1(df: pd.DataFrame, run_start: int | None = None) -> dict:
+    """A 段逆转判定（内训第六节：完全逆转 = 动能四要素至少 3:1 胜过最后一段运行）
+
+    四要素：大小（幅度）/ 连续性（阳线占比）/ 斜率 / 量能
+    至少 3 个要素强于最后一段运行（4:0 或 3:1，允许一项不如或打平）= 完全逆转
+
+    Args:
+        df: K线DataFrame
+        run_start: 最后一段运行的起始索引（缺省取最近 20 根为运行段）
+
+    Returns:
+        {"reversed": bool, "win": int, "elements": dict}
+    """
+    n = len(df)
+    if n < 40:
+        return {"reversed": False, "win": 0, "elements": {}}
+    high = df["最高"].values
+    low = df["最低"].values
+    close = df["收盘"].values
+    op = df["开盘"].values
+    vol = df["成交量"].values.astype(float) if "成交量" in df.columns else None
+
+    # 最后一段运行 = 最近 15 根（可传入 run_start 精确指定）
+    r_end = n
+    r_start = run_start if run_start is not None else max(0, n - 15)
+    if r_start >= r_end - 5:
+        r_start = max(0, n - 15)
+
+    # 逆转段 = 最后 5 根（当前强势运行）
+    c_start = max(0, n - 5)
+    if c_start <= r_start:
+        return {"reversed": False, "win": 0, "elements": {}}
+
+    def _elements(s: int, e: int) -> dict:
+        seg_h, seg_l = high[s:e], low[s:e]
+        seg_c, seg_o = close[s:e], op[s:e]
+        seg_v = vol[s:e] if vol is not None else None
+        span = (seg_h.max() - seg_l.min()) / seg_c.mean() if seg_c.mean() > 0 else 0
+        yang = np.mean(seg_c > seg_o) if len(seg_c) else 0
+        slope = (seg_c[-1] - seg_c[0]) / seg_c[0] if seg_c[0] > 0 else 0
+        vratio = (seg_v.mean() / np.mean(vol[:s]) if vol is not None and s > 5 and np.mean(vol[:s]) > 0 else 0)
+        return {"span": span, "yang": yang, "slope": abs(slope), "vol": vratio}
+
+    ref = _elements(r_start, r_end)
+    cur = _elements(c_start, r_end)
+    wins = 0
+    details = {}
+    for k in ("span", "yang", "slope", "vol"):
+        better = cur[k] > ref[k] * 1.1 if k != "vol" else cur[k] > max(ref[k] * 1.1, 0.1)
+        # vol 特殊：参考段有量才比
+        details[k] = {"ref": round(ref[k], 3), "cur": round(cur[k], 3), "better": better}
+        if better:
+            wins += 1
+    return {"reversed": wins >= 3, "win": wins, "elements": details}

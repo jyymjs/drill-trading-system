@@ -9,6 +9,7 @@
 import sys
 import argparse
 from datetime import datetime
+from pathlib import Path
 
 # 确保项目根目录在路径中
 import os
@@ -63,7 +64,7 @@ def _load_strategy(name: str):
     """
     import importlib
     try:
-        module = importlib.import_module(f"strategy.samples.{name}")
+        module = importlib.import_module(f"策略.核心策略.samples.{name}")
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
             if (isinstance(attr, type) and issubclass(attr, BaseStrategy)
@@ -90,6 +91,14 @@ def cmd_scan(args):
 
     # 执行扫描
     results = scan(strategy, mode=getattr(args, "mode", "normal"))
+
+    # 价格过滤（R-009：小资金整手约束——高价股买不起一手）
+    max_price = getattr(args, "max_price", None)
+    if max_price:
+        before = len(results)
+        results = [r for r in results if r.get("price", 0) and r["price"] <= max_price]
+        print(f"  价格过滤（≤{max_price}元）: {before} → {len(results)} 只")
+        print()
 
     # 输出结果
     if results:
@@ -262,21 +271,63 @@ def cmd_track(args):
 
     elif args.action == "monte-carlo":
         from 分析决策.跟踪.trade_journal import get_all_trades
-        trades = get_all_trades()
-        result = simulate(trades, n_simulations=args.simulations)
+        from 分析决策.跟踪.monte_carlo import (simulate, render_terminal_report,
+                                            load_backtest_r_series, load_backtest_years)
+
+        if args.source == "backtest":
+            trades = load_backtest_r_series(args.signals, mode=args.mode, hold=args.hold,
+                                            sample_n=args.samples)
+            src_desc = (f"回测数据源 {Path(args.signals).parent.name} "
+                        f"({args.mode}/{args.hold} 触发信号抽样 {len(trades)} 笔)")
+            years = args.years or load_backtest_years(args.signals)
+        else:
+            trades = get_all_trades()
+            src_desc = f"实盘 journal {len(trades)} 笔"
+            if not trades:
+                # 实盘无记录：自动回退回测数据（回测 R 已含成本，不再重复扣费）
+                print("  实盘 journal 无交易记录，自动回退回测数据源（--source backtest 可显式指定）")
+                trades = load_backtest_r_series(args.signals, mode=args.mode, hold=args.hold,
+                                                sample_n=args.samples)
+                src_desc = (f"回测数据源 {Path(args.signals).parent.name} "
+                            f"({args.mode}/{args.hold} 触发信号抽样 {len(trades)} 笔)")
+                years = args.years or load_backtest_years(args.signals)
+            else:
+                years = args.years or 3.0
+
+        fee = 0.0 if args.source == "backtest" or src_desc.startswith("回测") else 0.02
+        result = simulate(trades, n_simulations=args.simulations, fee_per_trade_r=fee)
         if "error" in result:
             print(f"\n{result['error']}")
             return
+        # 终端版式报告（复刻级纯文本风格）
+        text = render_terminal_report(result, initial_capital=args.capital,
+                                      risk_per_trade=args.risk_pct,
+                                      display_range=args.display_range,
+                                      years=years)
+        print("\n" + text)
+        # 版式文本存档（供查看/归档）
+        report_path = Path("产出/输出/monte_carlo_report.txt")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(text + "\n", encoding="utf-8")
         path = plot_simulation(result, save=True)
-        print(f"\n=== 蒙特卡洛模拟 ===\n")
-        print(f"  模拟次数: {result['n_simulations']}")
-        print(f"  基于 {result['n_trades']} 笔历史交易")
-        print(f"  平均R: {result['avg_r']:.3f}")
-        print(f"  R标准差: {result['std_r']:.2f}")
-        print(f"  盈利概率: {result['prob_profit']:.1%}")
-        fin = result['final_equities']
-        print(f"  95%置信区间: {np.percentile(fin, 2.5):.1f}R ~ {np.percentile(fin, 97.5):.1f}R")
+        print(f"  数据: {src_desc}")
+        print(f"  置信区间: {np.percentile(result['final_equities'], 2.5):.1f}R ~ "
+              f"{np.percentile(result['final_equities'], 97.5):.1f}R")
         print(f"  图片已保存: {path}")
+
+    elif args.action in ("sim-open", "sim-check", "sim-stats"):
+        # R-009 模块3：模拟交易流水线（模拟/小仓验证阶段）
+        from 分析决策.跟踪.sim_trading import sim_open, sim_check, sim_stats
+        if args.action == "sim-open":
+            if not args.code or args.price <= 0 or args.stop <= 0:
+                print("用法: track sim-open --code 600777 --price 8.5 --stop 8.0 [--grade B] [--name xxx]")
+                return
+            print("\n" + sim_open(args.code, args.price, args.stop,
+                                  grade=args.grade, name=args.name))
+        elif args.action == "sim-check":
+            print("\n" + sim_check())
+        else:
+            print("\n" + sim_stats())
 
 
 def cmd_capital(args):
@@ -332,6 +383,8 @@ def main():
     scan_parser.add_argument("--mode", type=str, default="normal",
                            choices=["normal", "prebreak"],
                            help="扫描模式: normal=标准6条件, prebreak=预突破5条件(挂条件单用)")
+    scan_parser.add_argument("--max-price", type=float, default=None,
+                           help="价格上限过滤（元，R-009 小资金整手约束；如 50 只选 ≤50 元）")
 
     # diagnose
     diag_parser = subparsers.add_parser("diagnose", help="诊断单只股票各策略条件")
@@ -339,13 +392,42 @@ def main():
     diag_parser.add_argument("--strategy", type=str, default="zuanqian_strategy",
                            help="策略模块名 (默认: zuanqian_strategy)")
 
+    # market-review（R-008 市场环境复盘）
+    review_parser = subparsers.add_parser("market-review", help="市场环境复盘（指数一致性/周期/仓位建议）")
+
     # track
     track_parser = subparsers.add_parser("track", help="交易记录管理")
     track_parser.add_argument("action", type=str, nargs="?",
-                            choices=["list", "add", "equity", "monte-carlo"],
+                            choices=["list", "add", "equity", "monte-carlo",
+                                     "sim-open", "sim-check", "sim-stats"],
                             default="list", help="操作")
+    track_parser.add_argument("--code", type=str, default="", help="sim-open: 股票代码")
+    track_parser.add_argument("--price", type=float, default=0, help="sim-open: 进场价")
+    track_parser.add_argument("--stop", type=float, default=0, help="sim-open: 止损价")
+    track_parser.add_argument("--grade", type=str, default="", help="sim-open: 进场评级")
+    track_parser.add_argument("--name", type=str, default="", help="sim-open: 股票名称")
     track_parser.add_argument("--simulations", type=int, default=10000,
                             help="蒙特卡洛模拟次数")
+    track_parser.add_argument("--capital", type=float, default=100000.0,
+                            help="初始资金（版式报告口径，默认 100000）")
+    track_parser.add_argument("--risk-pct", type=float, default=0.01,
+                            help="每笔风险比例（版式报告口径，默认 1%）")
+    track_parser.add_argument("--display-range", type=float, default=100.0,
+                            help="显示范围（中间 X%，默认 100.0）")
+    track_parser.add_argument("--source", type=str, choices=["journal", "backtest"],
+                            default="journal",
+                            help="蒙特卡洛数据源（默认 journal，无记录自动回退回测）")
+    track_parser.add_argument("--mode", type=str, choices=["normal", "prebreak"],
+                            default="prebreak", help="回测数据源模式（默认 prebreak）")
+    track_parser.add_argument("--hold", type=str, choices=["5d", "10d", "20d"],
+                            default="20d", help="回测数据源观察窗（默认 20d）")
+    track_parser.add_argument("--samples", type=int, default=500,
+                            help="回测数据源抽样笔数（默认 500）")
+    track_parser.add_argument("--signals", type=str,
+                            default="项目/output/backtest/20230701_20260804/signals.csv",
+                            help="回测数据源 signals.csv 路径")
+    track_parser.add_argument("--years", type=float, default=None,
+                            help="年化收益率年数（默认回测信号跨度自动计算）")
 
     # capital
     cap_parser = subparsers.add_parser("capital", help="资金管理")
@@ -368,6 +450,9 @@ def main():
         cmd_track(args)
     elif args.command == "capital":
         cmd_capital(args)
+    elif args.command == "market-review":
+        from 分析决策.市场环境.market_review import main as market_review_main
+        raise SystemExit(market_review_main())
     else:
         parser.print_help()
 

@@ -66,3 +66,94 @@ def calc_trade_fee(amount: float, is_etf: bool = False) -> float:
 
     commission = max(amount * rate, minimum)
     return round(commission + stamp, 2)
+
+
+# ══════════════════════════════════════════════════════════
+# 资金管理升级（内训第26节 + 2024周会，2026-08-04 补课代码化）
+# 老师核心：
+#   1) 单笔风险 = 可承受最大亏损 ÷ 常见连续止损次数（分母留余量）
+#   2) 固定金额（每笔亏一样多）优于固定仓位
+#   3) 复利方案：单利 / 余额复利 / 向上复利（水上按峰值、水下余额）
+# ══════════════════════════════════════════════════════════
+
+DEFAULT_MAX_STREAK = 10   # 常见连续止损次数（分母留余量：内训"7 用 10"口径）
+DEFAULT_MAX_DRAWDOWN = 0.20  # 可承受最大回撤（老师：击穿性风险必须先封死）
+
+
+def calc_risk_by_drawdown(capital: float, max_drawdown_pct: float = DEFAULT_MAX_DRAWDOWN,
+                          max_streak: int = DEFAULT_MAX_STREAK) -> float:
+    """由可承受回撤 + 连亏次数推导单笔风险比例
+
+    公式（内训第26节）：单笔风险 = 可承受最大亏损 ÷ 常见连续止损次数
+    例：可承受 20% 回撤 ÷ 10 次连亏（留余量）= 2% 单笔风险
+
+    Args:
+        capital: 总资金
+        max_drawdown_pct: 可承受最大回撤（比例）
+        max_streak: 常见连续止损次数（分母留余量，老师"7 次用 10"）
+
+    Returns:
+        单笔风险比例（如 0.02 = 2%）
+    """
+    if max_streak <= 0:
+        return RISK_RATIO
+    risk = max_drawdown_pct / max_streak
+    return round(risk, 4)
+
+
+def simulate_compounding(capital: float, risk_pct: float, trades: int,
+                         win_rate: float = 0.5, avg_win_rr: float = 2.0,
+                         avg_loss_rr: float = 1.0, mode: str = "balance") -> dict:
+    """资金复利模拟（内训第26节三种方案）
+
+    Args:
+        capital: 初始资金
+        risk_pct: 单笔风险比例
+        trades: 交易次数
+        win_rate: 胜率
+        avg_win_rr: 平均盈利 R 倍数
+        avg_loss_rr: 平均亏损 R 倍数
+        mode: "simple"=单利 / "balance"=余额复利 / "peak"=向上复利（水上按峰值，水下余额）
+
+    Returns:
+        {"final": float, "peak": float, "max_drawdown": float}
+    """
+    bal = capital
+    peak = capital
+    low_water = capital  # 水下基准（向上复利：水上按峰值，水下按余额）
+    max_dd = 0.0
+    import random
+    random.seed(7)
+    for i in range(trades):
+        # 风险基数：固定金额（老师：固定金额优于固定仓位）
+        if mode == "simple":
+            risk_base = capital  # 单利：始终按初始资金
+        elif mode == "peak":
+            risk_base = max(peak, bal) if bal >= low_water else bal
+        else:
+            risk_base = bal
+        risk_amt = risk_base * risk_pct
+        if random.random() < win_rate:
+            bal += risk_amt * avg_win_rr
+        else:
+            bal -= risk_amt * avg_loss_rr
+        peak = max(peak, bal)
+        max_dd = max(max_dd, peak - bal)
+        if mode == "peak" and bal < low_water:
+            low_water = bal
+    return {"final": round(bal, 2), "peak": round(peak, 2), "max_drawdown": round(max_dd, 2)}
+
+
+def risk_scheme_suggest(capital: float) -> dict:
+    """资金方案建议（老师口径完整输出）
+
+    Returns:
+        {"risk_pct": float, "risk_amount": float, "mode": str, "rationale": str}
+    """
+    risk_pct = calc_risk_by_drawdown(capital)
+    return {
+        "risk_pct": risk_pct,
+        "risk_amount": round(capital * risk_pct, 2),
+        "mode": "fixed_amount",
+        "rationale": f"单笔风险{risk_pct:.1%} = 可承受回撤{DEFAULT_MAX_DRAWDOWN:.0%} ÷ {DEFAULT_MAX_STREAK}次连亏（分母留余量，内训26节口径）",
+    }

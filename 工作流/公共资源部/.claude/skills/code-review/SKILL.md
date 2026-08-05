@@ -10,7 +10,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (see `agents/reviewer.md` and `rules/reviewer-criteria.md`): Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by `improve-codebase-architecture`, reviewer judgement, and `playwright` + Bash runs respectively.
+**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (see `工程部门/流程/测试/reviewer.md` and `工程部门/流程/测试/reviewer-criteria.md`): Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by `improve-codebase-architecture`, reviewer judgement, and `playwright` + Bash runs respectively.
 
 ## Process
 
@@ -26,14 +26,14 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 
 Look for the originating spec, in this order:
 
-1. The 规划确认书 (planning confirmation) under `docs/plans/` — the authoritative spec in this harness.
+1. The 规划确认书 (planning confirmation) under `资料库/确认书/` — the authoritative spec in this harness.
 2. The technical appendix (技术附录) under `.internal/` for the current task.
 3. A path the user passed as an argument.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources
 
-The repo's documented coding standards — in this harness: `rules/00-core.md` – `rules/05-architecture.md` plus `rules/reviewer-criteria.md` — and anything else that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
+The repo's documented coding standards — in this harness: `工程部门/支撑/规则/00-core.md` – `工程部门/支撑/规则/05-architecture.md` plus `工程部门/流程/测试/reviewer-criteria.md` — and anything else that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 

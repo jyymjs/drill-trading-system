@@ -41,7 +41,7 @@ description: 解决 Git 合并冲突——分析冲突原因，选择正确的�
 git grep -n -e "<<<<<<<" -e ">>>>>>>" || echo "✅ 无冲突标记残留"
 
 # 运行测试
-./scripts/guard/gatekeeper.sh
+工程部门/支撑/脚本/guard/gatekeeper.sh
 ```
 
 ### 5. 提交

@@ -61,6 +61,9 @@ def check_trailing_stop(position: Position, df: pd.DataFrame) -> Optional[float]
     ② 拐点有明显影线（影线≥实体2倍）
     ③ 有调整结构（回调后有横盘）
 
+    老师硬规则（2023-03-04，2026-08-04 补齐）：移动获利点必须在进场位正向——
+    做多时新止损必须高于进场价，做空时低于进场价（否则不生效）。
+
     Args:
         position: 持仓对象
         df: 包含完整K线的DataFrame
@@ -146,7 +149,11 @@ def check_trailing_stop(position: Position, df: pd.DataFrame) -> Optional[float]
     else:
         new_stop = high[pivot_idx] + (high[pivot_idx] - position.lowest_price) * 0.1
 
-    return round(new_stop, 2) if new_stop > position.entry_price else position.entry_price + 0.01
+    # 老师硬规则：移动获利点必须在进场位正向（做多止损高于进场价，做空低于）
+    if position.direction == "long":
+        return round(new_stop, 2) if new_stop > position.entry_price else round(position.entry_price + 0.01, 2)
+    else:
+        return round(new_stop, 2) if new_stop < position.entry_price else round(position.entry_price - 0.01, 2)
 
 
 def check_36pct_trail(position: Position) -> Optional[float]:
@@ -223,17 +230,64 @@ def detect_active_exit(df: pd.DataFrame, lookback: int = 5) -> dict:
     return {"signal": signal, "features": features, "strength": strength}
 
 
+def calc_take_profit(position: Position) -> Optional[float]:
+    """止盈价计算（老师口径，2026-08-04 补齐）
+
+    所有市场空头 + 外汇无论多空 = 波段 5R 止盈
+    其他市场多头（A股/美股/加密/期货多头）= 趋势跟踪，无止盈
+
+    Returns:
+        止盈价（多头=进场+5R，空头=进场-5R），或 None（趋势跟踪无止盈）
+    """
+    if position.direction == "short" or position.market == "forex":
+        risk = position.risk_per_share()
+        if position.direction == "long":
+            return round(position.entry_price + risk * 5, 2)
+        else:
+            return round(position.entry_price - risk * 5, 2)
+    return None
+
+
+def position_zone(position: Position) -> str:
+    """持仓区间标注（波段三区间仓位管理，2023-04-22）
+
+    0-3R：移动获利 3 条件满足 2 个（收紧但不敏感）
+    3R-5R：满足 1 个（跟紧，向止盈靠拢）
+    5R：到达止盈，全部兑现
+
+    Returns:
+        "0-3R" / "3R-5R" / "5R+" / "亏损区"
+    """
+    r = position.current_r_multiple(position.highest_price)
+    if r >= 5:
+        return "5R+"
+    if r >= 3:
+        return "3R-5R"
+    if r >= 0:
+        return "0-3R"
+    return "亏损区"
+
+
 def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
     """综合离场评估
 
-    按优先级检查所有离场条件。
+    按优先级检查所有离场条件。2026-08-04 增强：
+    - 止盈价（方向/市场类别区分）
+    - 分批平仓建议（>5R 全出 / <5R 平一半）
+    - 持仓区间标注（波段三区间）
 
     Returns:
-        {"should_exit": bool, "reason": str, "exit_price": float, "stop_update": float|None}
+        {"should_exit": bool, "reason": str, "exit_price": float, "stop_update": float|None,
+         "take_profit": float|None, "action": str, "zone": str}
     """
-    result = {"should_exit": False, "reason": "", "exit_price": 0, "stop_update": None}
+    result = {"should_exit": False, "reason": "", "exit_price": 0, "stop_update": None,
+              "take_profit": None, "action": "hold", "zone": "亏损区"}
     if len(df) == 0:
         return result
+
+    # 止盈价（方向/市场类别）与持仓区间
+    result["take_profit"] = calc_take_profit(position)
+    result["zone"] = position_zone(position)
 
     latest = df.iloc[-1]
     high = latest["最高"]
@@ -245,11 +299,15 @@ def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
 
     # 检查层面1：价格是否触碰止损
     if position.direction == "long" and low <= position.current_stop:
-        return {"should_exit": True, "reason": f"止损触发(层面1)",
-                "exit_price": position.current_stop, "stop_update": None}
+        result = {"should_exit": True, "reason": f"止损触发(层面1)",
+                  "exit_price": position.current_stop, "stop_update": None,
+                  "take_profit": result["take_profit"], "action": "full_exit", "zone": result["zone"]}
+        return result
     elif position.direction == "short" and high >= position.current_stop:
-        return {"should_exit": True, "reason": f"止损触发(层面1)",
-                "exit_price": position.current_stop, "stop_update": None}
+        result = {"should_exit": True, "reason": f"止损触发(层面1)",
+                  "exit_price": position.current_stop, "stop_update": None,
+                  "take_profit": result["take_profit"], "action": "full_exit", "zone": result["zone"]}
+        return result
 
     # 检查层面2：平价保护
     bv = check_breakeven(position, close)
@@ -269,7 +327,7 @@ def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
         result["stop_update"] = tr
         result["reason"] = f"追踪获利触发(层面4), 止损移至{tr}"
 
-    # 检查主动出场
+    # 检查主动出场（拐点三特征）
     active = detect_active_exit(df)
     if active["signal"]:
         if result["reason"]:
@@ -277,5 +335,19 @@ def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
         result["reason"] += f"主动出场({','.join(active['features'])})"
         result["should_exit"] = True
         result["exit_price"] = close
+
+    # 分批平仓建议（老师口径：>5R 全出 TAP / <5R 平一半 THP）
+    if result["should_exit"]:
+        r_now = position.current_r_multiple(close)
+        result["action"] = "full_exit" if r_now >= 5 else "half_exit"
+        result["reason"] += f"; {result['action']}(R={r_now:.1f})"
+    elif result["take_profit"] is not None:
+        # 到达止盈价（空头/外汇 5R）
+        if (position.direction == "long" and high >= result["take_profit"]) or \
+           (position.direction == "short" and low <= result["take_profit"]):
+            result["should_exit"] = True
+            result["exit_price"] = result["take_profit"]
+            result["reason"] = f"止盈触发({result['take_profit']}, 波段5R)"
+            result["action"] = "full_exit"
 
     return result

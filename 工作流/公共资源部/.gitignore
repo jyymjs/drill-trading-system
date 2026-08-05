@@ -12,3 +12,6 @@ __pycache__/
 # whisper 资产（2026-08-04 子模块转普通目录：源码树/构建产物不入库）
 whisper.cpp-src/
 whisper.cpp-windows-vulkan/
+
+# 本地密钥配置（不提交）
+自有工具/bilibili_subtitle/config.local.json

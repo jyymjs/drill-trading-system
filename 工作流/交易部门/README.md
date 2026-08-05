@@ -1,10 +1,13 @@
-# 📊 交易部
+# 📊 交易部门
 
 A股中长线量化选股系统。基于路肖南钻潜交易体系，全市场日K线扫描 → 6条件评级 → CLI 输出。
+（2026-08-05 R-010：交易部门=交易资产库，由主对话（助理）驱动 trader 工具 agent 使用）
 
 ## 快速开始
 
 ```bash
+cd 工作流/交易部门
+
 # 查看A股列表
 python main.py list
 
@@ -29,28 +32,30 @@ python main.py kline 600419
 
 ## 配置
 
-编辑 `config/settings.py` 可调整 K 线获取年数、缓存有效期、扫描并发数等参数。
+编辑 `数据基础/配置/settings.py` 可调整 K 线获取年数、缓存有效期、扫描并发数等参数。
 
 ## 目录结构
 
 ```
+交易部门/
 ├── main.py          CLI 入口
-├── analysis/        技术指标 + 扫描器 + 报告 + 因子评估
-├── config/          全局配置 + 股票池管理
-├── data/            数据获取（pytdx→baostock→akshare三路冗余）+ CSV缓存
-├── strategy/        交易策略（基类 + 钻潜评级策略 V2）
-├── utils/           日志、工具函数
-├── scripts/         视频知识提取、自动处理脚本
-├── tests/           单元测试
-└── output/          扫描结果CSV
+├── 策略/
+│   ├── 核心策略/     策略（基类 + 钻潜评级策略 V2，samples/）
+│   └── 知识库/      交易知识（管理规范/素材台账/课程知识卡）
+├── 分析决策/         分析（指标/扫描器/报告/因子）+ 风控 + 跟踪 + 市场环境 + journal
+├── 数据基础/         数据获取（pytdx→baostock→akshare三路冗余）+ CSV缓存 + 配置
+├── 工具链/           工具 + 脚本（视频知识提取/视觉标注/批量处理）
+├── 项目/回测系统/     独立回测项目（R-005）
+├── 产出/输出/         扫描结果CSV/回测输出/市场回顾
+└── 测试/
 ```
 
 ## 添加自定义策略
 
-在 `strategy/samples/` 下新建文件，继承 `BaseStrategy`：
+在 `策略/核心策略/samples/` 下新建文件，继承 `BaseStrategy`：
 
 ```python
-from strategy.base import BaseStrategy
+from 策略.核心策略.base import BaseStrategy
 
 class MyStrategy(BaseStrategy):
     name = "我的策略"
