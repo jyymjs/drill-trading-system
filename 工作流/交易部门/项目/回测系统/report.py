@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from 回测系统.params import BacktestParams
+from 回测系统.quality import check_cost_stress, check_half_consistency
 from 回测系统.stats import StatBlock, merge_monthly, mode_stats
 from 回测系统.tracking import TrackedRecord
 
@@ -118,6 +119,73 @@ def _mode_section(records: list[TrackedRecord], buckets: dict[str, StatBlock],
     return "\n".join(lines)
 
 
+def _consistency_section(records: list[TrackedRecord], holds: list[int]) -> str:
+    """D1 分段一致性检查节（方案 D 类 2026-08-05 老板拍板）"""
+    rows = []
+    for label, mode, grade in (("全样本（跨模式/评级）", None, None),
+                               ("仅 S 级（硬门槛：必须前后半同为正）", None, "S")):
+        r = check_half_consistency(records, holds, mode=mode, grade=grade)
+        if r["start"] is None:
+            rows.append(f"| {label} | _ | _ | _（无参与统计信号）_ |")
+            continue
+        rows.append(f"| {label} | {r['front_total_r']:.4f} | {r['back_total_r']:.4f} | "
+                    f"**{r['verdict']}** {r['reason']} |")
+
+    # 区间时长说明（取全样本行）
+    r0 = check_half_consistency(records, holds)
+    if r0["start"] is not None:
+        total_years = r0["total_days"] / 365.25
+        front_years = r0["front_days"] / 365.25
+        back_years = r0["back_days"] / 365.25
+        head = (f"信号区间 `{r0['start']} ~ {r0['end']}`（{total_years:.1f} 年），"
+                f"按时间中点切前后两半：前半 `{r0['start']} ~ {r0['mid']}`（{front_years:.1f} 年）/"
+                f"后半 `{r0['mid']} ~ {r0['end']}`（{back_years:.1f} 年）")
+    else:
+        head = "信号区间：无参与统计信号"
+
+    return "\n".join([
+        "## 分段一致性检查（D1 · 防过拟合）",
+        "",
+        "> 回测区间按时间切前后两半（各 ≥1.5 年，覆盖牛熊段）；两半累计 R 同为正 → 合格；"
+        "前正后负 → 过拟合嫌疑（标黄）；前负后正 → 风格适应慢（正常接受，不判罪）；"
+        "S 级策略必须前后半同为正。（方案 D 类 2026-08-05 老板拍板）",
+        "",
+        f"- {head}",
+        "",
+        "| 口径 | 前半累计R | 后半累计R | 判定 |",
+        "|---|---|---|---|",
+        *rows,
+        "",
+    ])
+
+
+def _stress_section(base_records: list[TrackedRecord],
+                    stress_records: list[TrackedRecord],
+                    holds: list[int]) -> str:
+    """D2 2倍成本压力测试节（方案 D 类 2026-08-05 老板拍板）"""
+    r = check_cost_stress(base_records, stress_records, holds)
+    b, s = r["base"], r["stress"]
+    return "\n".join([
+        "## 2 倍成本压力测试（D2 · 成本敏感体检）",
+        "",
+        "> 佣金万1.3+印花税万5+滑点全 ×2（万2.6+万10+滑点翻倍万2）同参数重跑（main.py 双跑引擎，"
+        "非推算）；2 倍成本下年化 R 仍为正 → 抗压合格，≤0 → 利润太薄实盘必亏。（方案 D 类 2026-08-05 老板拍板）",
+        "",
+        f"- 信号跨度 {r['years']:.2f} 年（1R 等权累计口径，跨模式/评级/hold）",
+        "",
+        "| 指标 | 基线（1 倍成本） | 2 倍成本压力 |",
+        "|---|---|---|",
+        f"| 参与笔数 | {b['n_participate']} | {s['n_participate']} |",
+        f"| 累计R | {b['total_r']:.4f} | {s['total_r']:.4f} |",
+        f"| 年化R | {b['annual_r']:.4f} | **{s['annual_r']:.4f}** |",
+        f"| 平均R | {b['avg_r']:.4f} | {s['avg_r']:.4f} |",
+        f"| 最大回撤（累计R曲线） | {b['max_drawdown']:.4f} | {s['max_drawdown']:.4f} |",
+        "",
+        f"判定：**{r['verdict']}** {r['reason']}",
+        "",
+    ])
+
+
 def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
     """normal vs prebreak 对比段"""
     lines = ["| 指标 | normal | prebreak |", "|---|---|---|"]
@@ -139,8 +207,17 @@ def _compare_table(records: list[TrackedRecord], holds: list[int]) -> str:
 
 def write_report(path: Path, records: list[TrackedRecord],
                  buckets: dict[str, StatBlock], params: BacktestParams,
-                 meta: dict | None = None) -> None:
-    """写 report.md（含数据与样本口径说明，满足风险提示要求）"""
+                 meta: dict | None = None,
+                 stress_records: list[TrackedRecord] | None = None) -> None:
+    """写 report.md（含数据与样本口径说明 + D1/D2 质检节，满足风险提示要求）
+
+    Args:
+        records: 基线引擎产出
+        buckets: 统计分桶
+        params: 回测参数
+        meta: 运行元信息（股票数等）
+        stress_records: D2 2倍成本（cost_multiplier=2.0）重跑产出；None=省略 D2 节
+    """
     holds = params.holds
     modes = sorted({rec.signal.mode for rec in records} | {"normal", "prebreak"})
     meta = meta or {}
@@ -174,6 +251,12 @@ def write_report(path: Path, records: list[TrackedRecord],
 
     if "normal" in modes and "prebreak" in modes:
         lines += ["## normal vs prebreak 对比", "", _compare_table(records, holds), ""]
+
+    # D1 分段一致性（2026-08-05 方案 D 类质检，基于主记录）
+    lines += [_consistency_section(records, holds)]
+    # D2 2倍成本压力（main.py 双跑引擎产出，未跑则省略）
+    if stress_records is not None:
+        lines += [_stress_section(records, stress_records, holds)]
 
     lines += ["---", "", "_本报告由 backtest/main.py run 生成；参数快照见 params.json；仅做验证，不做寻优，任何参数调整须经老板书面同意。_"]
 

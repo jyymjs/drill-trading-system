@@ -8,6 +8,7 @@
 import argparse
 import os
 import sys
+from dataclasses import replace
 
 # 确保交易部根目录在路径中（2026-08-04 修复：重组后需加交易部根层级）
 _HERE = os.path.dirname(os.path.abspath(__file__))   # 项目/回测系统
@@ -72,8 +73,21 @@ def cmd_run(args) -> int:
     params_path = out_dir / "params.json"
 
     write_signals_csv(signals_path, result.records, params.holds)
+
+    # D2 2倍成本压力测试：同源重跑（佣金+印花税+滑点全 ×2，方案 D 类 2026-08-05 老板拍板）
+    stress_records = None
+    if params.enable_cost:
+        stress_params = replace(params, cost_multiplier=2.0)
+        stress_engine = BacktestEngine(stress_params, provider=engine.provider,
+                                       strategy=engine.strategy, risk=engine.risk)
+        print("  [D2] 2倍成本压力重跑（佣金万2.6+印花税万10+滑点翻倍万2）…")
+        stress_result = stress_engine.run()
+        stress_records = stress_result.records
+        print(f"  [D2] 完成 | 信号 {len(stress_records)} 笔")
+
     write_report(report_path, result.records, _buckets(result.records, params), params,
-                 meta={"processed": result.processed, "skipped": result.skipped})
+                 meta={"processed": result.processed, "skipped": result.skipped},
+                 stress_records=stress_records)
     params.save_snapshot(str(params_path), strategy_info)
 
     # 蒙特卡洛版式报告（自动生成，复用 分析决策/跟踪/monte_carlo 渲染器）

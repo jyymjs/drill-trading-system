@@ -117,7 +117,8 @@ class BacktestEngine:
                 sig = self._build_signal(code, sig_date, mode, window, close_arr[t])
                 if sig is None:
                     continue
-                outcomes = {h: track_signal(sig, base, h, enable_cost=self.params.enable_cost)
+                outcomes = {h: track_signal(sig, base, h, enable_cost=self.params.enable_cost,
+                                            cost_multiplier=self.params.cost_multiplier)
                             for h in self.params.holds}
                 records.append(TrackedRecord(signal=sig, outcomes=outcomes))
         return records
