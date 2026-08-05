@@ -19,7 +19,8 @@ avgR -0.118），好信号被挡在门外（未成交信号 avgR +0.898）。
 用法:
   python 项目/回测系统/capital_grid_compare.py \
       --start 20240101 --end 20240630 --risk-list 1.5,3 --pos-list 2,5   # 冒烟（2 组）
-  python 项目/回测系统/capital_grid_compare.py                              # 全量 12 组
+  python 项目/回测系统/capital_grid_compare.py                              # 全量 12 组（V1 基线网格）
+  python 项目/回测系统/capital_grid_compare.py --c23                        # C23 版 12 组全量
 """
 import argparse
 import datetime as _dt
@@ -36,7 +37,9 @@ for p in (_HERE.parent, _ROOT):
 
 import pandas as pd
 
-from 回测系统.sim_capital import simulate_capital
+# c23_mask 单一来源 = sim_capital（T-024 拍板口径，勿在脚本内复制）
+from 回测系统.sim_capital import c23_mask, simulate_capital
+from 回测系统.tighten_compare import enrich
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -119,20 +122,37 @@ def run_group(df: pd.DataFrame, capital: float, risk_pct: float, max_positions: 
     return res, pool
 
 
+# V1 网格（T-023）收益最优组——C23 版对照基准（数据来自 产出/输出/网格实验-资金配置-20260806.md）
+V1_BEST = {"label": "1.5%×5仓", "total_ret": 25.5, "end_balance": 7026.0,
+           "win_rate": 0.400, "avg_r": 0.227, "max_dd_pct": 103.9, "n_exec": 180}
+
+
 def render_report(rows: list[dict], args) -> str:
     """渲染网格实验报告（markdown）：总览 + 池特征 + 分组边际 + 结论草稿"""
     capital = args.capital
     hold = int(DEFAULT_HOLD.replace("d", ""))
+    c23 = bool(getattr(args, "c23", False))
+    title = "资金配置参数网格实验 · C23 版回测报告（T-023 延伸）" if c23 \
+        else "资金配置参数网格实验 · 回测报告（T-023）"
+    background = (
+        "背景：T-023 结论——V1 基线网格 1.5%×5仓 +25.5% 最优；C23（动量≤10% + 止损 0.5~3 元）"
+        "已进策略且 1.5%×3仓 单点 +69.2%。本实验跑 C23 版 12 组全量，找 C23 下最优资金配置，"
+        "并与 V1 网格结论对比。" if c23 else
+        "背景：资金约束回测结论——5600 元 / 1.5% / 2 持仓 / 整手 → -14.9%，根因是资金约束把"
+        "可执行池挤向低价股（均价 7.96 元、avgR -0.118），好信号被挡（未成交信号 avgR +0.898）。"
+        "本实验扫描单笔风险×持仓数 12 组配置找最优。")
+    sig_note = (
+        f"信号源：{Path(args.signals).name}（{'全市场' if not args.smoke else f'冒烟 {args.smoke} 只'}｜"
+        f"区间 {args.start}~{args.end}）｜mode={DEFAULT_MODE} 评级={'/'.join(args.grades)}｜"
+        f"hold 主口径 {hold}d｜初始资金 {capital:,.0f} 元｜整手 100 股｜费用 佣金万1.3(最低1元)+印花税万5"
+        "（买入侧印花税误扣为已知保守口径，各组统一）"
+        + ("｜C23 过滤 = mom20 ≤ 10%（tighten_compare 复算）+ risk 0.5~3 元" if c23 else "")
+    )
     lines = [
-        "# 资金配置参数网格实验 · 回测报告（T-023）",
+        f"# {title}",
         "",
-        (f"> 日期：{_dt.date.today().isoformat()} · 背景：资金约束回测结论——5600 元 / 1.5% / 2 持仓 / 整手 "
-         "→ -14.9%，根因是资金约束把可执行池挤向低价股（均价 7.96 元、avgR -0.118），"
-         "好信号被挡（未成交信号 avgR +0.898）。本实验扫描单笔风险×持仓数 12 组配置找最优。"),
-        (f"> 信号源：{Path(args.signals).name}（{'全市场' if not args.smoke else f'冒烟 {args.smoke} 只'}｜"
-         f"区间 {args.start}~{args.end}）｜mode={DEFAULT_MODE} 评级={'/'.join(args.grades)}｜"
-         f"hold 主口径 {hold}d｜初始资金 {capital:,.0f} 元｜整手 100 股｜费用 佣金万1.3(最低1元)+印花税万5"
-         "（买入侧印花税误扣为已知保守口径，各组统一）"),
+        f"> 日期：{_dt.datetime.now().astimezone().date().isoformat()} · {background}",
+        f"> {sig_note}",
         "",
         f"## 一、{len(rows)} 组总览（hold={hold}d）",
         "",
@@ -193,6 +213,10 @@ def render_report(rows: list[dict], args) -> str:
     lines += ["## 四、结论（数据驱动草稿，最终签字权归老板）", ""]
     lines.extend(_verdict(rows))
     lines.append("")
+    if c23:
+        lines += ["## 五、C23 vs V1 网格对照（结论草稿）", ""]
+        lines.extend(_verdict_c23(rows))
+        lines.append("")
     lines.append("> 判定说明：最优组 = 收益/回撤综合；风险%放大后若成交均价与每股风险均值上升、"
                  "未成交信号 avgR 仍为正 → 池改善且收益提升 → 支持提高单笔风险；"
                  "持仓数边际 = 分散（回撤↓）vs 资金摊薄（单笔变小）权衡。"
@@ -200,9 +224,15 @@ def render_report(rows: list[dict], args) -> str:
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append("> 出处：2026-08-06 老板拍板 T-023 资金配置网格实验。实现：回测系统 "
-                 "`capital_grid_compare.py`（12 组 = 风险 {1.5,2,3,5%} × 持仓 {2,3,5}，"
-                 "复用 sim_capital.simulate_capital，口径与其验收一致）。")
+    if c23:
+        lines.append("> 出处：2026-08-06 老板拍板 T-023 资金配置网格实验（C23 版延伸）。实现：回测系统 "
+                     "`capital_grid_compare.py --c23`（12 组 = 风险 {1.5,2,3,5%} × 持仓 {2,3,5}，"
+                     "C23 过滤复用 sim_capital.c23_mask + tighten_compare.enrich，模拟复用 "
+                     "sim_capital.simulate_capital，口径与 V1 网格一致）。")
+    else:
+        lines.append("> 出处：2026-08-06 老板拍板 T-023 资金配置网格实验。实现：回测系统 "
+                     "`capital_grid_compare.py`（12 组 = 风险 {1.5,2,3,5%} × 持仓 {2,3,5}，"
+                     "复用 sim_capital.simulate_capital，口径与其验收一致）。")
     return "\n".join(lines)
 
 
@@ -255,8 +285,83 @@ def _verdict(rows: list[dict]) -> list[str]:
     return out
 
 
+def _verdict_c23(rows: list[dict]) -> list[str]:
+    """C23 版对照结论：C23 最优 vs V1 最优（1.5%×5仓 +25.5%）；两规律是否被 C23 改变"""
+    if len(rows) < 2:
+        return ["_样本组不足，无法自动判定，请人工复核。_"]
+    best = max(rows, key=lambda r: r["res"]["total_ret"])
+    out = [
+        (f"- **C23 版收益最优**：{best['label']}（风险 {best['risk_pct']:.1f}% × 持仓 "
+         f"{best['max_positions']}）→ 终值 {best['res']['end_balance']:,.0f} 元"
+         f"（{best['res']['total_ret']:+.1f}%），回撤 {best['res']['max_dd_pct']:.1f}%，"
+         f"胜率 {best['res']['win_rate']:.1%}，avgR {best['res']['avg_r']:.3f}，"
+         f"{best['res']['n_exec']} 笔。"),
+        (f"- **vs V1 网格最优（{V1_BEST['label']}）**：收益 {V1_BEST['total_ret']:+.1f}% "
+         f"→ {best['res']['total_ret']:+.1f}%（{best['res']['total_ret'] - V1_BEST['total_ret']:+.1f}pp），"
+         f"终值 {V1_BEST['end_balance']:,.0f} → {best['res']['end_balance']:,.0f} 元，"
+         f"胜率 {V1_BEST['win_rate']:.1%} → {best['res']['win_rate']:.1%}，"
+         f"avgR {V1_BEST['avg_r']:.3f} → {best['res']['avg_r']:.3f}，"
+         f"回撤 {V1_BEST['max_dd_pct']:.1f}% → {best['res']['max_dd_pct']:.1f}%，"
+         f"笔数 {V1_BEST['n_exec']} → {best['res']['n_exec']}。"),
+        "",
+    ]
+    # 持仓数规律（V1：持仓 2→5 收益普遍大幅提升 = 关键变量）：C23 下逐风险档方向
+    pos_dirs: list[str] = []
+    n_pos_up = 0
+    for risk in RISK_LIST:
+        p2 = next((r for r in rows if r["risk_pct"] == risk and r["max_positions"] == 2), None)
+        p5 = next((r for r in rows if r["risk_pct"] == risk and r["max_positions"] == 5), None)
+        if p2 and p5:
+            d = p5["res"]["total_ret"] - p2["res"]["total_ret"]
+            pos_dirs.append(f"风险{risk:.1f}%：{p2['res']['total_ret']:+.1f}→"
+                            f"{p5['res']['total_ret']:+.1f}%（{d:+.1f}pp）")
+            if d > 0:
+                n_pos_up += 1
+    pos_hold = "保持" if n_pos_up >= 3 else "改变/弱化"
+    out.append(f"- **持仓数边际（V1 关键变量）**：C23 下持仓 2→5 "
+               f"{' / '.join(pos_dirs)}——{n_pos_up}/4 档风险方向为正 → "
+               f"**「持仓数关键」规律{pos_hold}**。")
+    # 风险%规律（V1：风险%放大收益普遍下滑/无效）：C23 下固定持仓 1.5%→5%
+    risk_dirs: list[str] = []
+    n_risk_up = 0
+    for pos in POS_LIST:
+        r15 = next((r for r in rows if r["risk_pct"] == 1.5 and r["max_positions"] == pos), None)
+        r50 = next((r for r in rows if r["risk_pct"] == 5.0 and r["max_positions"] == pos), None)
+        if r15 and r50:
+            d = r50["res"]["total_ret"] - r15["res"]["total_ret"]
+            risk_dirs.append(f"持仓{pos}：{r15['res']['total_ret']:+.1f}→"
+                             f"{r50['res']['total_ret']:+.1f}%（{d:+.1f}pp）")
+            if d > 0:
+                n_risk_up += 1
+    risk_invalid = "保持" if n_risk_up == 0 else "被改变"
+    risk_note = " / ".join(risk_dirs) if risk_dirs else "（无 5% 组，未比较）"
+    out.append(f"- **风险%边际（V1 认为无效变量）**：C23 下 1.5%→5% "
+               f"{risk_note} → **「风险%无效」规律{risk_invalid}**。")
+    # 资金约束退化检查：同风险%下 5 仓与 3 仓成交集是否重合（C23 池右移 → 5 仓买不满）
+    degen: list[str] = []
+    for risk in RISK_LIST:
+        r3 = next((r for r in rows if r["risk_pct"] == risk and r["max_positions"] == 3), None)
+        r5 = next((r for r in rows if r["risk_pct"] == risk and r["max_positions"] == 5), None)
+        if r3 and r5:
+            t3 = {(t["date"], t["code"]) for t in r3["res"]["trades"]}
+            t5 = {(t["date"], t["code"]) for t in r5["res"]["trades"]}
+            if t3 and t3 == t5:
+                degen.append(f"{risk:.1f}%×5仓≡×3仓（{len(t3)} 笔）")
+    if degen:
+        out.append("")
+        out.append(f"- **资金约束退化提示**：{'、'.join(degen)} 成交集完全一致——"
+                   "风险%放大 → 每股风险上限抬高，C23 池右移（成交均价 14~18 元）后"
+                   "5600 元资金实际最多同时持 3 只，5 仓配置退化为 3 仓行为（5 仓未真正生效），"
+                   "该档 5 仓数据不等同于有效 5 仓实验。")
+    out.append("")
+    out.append("> 对照口径：V1 最优组数据取自 2026-08-06 T-023 报告（同 5600 元 / 整手 / "
+               "signals.csv / prebreak S 级 / 20d 口径）；C23 组仅信号集多一层 C23 过滤，"
+               "模拟核心与口径完全一致，可直接并排对照。")
+    return out
+
+
 def main() -> int:
-    today = _dt.date.today().strftime("%Y%m%d")
+    today = _dt.datetime.now().astimezone().date().strftime("%Y%m%d")
     ap = argparse.ArgumentParser(description="资金配置参数网格实验（T-023）")
     ap.add_argument("--signals", default=str(DEFAULT_SIGNALS), help="signals.csv 路径")
     ap.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="初始资金（默认 5600）")
@@ -270,12 +375,24 @@ def main() -> int:
                     help="报告输出路径")
     ap.add_argument("--grades", nargs="+", default=DEFAULT_GRADES,
                     help="评级（默认 S，与 sim_capital 验收一致）")
+    ap.add_argument("--c23", action="store_true",
+                    help="C23 版：先按 C23 过滤（动量≤10%% + 止损距离 0.5~3 元，"
+                         "sim_capital.c23_mask 同式同源，enrich 复算 mom20）再跑 12 组")
     args = ap.parse_args()
 
     df = load_signals(Path(args.signals), args.start, args.end, args.smoke, args.seed)
+    if args.c23:
+        # C23 过滤在触发信号集上完成（与 c23_capital_compare 同式：触发集 → enrich → c23_mask），
+        # 过滤后 df 直接进 12 组循环；pool_features 差集基于过滤后信号集，与 simulate_capital 同口径
+        df = df[df["triggered_20d"] == 1].copy()
+        n_before = len(df)
+        df = enrich(df)
+        df = df[c23_mask(df)]
+        print(f"[C23 过滤] 触发信号 {n_before} → {len(df)} 笔（动量≤10% + 止损0.5~3元，"
+              f"留存 {len(df) / n_before:.1%}）")
     risks = [float(x) for x in args.risk_list.split(",")]
     poss = [int(x) for x in args.pos_list.split(",")]
-    print(f"[资金网格] T-023 | 信号 {len(df)} 行 | 区间 {args.start}~{args.end}"
+    print(f"[资金网格] {'C23版 ' if args.c23 else 'T-023 '}| 信号 {len(df)} 行 | 区间 {args.start}~{args.end}"
           f"{'（冒烟 ' + str(args.smoke) + ' 只）' if args.smoke else ''} | "
           f"资金 {args.capital:,.0f} 元 | 组 {len(risks) * len(poss)} 个"
           f"（风险 {risks}% × 持仓 {poss}）")
