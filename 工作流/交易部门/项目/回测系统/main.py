@@ -193,7 +193,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--grade", nargs="+", default=["S", "A", "B"], help="记录哪些评级（默认 S A B）")
     run_p.add_argument("--dl-cands", default=None, help="覆盖策略 DL 候选根数 S,A,B（如 120,90,70；默认 90,70,60）")
     run_p.add_argument("--codes", nargs="+", default=None, help="只跑指定代码（冒烟/验收）")
-    run_p.add_argument("--max-workers", type=int, default=6, help="并发进程数（默认6=物理核数）")
+    run_p.add_argument("--max-workers", type=int, default=None,
+                       help="并发进程数（默认=os.cpu_count() 逻辑核，6核12线程机自动吃满12线程）")
     run_p.add_argument("--output-dir", default=None, help="覆盖默认输出目录")
     run_p.add_argument("--verify-samples", type=int, default=0, help="run 后自动验收自检抽样笔数（0=关）")
     run_p.add_argument("--recompute-each-window", action="store_true",

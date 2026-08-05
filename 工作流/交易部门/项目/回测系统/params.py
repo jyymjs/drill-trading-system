@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 
@@ -43,8 +44,9 @@ class BacktestParams:
     dl_cands: str | None = None
     # 只跑指定代码（冒烟/验收用）；None=股票池全量
     codes: list[str] | None = None
-    # 并发进程数（2026-08-06 线程→进程升级；默认 6 = 6 物理核，12 超线程由 OS 调度）
-    max_workers: int = 6
+    # 并发进程数（2026-08-06 线程→进程升级；None=自动探测 os.cpu_count() 逻辑核，
+    # 6 核 12 线程机器默认吃满 12 线程，实测超线程收益 ~1.2-1.3x）
+    max_workers: int | None = None
     # 交易成本模型（佣金万1.3+印花税万5，2026-08-04 老板确认费率）
     enable_cost: bool = True
     # 成本倍率（D2 2倍成本压力测试=2.0，2026-08-05 方案 D 类；1.0=基线）
@@ -127,6 +129,9 @@ class BacktestParams:
             if g not in VALID_GRADES:
                 raise ValueError(f"--grade 只能是 {'/'.join(VALID_GRADES)}，收到: {g!r}")
         self.grades = sorted(set(self.grades))
+        if self.max_workers is None:
+            # 自动探测：默认吃满全部逻辑核（T-016 优化，2026-08-06）
+            self.max_workers = os.cpu_count() or 6
         if not isinstance(self.max_workers, int) or self.max_workers < 1:
             raise ValueError(f"--max-workers 必须是 ≥1 的整数，收到: {self.max_workers!r}")
         if not isinstance(self.cost_multiplier, (int, float)) or self.cost_multiplier < 1.0:
