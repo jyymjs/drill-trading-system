@@ -15,12 +15,12 @@ from dataclasses import dataclass, field
 import pandas as pd
 from tqdm import tqdm
 
-from backtest.adapters.base import DataProvider, RiskModel, StrategyProvider
-from backtest.adapters.data_provider import CacheDataProvider
-from backtest.adapters.risk_model import DefaultRiskModel
-from backtest.adapters.strategy_provider import ZuanQianProvider
-from backtest.params import GRID_ANCHOR, BacktestParams, _parse_yyyymmdd
-from backtest.tracking import Signal, TrackedRecord, track_signal
+from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
+from 回测系统.adapters.data_provider import CacheDataProvider
+from 回测系统.adapters.risk_model import DefaultRiskModel
+from 回测系统.adapters.strategy_provider import ZuanQianProvider
+from 回测系统.params import GRID_ANCHOR, BacktestParams, _parse_yyyymmdd
+from 回测系统.tracking import Signal, TrackedRecord, track_signal
 
 
 @dataclass
@@ -117,7 +117,8 @@ class BacktestEngine:
                 sig = self._build_signal(code, sig_date, mode, window, close_arr[t])
                 if sig is None:
                     continue
-                outcomes = {h: track_signal(sig, base, h) for h in self.params.holds}
+                outcomes = {h: track_signal(sig, base, h, enable_cost=self.params.enable_cost)
+                            for h in self.params.holds}
                 records.append(TrackedRecord(signal=sig, outcomes=outcomes))
         return records
 

@@ -71,13 +71,38 @@ def _find_signal_index(df: pd.DataFrame, signal_date: pd.Timestamp) -> int:
     raise KeyError(f"信号日 {signal_date} 不在 {len(df)} 行K线中")
 
 
-def track_signal(signal: Signal, df: pd.DataFrame, hold: int) -> Outcome:
+# ── 交易成本（2026-08-04 老板确认费率）──
+# 股票：佣金 万1.3（最低 1 元）+ 印花税 卖出 万5（ETF 免）
+COMMISSION = 0.00013
+STAMP = 0.0005
+
+
+def _trade_cost(entry: float, exit_price: float, enable: bool) -> float:
+    """单笔交易成本（元/股口径：按成交金额比例折算）
+
+    Args:
+        entry: 进场价
+        exit_price: 出场价
+        enable: 是否启用成本模型
+
+    Returns:
+        每股成本（用于 R 倍数扣减）
+    """
+    if not enable:
+        return 0.0
+    buy_fee = entry * COMMISSION
+    sell_fee = exit_price * (COMMISSION + STAMP)
+    return round(buy_fee + sell_fee, 6)
+
+
+def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True) -> Outcome:
     """跟踪一笔信号在 hold 个交易日内的出场
 
     Args:
         signal: 信号（含 T 收盘/trigger/stop/risk）
         df: 该股完整基础K线（日期/开盘/收盘/最高/最低/成交量）
         hold: 观察窗长度（交易日）
+        enable_cost: 是否计入交易成本（佣金+印花税）
 
     Returns:
         Outcome（预突破未触发时 triggered=False，不参与统计）
@@ -89,11 +114,12 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int) -> Outcome:
         return Outcome(hold, True, signal.close, signal.close, signal.date, False, 0.0)
 
     if signal.mode == "normal":
-        return _track_normal(signal, df, t, end, hold)
-    return _track_prebreak(signal, df, t, end, hold)
+        return _track_normal(signal, df, t, end, hold, enable_cost)
+    return _track_prebreak(signal, df, t, end, hold, enable_cost)
 
 
-def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int) -> Outcome:
+def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
+                  enable_cost: bool = True) -> Outcome:
     """normal：T 收盘进场，窗口内 最低≤止损 → 止损出场；否则 hold 末收盘出场"""
     entry = signal.close
     stop = signal.stop
@@ -112,11 +138,13 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int)
         exit_date = pd.Timestamp(dates[end])
         stopped = False
 
-    r = (exit_price - entry) / signal.risk if signal.risk > 0 else 0.0
+    cost = _trade_cost(entry, exit_price, enable_cost)
+    r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0
     return Outcome(hold, True, entry, round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))
 
 
-def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int) -> Outcome:
+def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
+                    enable_cost: bool = True) -> Outcome:
     """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后 最低≤stop → 止损，否则 hold 末收盘"""
     trigger = signal.trigger
     stop = signal.stop
@@ -148,5 +176,6 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
         exit_date = pd.Timestamp(dates[end])
         stopped = False
 
-    r = (exit_price - entry) / risk if risk > 0 else 0.0
+    cost = _trade_cost(entry, exit_price, enable_cost)
+    r = (exit_price - entry - cost) / risk if risk > 0 else 0.0
     return Outcome(hold, True, round(float(entry), 4), round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))

@@ -9,15 +9,17 @@ import argparse
 import os
 import sys
 
-# 确保交易部根目录在路径中（沿用 main.py:13-15 模式）
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 确保交易部根目录在路径中（2026-08-04 修复：重组后需加交易部根层级）
+_HERE = os.path.dirname(os.path.abspath(__file__))   # 项目/回测系统
+sys.path.insert(0, os.path.dirname(_HERE))            # 项目/
+sys.path.insert(0, os.path.dirname(os.path.dirname(_HERE)))  # 交易部根
 
 from pathlib import Path
 
-from backtest.engine import BacktestEngine
-from backtest.params import BacktestParams
-from backtest.report import write_report, write_signals_csv
-from backtest.verify import verify_csv, verify_engine_output
+from 回测系统.engine import BacktestEngine
+from 回测系统.params import BacktestParams
+from 回测系统.report import write_report, write_signals_csv
+from 回测系统.verify import verify_csv, verify_engine_output
 
 
 def _out_dir(params: BacktestParams) -> Path:
@@ -39,6 +41,7 @@ def cmd_run(args) -> int:
         max_workers=args.max_workers, output_dir=args.output_dir,
         verify_samples=args.verify_samples,
         recompute_each_window=args.recompute_each_window,
+        dl_cands=args.dl_cands,
     )
     try:
         params.validate()
@@ -53,6 +56,10 @@ def cmd_run(args) -> int:
           + (" | 严格逐窗重算（对照）" if params.recompute_each_window else ""))
 
     engine = BacktestEngine(params)
+    if params.dl_cands:
+        cands = tuple(int(x) for x in params.dl_cands.split(","))
+        engine.strategy.strategy.DL_CANDS = cands
+        print(f"  DL 候选根数覆盖: S={cands[0]} A={cands[1]} B={cands[2]}（策略默认 90/70/60）")
     result = engine.run()
 
     # 策略信息（params.json 快照用）
@@ -68,6 +75,21 @@ def cmd_run(args) -> int:
     write_report(report_path, result.records, _buckets(result.records, params), params,
                  meta={"processed": result.processed, "skipped": result.skipped})
     params.save_snapshot(str(params_path), strategy_info)
+
+    # 蒙特卡洛版式报告（自动生成，复用 分析决策/跟踪/monte_carlo 渲染器）
+    try:
+        from 分析决策.跟踪.monte_carlo import (load_backtest_r_series, simulate,
+                                            render_terminal_report, load_backtest_years)
+        mc_years = load_backtest_years(str(signals_path))
+        mc_trades = load_backtest_r_series(str(signals_path), mode="prebreak",
+                                           hold="20d", sample_n=500)
+        mc_res = simulate(mc_trades, n_simulations=2000, fee_per_trade_r=0.0)
+        mc_text = render_terminal_report(mc_res, years=mc_years)
+        mc_path = out_dir / "monte_carlo.txt"
+        mc_path.write_text(mc_text + "\n", encoding="utf-8")
+        print(f"  monte_carlo.txt → {mc_path}")
+    except Exception as e:
+        print(f"  ⚠ 蒙特卡洛报告未生成: {e}")
 
     print(f"\n[BACKTEST] 完成 | 股票 {result.processed} 只（跳过 {result.skipped}）| 信号 {len(result.records)} 笔")
     if result.failed_codes:
@@ -91,7 +113,7 @@ def cmd_run(args) -> int:
 
 def _buckets(records, params):
     """统计分桶（report 需要）"""
-    from backtest.stats import group_stats
+    from 回测系统.stats import group_stats
     return group_stats(records, params.holds)
 
 
@@ -129,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--interval", type=int, default=5, help="信号日步长（交易日，默认5）")
     run_p.add_argument("--hold", nargs="+", default=["5", "10", "20"], help="观察窗多值（默认 5 10 20）")
     run_p.add_argument("--grade", nargs="+", default=["S", "A", "B"], help="记录哪些评级（默认 S A B）")
+    run_p.add_argument("--dl-cands", default=None, help="覆盖策略 DL 候选根数 S,A,B（如 120,90,70；默认 90,70,60）")
     run_p.add_argument("--codes", nargs="+", default=None, help="只跑指定代码（冒烟/验收）")
     run_p.add_argument("--max-workers", type=int, default=5, help="线程数（默认5）")
     run_p.add_argument("--output-dir", default=None, help="覆盖默认输出目录")

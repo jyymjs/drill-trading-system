@@ -7,7 +7,7 @@
 import numpy as np
 import pandas as pd
 
-from backtest.adapters.base import RiskModel
+from 回测系统.adapters.base import RiskModel
 
 
 class DefaultRiskModel(RiskModel):

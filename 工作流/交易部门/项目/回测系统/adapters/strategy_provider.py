@@ -4,7 +4,7 @@
 """
 from 策略.核心策略.samples.zuanqian_strategy import ZuanQianStrategy
 
-from backtest.adapters.base import StrategyProvider
+from 回测系统.adapters.base import StrategyProvider
 
 
 class ZuanQianProvider(StrategyProvider):

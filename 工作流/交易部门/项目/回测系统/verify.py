@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.adapters.data_provider import CacheDataProvider
-from backtest.adapters.strategy_provider import ZuanQianProvider
-from backtest.tracking import TrackedRecord
+from 回测系统.adapters.data_provider import CacheDataProvider
+from 回测系统.adapters.strategy_provider import ZuanQianProvider
+from 回测系统.tracking import TrackedRecord
 
 SCORE_KEYS = ("PT平台测试", "TY统一区间", "DN动能", "DL独立结构", "LK轮廓质量", "SF释放级别")
 

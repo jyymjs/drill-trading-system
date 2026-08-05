@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 
-from backtest.tracking import TrackedRecord
+from 回测系统.tracking import TrackedRecord
 
 
 @dataclass

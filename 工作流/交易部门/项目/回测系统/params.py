@@ -39,10 +39,14 @@ class BacktestParams:
     holds: list[int] = field(default_factory=lambda: [5, 10, 20])
     # 记录哪些等级信号
     grades: list[str] = field(default_factory=lambda: ["S", "A", "B"])
+    # 覆盖策略 DL 候选根数（S,A,B；None=用策略默认 90,70,60；T-4.2 敏感性测试用）
+    dl_cands: str | None = None
     # 只跑指定代码（冒烟/验收用）；None=股票池全量
     codes: list[str] | None = None
     # 并发线程数
     max_workers: int = 5
+    # 交易成本模型（佣金万1.3+印花税万5，2026-08-04 老板确认费率）
+    enable_cost: bool = True
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）
@@ -84,6 +88,15 @@ class BacktestParams:
         self.grades = sorted(set(self.grades))
         if not isinstance(self.max_workers, int) or self.max_workers < 1:
             raise ValueError(f"--max-workers 必须是 ≥1 的整数，收到: {self.max_workers!r}")
+        if self.dl_cands is not None:
+            try:
+                cands = [int(x) for x in self.dl_cands.split(",")]
+            except ValueError:
+                raise ValueError(f"--dl-cands 需为 S,A,B 三个整数，收到: {self.dl_cands!r}")
+            if len(cands) != 3:
+                raise ValueError(f"--dl-cands 需为 S,A,B 三个整数，收到: {self.dl_cands!r}")
+            if not (cands[0] > cands[1] > cands[2]):
+                raise ValueError(f"--dl-cands 需严格降序（S>A>B），收到: {self.dl_cands!r}")
 
     # ── 参数快照 ──
 

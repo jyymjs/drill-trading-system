@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from backtest.params import BacktestParams
-from backtest.stats import StatBlock, merge_monthly, mode_stats
-from backtest.tracking import TrackedRecord
+from 回测系统.params import BacktestParams
+from 回测系统.stats import StatBlock, merge_monthly, mode_stats
+from 回测系统.tracking import TrackedRecord
 
 # 六条件顺序（信号 CSV 与报告统一）
 SCORE_KEYS = ("PT平台测试", "TY统一区间", "DN动能", "DL独立结构", "LK轮廓质量", "SF释放级别")

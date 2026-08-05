@@ -11,7 +11,7 @@ from 数据基础.配置.settings import DATA_DIR
 from 数据基础.数据.cache import cache_path
 from 数据基础.数据.fetcher import get_daily_kline
 
-from backtest.adapters.base import DataProvider
+from 回测系统.adapters.base import DataProvider
 
 
 class CacheDataProvider(DataProvider):
