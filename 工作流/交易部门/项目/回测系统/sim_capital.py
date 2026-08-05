@@ -30,6 +30,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(_HERE)))  # 交易部根
 import numpy as np
 import pandas as pd
 
+# C23 条件常量单一来源：回测系统/tighten_compare.py（T-024 复算口径）
+from 回测系统.tighten_compare import DEFAULT_MOM, RISK_MAX, RISK_MIN
+
 DEFAULT_SIGNALS = os.path.join("项目", "output", "backtest", "20230701_20260804", "signals.csv")
 
 
@@ -38,9 +41,21 @@ def _hold_label(hold: str) -> int:
     return int(str(hold).replace("d", ""))
 
 
+def c23_mask(df: pd.DataFrame, mom: float = DEFAULT_MOM) -> pd.Series:
+    """C23 过滤掩码：动量≤10% 且 止损距离 0.5~3 元（2026-08-06 老板拍板替换进策略）
+
+    mom20 需由调用方预先复算（tighten_compare.enrich，duckdb 同口径：
+    trigger / 20 交易日前 qfq 收盘 - 1）；risk 列 = trigger - stop，
+    signals.csv 直接可用。与 c23_capital_compare.c23_mask 同式同源。
+    """
+    return ((df["mom20"].notna() & (df["mom20"] <= mom))
+            & (df["risk"] >= RISK_MIN) & (df["risk"] <= RISK_MAX))
+
+
 def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                      max_positions: int = 2, mode: str = "prebreak",
-                     hold: str = "20d", grades: list[str] | None = None) -> dict:
+                     hold: str = "20d", grades: list[str] | None = None,
+                     c23: bool = False) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
 
     Args:
@@ -51,6 +66,9 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         mode: normal / prebreak
         hold: 观察窗（'20d'）
         grades: 只做哪些评级（None=全部；默认由 CLI 传，老板约束=只做 S）
+        c23: 是否应用 C23 收紧（动量≤10% + 止损距离 0.5~3 元；2026-08-06 老板拍板
+            替换进策略）。要求 df 已含 mom20 列（tighten_compare.enrich 复算）。
+            仅做信号集过滤，模拟核心逻辑零改动。
 
     Returns:
         dict: 摘要指标 + trades（逐笔成交）+ equity（资金曲线 DataFrame）
@@ -58,6 +76,8 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
     grades = grades or []
     h = _hold_label(hold)
     sub = df[(df["mode"] == mode) & (df[f"triggered_{h}d"] == 1)]
+    if c23:
+        sub = sub[c23_mask(sub)]
     if grades:
         sub = sub[sub["grade"].isin(grades)]
     sub = sub.sort_values(["date", "code"]).copy()
@@ -225,6 +245,8 @@ def main() -> int:
     ap.add_argument("--mode", default="prebreak", choices=["normal", "prebreak"])
     ap.add_argument("--hold", default="20d", choices=["5d", "10d", "20d"])
     ap.add_argument("--grades", nargs="+", default=["S"], help="只做评级（默认 S，老板约束）")
+    ap.add_argument("--c23", action="store_true",
+                    help="C23 收紧：动量≤10%% + 止损距离 0.5~3 元（2026-08-06 老板拍板替换进策略）")
     ap.add_argument("--out-csv", default=None, help="资金曲线 CSV 输出路径（可选）")
     args = ap.parse_args()
 
@@ -232,9 +254,18 @@ def main() -> int:
     if not len(df):
         print("无信号数据")
         return 1
+    if args.c23:
+        # mom20 复算（tighten_compare.enrich，duckdb 同口径，与 c23_capital_compare 一致）
+        from 回测系统.tighten_compare import enrich
+
+        n_before = int((df["triggered_20d"] == 1).sum()) if "triggered_20d" in df.columns else len(df)
+        df = enrich(df)
+        df = df[c23_mask(df)]
+        print(f"[C23 过滤] 20d 触发信号 {n_before} → {len(df)} 笔（动量≤10% + 止损0.5~3元，"
+              f"留存 {len(df) / n_before:.1%}）")
     res = simulate_capital(df, args.capital, args.risk_ratio,
                            max_positions=args.max_positions, mode=args.mode,
-                           hold=args.hold, grades=args.grades)
+                           hold=args.hold, grades=args.grades, c23=args.c23)
     if not res["n_exec"]:
         print("无触发信号")
         return 1
@@ -250,7 +281,8 @@ def main() -> int:
     print("模拟实盘回测·资金约束（2026-08-06 老板拍板口径）".center(W))
     print(line)
     print(f"  初始资金        {r['capital']:>10,.2f} 元 | 单笔风险 {r['risk_amt']:,.0f} 元（{args.risk_ratio:.1%}）"
-          f" | 持仓上限 {r['max_positions']} 只 | 评级 {'/'.join(r['grades'])} | {r['mode']}/{r['hold']}d")
+          f" | 持仓上限 {r['max_positions']} 只 | 评级 {'/'.join(r['grades'])} | {r['mode']}/{r['hold']}d"
+          f"{' | C23 收紧' if args.c23 else ''}")
     print(line)
     print(f"  信号总数        {r['n_all']:>10,}")
     print(f"  实际可执行      {r['n_exec']:>10,}（{r['exec_rate']:.1f}%）")

@@ -16,6 +16,14 @@ from 数据基础.配置.settings import (
 from 数据基础.配置.stock_pool import get_all_stocks, get_etf_list, is_st_name
 from 策略.核心策略.base import BaseStrategy
 
+# ── C23 收紧条件（2026-08-06 老板拍板替换进策略）──
+# 单一来源：项目/回测系统/tighten_compare.py（T-024 复算口径，tighten_compare.DEFAULT_MOM /
+# RISK_MIN / RISK_MAX）；此处同值定义（scanner 位于 分析决策 包，不依赖 项目/ 路径），
+# 改动需两处同步。c23_capital_compare.py / sim_capital.py 直接引用 tighten_compare 常量。
+C23_MOM_MAX = 0.10    # 动量上限：触发价 vs 20 交易日前收盘涨幅 ≤ 10%
+C23_RISK_MIN = 0.5    # 止损距离下限（元）：trigger - stop ≥ 0.5（太近易被扫）
+C23_RISK_MAX = 3.0    # 止损距离上限（元）：trigger - stop ≤ 3.0（太远盈亏比差）
+
 
 def scan_single_stock(
     stock: dict,
@@ -101,10 +109,34 @@ def scan_single_stock(
                     # 扫描候选——每只候选输出"放量阈值"（绝对成交量，单位同数据源=手），
                     # 口径对齐 dn_confirm 回测"触发日前 20 日均量"：扫描时最新日视为潜在
                     # 突破日 → 取不含最新日的前 20 根均量 × 1.5，每日用最新数据刷新。
-                    # 突破日成交量 > 放量阈值 才算放量达标（量比>1.5）。
+                    # 突破日成交量 > 放量阈值 即达标起步线（量比>1.5；T-025 修正：量比越高越好，
+                    # 1.5 仅作下限，不放上限）。
                     ref_vol = df["成交量"].iloc[max(0, len(df) - 21):len(df) - 1]
                     ref_mean = float(ref_vol.mean()) if len(ref_vol) > 0 else 0.0
                     entry["放量阈值"] = round(ref_mean * 1.5, 0) if ref_mean > 0 else 0
+
+                    # 2026-08-06 C23 替换进策略（老板拍板：S 级 + dn_confirm 1.5 +
+                    # 动量≤10% + 止损距离 0.5~3 元；现方案封存见 策略/核心策略/策略版本存档.md）。
+                    # 动量口径对齐 tighten_compare.recompute：trigger / 触发日前第 20 根收盘 - 1；
+                    # 扫描时最新日视为潜在突破日（与放量阈值同法）→ 前第 20 根 = iloc[-21]。
+                    mom20 = None
+                    if len(df) >= 22 and trigger > 0:
+                        close20 = float(df["收盘"].iloc[-21])
+                        if close20 > 0:
+                            mom20 = trigger / close20 - 1.0
+                    entry["动量20日%"] = round(mom20 * 100, 1) if mom20 is not None else None
+
+                    # C23 判定：止损距离 = 每股风险（prebreak_grade 中 = trigger - stop）
+                    c23_reasons = []
+                    if mom20 is not None and mom20 > C23_MOM_MAX:
+                        c23_reasons.append(f"动量{mom20:.1%}>10%")
+                    risk_dist = result.get("risk_per_share", 0) or 0
+                    if risk_dist > 0 and risk_dist < C23_RISK_MIN:
+                        c23_reasons.append(f"止损{risk_dist:.2f}元<0.5")
+                    if risk_dist > C23_RISK_MAX:
+                        c23_reasons.append(f"止损{risk_dist:.2f}元>3")
+                    entry["C23"] = "达标" if not c23_reasons else "不达标"
+                    entry["C23原因"] = "；".join(c23_reasons) if c23_reasons else ""
 
                 return entry
             return None
@@ -215,3 +247,21 @@ def split_prebreak_results(results: list[dict]) -> tuple[list[dict], list[dict]]
     candidates = [r for r in results if r.get("突破状态") != "已突破"]
     broken = [r for r in results if r.get("突破状态") == "已突破"]
     return candidates, broken
+
+
+def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
+    """C23 过滤（2026-08-06 老板拍板替换进策略）
+
+    保留"达标"（动量≤10% 且 止损距离 0.5~3 元）为挂单候选主表；
+    "不达标"返回 filtered 供研究（不参与挂单候选）。判定字段由
+    scan_single_stock prebreak 分支写入（C23 / C23原因 / 动量20日%）。
+
+    Args:
+        results: prebreak 扫描候选（含 C23 标记）
+
+    Returns:
+        (passing, filtered): C23 达标候选主表 / 不达标研究列表
+    """
+    passing = [r for r in results if r.get("C23") == "达标"]
+    filtered = [r for r in results if r.get("C23") != "达标"]
+    return passing, filtered
