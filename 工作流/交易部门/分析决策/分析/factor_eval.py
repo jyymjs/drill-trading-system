@@ -23,7 +23,7 @@ def evaluate_factor(
     codes: list[str],
     factor_name: str,
     factor_fn,
-    periods: list[int] = [1, 5, 10, 20],
+    periods: list[int] | None = None,
 ) -> dict | None:
     """对因子进行 IC 分析 + 分层回测
 
@@ -36,6 +36,8 @@ def evaluate_factor(
     Returns:
         {"ic_mean": float, "ic_ir": float, ...} 或 None（Alphalens未安装时）
     """
+    if periods is None:
+        periods = [1, 5, 10, 20]
     if not HAS_ALPHALENS:
         print("[factor_eval] Alphalens 未安装，跳过因子评估")
         print("  安装: pip install alphalens-reloaded")

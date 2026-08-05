@@ -180,13 +180,13 @@ def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int 
     overshoot_positions = set()
     for i in range(10, n - 5):
         # 局部最高点
+        # 检查局部最高点后是否回落超过2%
         if (highs_window[i] > highs_window[i-1]
                 and highs_window[i] >= highs_window[i-2]
                 and highs_window[i] > highs_window[i+1]
-                and highs_window[i] > highs_window[i+2]):
-            # 检查是否回落超过2%
-            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
-                overshoot_positions.add(i)
+                and highs_window[i] > highs_window[i+2]
+                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02):
+            overshoot_positions.add(i)
 
     levels = []
     counts = []
@@ -615,15 +615,15 @@ def overshoot_detect(df: pd.DataFrame, window: int = 60) -> dict:
     local_high_idx = -1
     local_high_val = 0
     for i in range(10, n - 5):  # 排除边界
+        # 检查这个高点后是否回落超过2%
         if (recent_high[i] > recent_high[i - 1]
                 and recent_high[i] >= recent_high[i - 2]
                 and recent_high[i] > recent_high[i + 1]
-                and recent_high[i] > recent_high[i + 2]):
-            # 检查这个高点后是否回落超过2%
-            if i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02:
-                if recent_high[i] > local_high_val:
-                    local_high_val = recent_high[i]
-                    local_high_idx = i
+                and recent_high[i] > recent_high[i + 2]
+                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02
+                and recent_high[i] > local_high_val):
+            local_high_val = recent_high[i]
+            local_high_idx = i
 
     # 过高点：创了收盘新高后回落
     if local_high_idx >= 0:

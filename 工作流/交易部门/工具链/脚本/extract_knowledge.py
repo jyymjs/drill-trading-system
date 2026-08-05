@@ -591,7 +591,7 @@ class VideoProcessor:
 
             is_dup = False
             for kept_hash in list(hashes.values()):
-                if bin(h ^ kept_hash).count("1") <= max_dist:
+                if (h ^ kept_hash).bit_count() <= max_dist:
                     is_dup = True
                     break
 
@@ -689,7 +689,7 @@ class Transcriber:
             if match:
                 h, m, s = match.groups()
                 return int(h) * 3600 + int(m) * 60 + float(s)
-        except:
+        except Exception:
             pass
         raise RuntimeError(f"无法获取音频时长: {audio_path}")
 
@@ -731,7 +731,7 @@ class Transcriber:
                     creationflags=sp.CREATE_NO_WINDOW if hasattr(sp, 'CREATE_NO_WINDOW') else 0)
                 if len(proc.stdout) < 1000:
                     continue
-            except:
+            except Exception:
                 continue
 
             # SenseVoice 转写当前段
@@ -1593,8 +1593,8 @@ def main() -> int:
     except KeyboardInterrupt:
         log.info("\n⏹ 用户中断，进度已保存至检查点文件，下次运行可继续")
         return 130
-    except Exception as e:
-        log.exception("❌ 未预期的错误: %s", e)
+    except Exception:
+        log.exception("❌ 未预期的错误")
         return 2
 
 

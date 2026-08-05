@@ -30,8 +30,8 @@ except ImportError:
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 
 
-def simulate(trades: list[dict] = None, n_simulations: int = 10000,
-             n_trades_per_run: int = None,
+def simulate(trades: list[dict] | None = None, n_simulations: int = 10000,
+             n_trades_per_run: int | None = None,
              fee_per_trade_r: float = 0.02) -> dict:
     """蒙特卡洛模拟（含交易成本）
 

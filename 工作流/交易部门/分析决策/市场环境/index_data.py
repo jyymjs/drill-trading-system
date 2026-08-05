@@ -133,10 +133,9 @@ def _pull_index_all(market: int, code: str, min_date: str | None = None) -> pd.D
                 if not bars:
                     break
                 rows.extend(bars)
-                if need is not None and len(bars) < _PULL_BATCH:
-                    # 已到最早（不足一批）或已覆盖 min_date
-                    if pd.Timestamp(f"{bars[-1]['year']:04d}-{bars[-1]['month']:02d}-{bars[-1]['day']:02d}") <= need:
-                        break
+                # 已到最早（不足一批）或已覆盖 min_date
+                if need is not None and len(bars) < _PULL_BATCH and pd.Timestamp(f"{bars[-1]['year']:04d}-{bars[-1]['month']:02d}-{bars[-1]['day']:02d}") <= need:
+                    break
                 offset += _PULL_BATCH
                 if len(bars) < _PULL_BATCH:
                     break

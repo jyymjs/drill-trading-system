@@ -44,8 +44,7 @@ def get_all_trades() -> list[dict]:
     try:
         with open(TRADES_FILE, "r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                trades.append(row)
+            trades = list(reader)
     except (FileNotFoundError, StopIteration):
         pass
     return trades

@@ -31,7 +31,7 @@ def dhash(image, hash_size=8):
 
 def hamming_distance(h1, h2):
     """两个哈希值的汉明距离"""
-    return bin(h1 ^ h2).count("1")
+    return (h1 ^ h2).bit_count()
 
 def main():
     parser = argparse.ArgumentParser(description="视频帧去重筛选")
@@ -118,7 +118,7 @@ def main():
             if confirm != 'y':
                 print("已取消")
                 return
-        except:
+        except Exception:
             print("非交互模式, 使用 --yes 自动确认")
             return
 
@@ -129,7 +129,7 @@ def main():
         try:
             os.remove(path)
             deleted += 1
-        except:
+        except Exception:
             pass
 
     # 重命名保留的帧为连续序号
