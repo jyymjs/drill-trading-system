@@ -158,10 +158,9 @@ class ZuanQianStrategy(BaseStrategy):
                     return "直接上涨无回踩轨迹"
 
             # 4b. 明显反应质量（踩了之后反弹的速度和幅度）
-            react = reaction_quality(df)
-            if trace["has_trace"] and not react["has_reaction"]:
-                # 有踩但没有明显反应 → 碰一下慢慢蹭上去不算
-                pass  # 不直接否决，但在评分中降级
+            # 有踩但没有明显反应 → "碰一下慢慢蹭上去不算"：不在此否决（Tier 0 只做一票否决）
+            # 降级逻辑实现于 grade() 的 Tier 3（2026-08-05 老板拍板 A1），
+            # 避免与 _tier0_reject 的"否决理由"字符串返回语义混淆
 
         return None
 
@@ -412,14 +411,18 @@ class ZuanQianStrategy(BaseStrategy):
         return None
 
     def _grade_sf(self, df: pd.DataFrame, dl_start: int | None) -> tuple[str, str]:
-        """释放级别评级：1st=S, 2nd=A, 3rd=C"""
+        """释放级别评级：1st=S, 2nd=A, 3rd=C
+
+        数据不足裁决（2026-08-05 老板拍板 A2）：dl_start 缺失或 <20 → 看不清 → 观望 C
+        （原实现给 A 属语义反了：数据不足应观望，而非放行"伪A"）
+        """
         if dl_start is None or dl_start < 20:
-            return 'A', "数据不足,保守2nd"
+            return 'C', "数据不足,看不清观望"
 
         # 检测释放幅度
         before = df.iloc[max(0, dl_start - 60):dl_start]
         if len(before) < 20:
-            return 'A', "数据不足,保守2nd"
+            return 'C', "数据不足,看不清观望"
 
         b_range = (before["最高"].max() - before["最低"].min()) / before["最低"].min()
         if b_range > 0.25:
@@ -468,6 +471,9 @@ class ZuanQianStrategy(BaseStrategy):
 
     def grade(self, df: pd.DataFrame) -> dict:
         """对股票进行完整评级（V2 课程标准版）
+
+        A1 降级（2026-08-05 老板拍板）：有回踩但无明显反应（"碰一下慢慢蹭上去"）
+        → 综合评级降一档（S→A / A→B / B→C），见下方 Tier 3 注释。
 
         Returns:
             {"grade": "S"/"A"/"B"/"C",
@@ -543,8 +549,19 @@ class ZuanQianStrategy(BaseStrategy):
         elif react["has_reaction"]:
             scores["明显反应"] = ('A', f"覆盖{react['coverage']:.0%}")
 
+        # A1 降级（2026-08-05 老板拍板：蹭上去不算——有回踩但无明显反应 → 综合评级降一档）
+        # 设计选择：与 _tier0_reject 的"一票否决"字符串语义隔离（否决即返回 C），
+        # 在综合评级算出后统一降档，不混入 _calculate_overall_grade 各分支
+        # （其内部提级/降级规则交错，统一降档最不易引入回归）；C 级保持 C
+        downgrade_reason = None
+        if trace["has_trace"] and not react["has_reaction"]:
+            downgrade_reason = f"回踩但无明显反应(覆盖{react['coverage']:.0%})"
+
         # ── 综合评级 ──
         grade = self._calculate_overall_grade(scores, bonus)
+        if downgrade_reason:
+            grade = {'S': 'A', 'A': 'B', 'B': 'C', 'C': 'C'}.get(grade, grade)
+            scores["回踩反应"] = ('C', f"{downgrade_reason}, 综合评级降一档")
         match = grade in ('S', 'A', 'B')
 
         # 意图模式标注（独立模式，不影响标准评级；供报告/prebreak 使用）
