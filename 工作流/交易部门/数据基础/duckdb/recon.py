@@ -87,7 +87,9 @@ def fetch_sina_qfq(sym, cache_dir):
     import akshare as ak
     fp = cache_dir / f"{sym}.csv"
     if fp.exists():
-        return pd.read_csv(fp)
+        # 质检 B2 修复：date 列须按日期读回（与首次拉取 df["date"]=to_datetime 同型），
+        # 否则缓存路径与库内路径 merge 时 date 类型不一致报 ValueError
+        return pd.read_csv(fp, parse_dates=["date"])
     for attempt in range(3):
         try:
             df = ak.stock_zh_a_daily(symbol=to_sina_symbol(sym), adjust="qfq")

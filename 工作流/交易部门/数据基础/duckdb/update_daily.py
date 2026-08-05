@@ -145,13 +145,15 @@ def main():
     todo = [s for s in todo
             if not (state.get(s, {}).get("daily") == "done" and state.get(s, {}).get("xdxr") == "done")]
     log(f"待拉 {len(todo)} 只 workers={args.workers} window={args.window} db={args.db}")
+    # 统计初始化置于分支外（质检 B1 修复）：全部 done 时 todo 为空（盘后增量
+    # 第二天正常运行的常见场景），也须走完校验与 summary 写出，stats 不能缺位
+    stats = {"done": 0, "failed": 0, "written_rows": 0, "written_xdxr_rows": 0}
     if not todo:
         log("无待拉任务，退出")
     else:
         # ── 2. 并发增量 ──
         server_map = {s: (SERVERS[i % len(SERVERS)], SERVERS[(i + 1) % len(SERVERS)])
                       for i, s in enumerate(todo)}
-        stats = {"done": 0, "failed": 0, "written_rows": 0, "written_xdxr_rows": 0}
 
         def do_one(sym):
             server_a, server_b = server_map[sym]
