@@ -203,7 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--no-sentiment-gate", action="store_true",
                        help="关闭 C4 情绪闸门（涨跌家数，2026-08-05 老板拍板，默认开）")
     run_p.add_argument("--sent-threshold", type=float, default=70.0,
-                       help="全市场下跌家数占比阈值（%%，默认 70；建议值，普跌日实证 2026-05-29=71.4%）")
+                       help="全市场下跌家数占比阈值（%%，默认 70；建议值，普跌日实证 2026-05-29=71.4%%）")
     run_p.add_argument("--missing-sentiment", default="pass", choices=["pass", "veto"],
                        help="涨跌家数数据缺失：pass=放行（默认）/ veto=否决")
 
