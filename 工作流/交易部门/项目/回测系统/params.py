@@ -90,6 +90,12 @@ class BacktestParams:
     #   有效则建议接入扫描/挂单指引（阈值取哪个），无效报告原因。
     #   对照组 = 0.0（纯价格触发，现状行为）。
     dn_confirm: float = 0.0
+    # C23 收紧（T-027 2026-08-06 老板拍板"回测 = 现行策略 V2"）：信号层过滤
+    #   动量≤10%（信号日触发价/收盘 vs 20 交易日前收盘，无前视版）且 止损距离 0.5~3 元。
+    #   阈值单一来源：回测系统/tighten_compare.py（DEFAULT_MOM / RISK_MIN / RISK_MAX）。
+    #   默认关 = 显式开（--c23）：V1 基线回测仍可跑，V2 用 --c23；
+    #   与 sim_capital.py --c23 语义一致（信号层过滤，不改评级与跟踪核心）。
+    c23: bool = False
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）

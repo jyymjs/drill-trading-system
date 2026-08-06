@@ -23,11 +23,11 @@ from datetime import datetime
 
 import pandas as pd
 from tqdm import tqdm
+
 from 分析决策.市场环境.prbook_gate import (  # C1 财报日避让（2026-08-05 老板拍板）
     prbook_verdict,
     prbook_warn,
 )
-
 from 回测系统.adapters.base import DataProvider, RiskModel, StrategyProvider
 from 回测系统.adapters.data_provider import CacheDataProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel
@@ -67,7 +67,9 @@ class BacktestEngine:
         self.gate_counts: dict = {"veto_env": 0, "veto_sentiment": 0, "veto_volume": 0,
                                   "downgraded": 0, "missing": 0, "kept": 0,
                                   # C1 财报日避让（2026-08-05 老板拍板）：披露日否决/警示/无数据放行
-                                  "veto_prbook": 0, "prbook_warn": 0, "prbook_missing": 0}
+                                  "veto_prbook": 0, "prbook_warn": 0, "prbook_missing": 0,
+                                  # C23 收紧（T-027 2026-08-06）：信号层过滤计数（动量>10%/止损距离出界）
+                                  "veto_c23": 0}
         self._index_df = None    # 主闸门指数日线（首次使用 env_gate 时加载）
         self._breadth_df = None  # 全市场涨跌家数（首次使用 sentiment_gate 时加载，C4）
         self._prbook_map: dict = {}  # C1 预约披露 {code: 未披露行列表}（run() 内一次性加载；空=无数据放行）
@@ -166,6 +168,12 @@ class BacktestEngine:
             for mode in self._active_modes():
                 sig = self._build_signal(code, sig_date, mode, window, close_arr[t])
                 if sig is None:
+                    continue
+                # C23 收紧（T-027 2026-08-06 老板拍板"回测=现行策略 V2"）：
+                # 信号层过滤——动量≤10% + 止损距离 0.5~3 元（无前视版，见 _c23_ok）；
+                # 默认关（--c23 显式开），与 sim_capital --c23 语义一致
+                if self.params.c23 and not self._c23_ok(sig, window):
+                    self.gate_counts["veto_c23"] += 1
                     continue
                 # B1 环境闸门 + C3 量能过滤（执行层，2026-08-05 第3波）：
                 # 评级与执行分离——grade() 评级保持不变，此处只做否决/降级
@@ -281,6 +289,32 @@ class BacktestEngine:
         if self.params.start and d.date() < _parse_yyyymmdd(self.params.start):
             return False
         return not (self.params.end and d.date() > _parse_yyyymmdd(self.params.end))
+
+    def _c23_ok(self, sig: Signal, window: pd.DataFrame) -> bool:
+        """C23 收紧判定（T-027 2026-08-06 老板拍板）：动量≤10% 且 止损距离 0.5~3 元（无前视版）
+
+        口径（对齐 tighten_compare / sim_capital / 扫描层，时点差异见下）：
+          - mom20 = 潜在突破价 / 20 交易日前收盘 - 1；潜在突破价 prebreak=触发价
+            （trigger_price，信号日已知）、normal=信号日收盘（signal.close）；
+            基准收盘取 window.iloc[-21]（信号日 T 视作潜在突破日，扫描层同法）——
+            **无前视**：只用 T 及之前数据（window 已先截断至 [:t+1]）。
+          - 止损距离 = 每股风险 sig.risk（prebreak=trigger-stop / normal=进场-止损）。
+          - 保留：mom20 有效且 ≤ DEFAULT_MOM，且 RISK_MIN ≤ risk ≤ RISK_MAX。
+          与 tighten_compare 复算口径（触发日真实定位后 mom20）的差异：触发日 ≠ 信号日时
+          基准日不同，预期全量对比存在 1-2 笔差（如实记录）。
+        阈值单一来源：回测系统/tighten_compare.py（DEFAULT_MOM / RISK_MIN / RISK_MAX）。
+        """
+        from 回测系统.tighten_compare import DEFAULT_MOM, RISK_MAX, RISK_MIN
+        price = sig.trigger if sig.trigger > 0 else sig.close   # 潜在突破价
+        if price <= 0 or len(window) < 22:
+            return False                                        # 数据不足 → 不达标（与复算失败同语义）
+        close20 = float(window["收盘"].iloc[-21])
+        if close20 <= 0:
+            return False
+        mom20 = price / close20 - 1.0
+        if mom20 > DEFAULT_MOM:
+            return False                                        # 动量追高 → 滤掉
+        return RISK_MIN <= sig.risk <= RISK_MAX
 
     def _build_signal(self, code: str, sig_date: pd.Timestamp, mode: str,
                       window: pd.DataFrame, close_t: float) -> Signal | None:

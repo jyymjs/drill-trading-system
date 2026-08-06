@@ -9,11 +9,13 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "项目"))  # 回测系统 包（R-005 独立项目）
 
-from 分析决策.分析.indicators import all_indicators
 from 回测系统.adapters.base import DataProvider, StrategyProvider
 from 回测系统.adapters.risk_model import DefaultRiskModel
 from 回测系统.engine import BacktestEngine
 from 回测系统.params import GRID_ANCHOR, BacktestParams
+from 回测系统.tracking import Signal
+
+from 分析决策.分析.indicators import all_indicators
 from 策略.核心策略.samples.zuanqian_strategy import ZuanQianStrategy
 
 NEEDED = ["VOL_RATIO", "BODY_RATIO", "MA20", "MA5", "ATR"]
@@ -256,3 +258,117 @@ class TestRunParallel:
         params = make_params(codes=[], max_workers=2)
         res = BacktestEngine(params, provider=_FakeProvider(make_kline(400))).run()
         assert res.processed == 0 and res.records == []
+
+
+# ============================================================
+# C23 收紧（T-027 2026-08-06 老板拍板：回测 = 现行策略 V2）
+# 信号层过滤：动量≤10%（无前视版）+ 止损距离 0.5~3 元；默认关，--c23 显式开
+# ============================================================
+
+class TestC23:
+    """C23 过滤：默认关不改变行为；开启时只减不增 + 保留者必达标 + 计数正确"""
+
+    @staticmethod
+    def _mk_window(n: int = 60, seed: int = 42, last_close: float = 10.0) -> pd.DataFrame:
+        """构造窗口：close[-21]=last_close 且末尾 20 根横盘在 last_close（mom20 可精确预测）"""
+        rng = np.random.default_rng(seed)
+        k = n - 20
+        pre = 5 + np.arange(k) * 0.1 + rng.normal(0, 0.3, k).cumsum()
+        pre[-1] = last_close            # 倒数第 21 根 = last_close：mom20 = trigger/last_close - 1
+        flat = np.full(20, last_close) + rng.normal(0, 0.05, 20)
+        close = np.concatenate([pre, flat])
+        high = close + abs(rng.normal(0, 0.2, n))
+        low = close - abs(rng.normal(0, 0.2, n))
+        open_ = close + rng.normal(0, 0.1, n)
+        volume = rng.integers(10000, 100000, n)
+        dates = pd.date_range("2023-01-01", periods=n, freq="B")
+        return pd.DataFrame({"日期": dates, "开盘": open_, "收盘": close,
+                             "最高": high, "最低": low, "成交量": volume})
+
+    @staticmethod
+    def _sig(**kw) -> Signal:
+        base = {"code": "000001", "date": pd.Timestamp("2023-01-31"), "mode": "prebreak",
+                "grade": "S", "scores": {}, "close": 10.0, "trigger": 10.05, "stop": 9.5, "risk": 0.55}
+        base.update(kw)
+        return Signal(**base)
+
+    def test_c23_ok_动量与止损边界(self):
+        """_c23_ok：动量≤10% 且 0.5≤risk≤3 保留；动量超/止损出界/数据不足滤掉"""
+        from 回测系统.tighten_compare import DEFAULT_MOM, RISK_MAX, RISK_MIN
+        window = self._mk_window(60)                     # 窗口 60 根：close[-21]≈last_close=10
+        params = make_params(interval=5, holds=[5])
+        eng = BacktestEngine(params, provider=_FakeProvider(window))
+        assert RISK_MIN == 0.5 and RISK_MAX == 3.0 and DEFAULT_MOM == 0.10  # 常量单一来源引用
+
+        # 达标：trigger=10.5 → mom20 = 10.5/10-1 = 5% ≤ 10%，risk=0.55 ∈ [0.5, 3]
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=0.55), window) is True
+        # 动量超：trigger=11.5 → mom20 = 15% > 10%
+        assert eng._c23_ok(self._sig(trigger=11.5, risk=0.55), window) is False
+        # 止损太近：risk=0.4 < 0.5
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=0.4), window) is False
+        # 止损太远：risk=3.5 > 3.0
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=3.5), window) is False
+        # 动量近临界（浮点下 <10%）：trigger=10.99 → mom20≈9.9% → 保留
+        assert eng._c23_ok(self._sig(trigger=10.99, risk=0.55), window) is True
+        # 动量超临界：trigger=11.01 → mom20≈10.1% → 滤掉
+        # （数学恰 10% 的 trigger=11.0 在浮点除法下为 0.10000000000000009 被滤——
+        #   与 tighten_compare 复算口径逐位一致，属预期浮点行为）
+        assert eng._c23_ok(self._sig(trigger=11.01, risk=0.55), window) is False
+        # 止损下边界：risk=0.5 恰在界内 → 保留
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=0.5), window) is True
+        # 止损上边界：risk=3.0 恰在界内 → 保留
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=3.0), window) is True
+        # normal 模式：无 trigger（0.0）→ 用 close 作为潜在突破价
+        assert eng._c23_ok(self._sig(mode="normal", trigger=0.0, close=10.5, risk=1.0), window) is True
+        # 数据不足：窗口 < 22 根 → 不达标（与复算失败同语义）
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=1.0), self._mk_window(21)) is False
+        # 基准收盘为 0/负 → 不达标（防除零）
+        bad = self._mk_window(60)
+        bad.loc[bad.index[-21], "收盘"] = 0.0
+        assert eng._c23_ok(self._sig(trigger=10.5, risk=1.0), bad) is False
+
+    def test_c23_on_只减不增且保留者达标(self):
+        """端到端：c23 开 → 记录集 ⊆ 关闭时记录集，且保留者逐一通过 _c23_ok"""
+        df = make_kline(400, seed=42)
+        common = {"codes": ["000001"], "interval": 5, "holds": [5, 10],
+                  "env_gate": False, "volume_filter": False,
+                  "sentiment_gate": False, "prbook_gate": False}
+        off = BacktestEngine(BacktestParams(**common), provider=_FakeProvider(df))._process_stock("000001")
+        on = BacktestEngine(BacktestParams(**{**common, "c23": True}), provider=_FakeProvider(df))._process_stock("000001")
+        assert len(off) >= len(on) > 0
+        off_keys = {(r.signal.code, str(r.signal.date.date()), r.signal.mode) for r in off}
+        on_keys = {(r.signal.code, str(r.signal.date.date()), r.signal.mode) for r in on}
+        assert on_keys <= off_keys          # 只减不增
+        # 保留者必须逐一通过 _c23_ok（用与引擎同法重建信号日窗口验证）
+        ind_full = all_indicators(df.copy(), needed_cols=NEEDED)
+        on_eng = BacktestEngine(BacktestParams(**{**common, "c23": True}), provider=_FakeProvider(df))
+        for r in on:
+            t = list(df["日期"]).index(r.signal.date)
+            win = ind_full.iloc[: t + 1]
+            assert on_eng._c23_ok(r.signal, win) is True
+
+    def test_c23_默认关_与显式关一致(self):
+        """默认 c23=False 行为与显式 False 完全一致（V1 基线不受影响）"""
+        df = make_kline(400, seed=7)
+        common = {"codes": ["000001"], "interval": 5, "holds": [5, 10],
+                  "env_gate": False, "volume_filter": False,
+                  "sentiment_gate": False, "prbook_gate": False}
+        a = BacktestEngine(BacktestParams(**common), provider=_FakeProvider(df))._process_stock("000001")
+        b = BacktestEngine(BacktestParams(**{**common, "c23": False}), provider=_FakeProvider(df))._process_stock("000001")
+        assert [(r.signal.code, str(r.signal.date.date()), r.signal.grade,
+                 round(r.signal.close, 4), r.signal.risk) for r in a] == \
+               [(r.signal.code, str(r.signal.date.date()), r.signal.grade,
+                 round(r.signal.close, 4), r.signal.risk) for r in b]
+
+    def test_c23_计数_等于滤掉信号数(self):
+        """veto_c23 计数 = 关闭时信号数 - 开启时信号数（每笔被滤信号恰 +1）"""
+        df = make_kline(400, seed=42)
+        common = {"codes": ["000001"], "interval": 5, "holds": [5, 10],
+                  "env_gate": False, "volume_filter": False,
+                  "sentiment_gate": False, "prbook_gate": False}
+        off_eng = BacktestEngine(BacktestParams(**common), provider=_FakeProvider(df))
+        off = off_eng._process_stock("000001")
+        on_eng = BacktestEngine(BacktestParams(**{**common, "c23": True}), provider=_FakeProvider(df))
+        on = on_eng._process_stock("000001")
+        assert on_eng.gate_counts["veto_c23"] == len(off) - len(on)
+        assert off_eng.gate_counts["veto_c23"] == 0      # 关闭时恒 0
