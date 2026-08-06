@@ -21,10 +21,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 # ============ 配置 ============
 VIDEO_ROOT = Path(r"D:\BaiduNetdiskDownload\路肖南")          # 视频源
-OUT_ROOT = Path(r"C:\Users\32032\Desktop\deepseek\交易部\知识库")  # 转写输出：交易部知识库（按分类建主题）
-TMP_DIR = Path(r"C:\Users\32032\Desktop\deepseek\公共服务部\whisper-vulkan\tmp")       # 临时 wav
-WHISPER_CLI = Path(r"C:\Users\32032\Desktop\deepseek\公共服务部\whisper-vulkan\bin\whisper-cli.exe")
-MODEL = Path(r"C:\Users\32032\Desktop\deepseek\公共服务部\whisper-vulkan\models\ggml-large-v3-turbo-q8_0.bin")
+OUT_ROOT = Path(r"C:\Users\32032\Desktop\deepseek\工作流\交易部门\策略\知识库")  # 转写输出：交易部知识库（按分类建主题）
+TMP_DIR = Path(r"C:\Users\32032\Desktop\deepseek\工作流\公共资源部\第三方引擎\whisper-vulkan\tmp")       # 临时 wav
+WHISPER_CLI = Path(r"C:\Users\32032\Desktop\deepseek\工作流\公共资源部\第三方引擎\whisper-vulkan\bin\whisper-cli.exe")
+MODEL = Path(r"C:\Users\32032\Desktop\deepseek\工作流\公共资源部\第三方引擎\whisper-vulkan\models\ggml-large-v3-turbo-q8_0.bin")
 LANG = "zh"          # 语言：中文
 THREADS = 2          # 每个转写进程的 CPU 线程（GPU 主算，2 线程足够，5 路不超卖 CPU）
 WORKERS = 5          # 并行转写进程数（显存 12GB / 每路~2GB，5 路安全；调大可能引发驱动崩溃）

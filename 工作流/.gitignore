@@ -32,6 +32,15 @@ qc_tmp/
 # 知识库转写稿 raw 素材（不入库）
 交易部门/策略/知识库/**/raw/
 
+# 技能部署 junction（2026-08-07 改软链接：技能库/ 唯一源，部门副本为 junction，防误跟踪）
+工程部门/.claude/skills/
+公共资源部/.claude/skills/
+交易部门/.claude/skills/
+
+# 知识图谱工作区（understand-anything 生成，不入库）
+.ua/
+交易部门/.ua/
+
 # 临时字幕稿
 bv2_subtitle.txt
 bv3_subtitle.txt
