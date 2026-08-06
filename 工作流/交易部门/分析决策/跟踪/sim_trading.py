@@ -24,7 +24,13 @@ SIM_COLUMNS = [
     "entry_price", "stop_loss", "volume", "grade_at_entry",
     "ty_high", "ty_low", "status",
     "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
+    "env_scale",
 ]
+
+# G3 当日头寸统一（补完计划第二批 · 2026-08-06 定案）：
+# 当日档进程内缓存（date -> scale）——同日多次开仓档位一致；
+# 跨会话一致性由 journal 的 env_scale 列兜底（sim_open 先查当日已开仓记录）。
+_day_env_cache: dict[str, float] = {}
 
 
 def _ensure():
@@ -68,29 +74,92 @@ def check_affordability(price: float, risk_per_share: float,
     return shares, ""
 
 
-def _env_risk_scale(code: str) -> tuple[float, str]:
-    """G3 环境仓位判定：个股最新环境质量 → 风险缩放系数
+def _market_env_scale(date: str | None = None) -> float | None:
+    """当日市场环境档：上证指数 60 日窗口 environment_quality → 缩放系数
 
-    经验型模式/知识卡.md「环境好（非右下角）→ 正常 1R；环境不好（右下角）
-    → 0.5R」（2024-06-22/29）。判定与 indicators.environment_quality 同源
-    （个股 60 日窗口右下角特征：低点下移/反弹无力/横盘死水）。
-    数据不足/拉取失败 → 默认 1R（放行侧，不因数据问题误伤开仓）。
+    G3 当日头寸统一（2026-08-06 定案）：知识卡 经验型模式/知识卡.md「同一
+    市场环境头寸统一：不混合 1R 和 0.5R」（2024-06-01 周会原文：如果持仓都
+    是 0.5R → 说明这次普遍状态不好 → 保持全是 0.5R；进的都是一 R → 市场
+    表现都很好）。故当日档位由"市场整体环境"决定（指数右下角 = 大盘弱势 →
+    当日全池 0.5R），而非逐股独立判定（逐股判定会致同日 A 票 1R / B 票 0.5R
+    并存，违反知识卡）。
+    判定与个股 environment_quality 同函数同语义（60 日窗口低点下移/反弹无力/
+    横盘死水），对象换为上证指数（index_data.load_index_daily，本地缓存）。
+
+    Args:
+        date: 当日日期（YYYY-MM-DD，当前仅用于日志语义，预留）
+
+    Returns:
+        0.5 / 1.0；指数数据不可得 → None（调用方回退个股判定）
+    """
+    try:
+        from 分析决策.分析.indicators import environment_quality
+        from 分析决策.市场环境.index_data import load_index_daily
+        idx = load_index_daily("上证指数")
+        if idx is None or len(idx) < 30:
+            return None
+        env = environment_quality(idx)
+        return 0.5 if env["quality"] in ("weak", "bad") else 1.0
+    except Exception:  # noqa: BLE001 - 指数不可得 → 回退个股判定（放行侧，不误伤开仓）
+        return None
+
+
+def _env_risk_scale(code: str, date: str | None = None) -> tuple[float, str]:
+    """G3 当日头寸统一判定：当日市场环境档 → 风险缩放系数
+
+    优先链：当日进程内缓存（同日多次开仓一致）→ 当日市场环境（上证指数
+    60 日窗口，见 _market_env_scale）→ 回退个股自身环境判定（原 G3 逻辑，
+    指标同源 indicators.environment_quality）。任何一步数据不可得 → 默认 1R
+    （放行侧，不因数据问题误伤开仓）。
+
+    Args:
+        code: 股票代码（回退路径用）
+        date: 当日日期（YYYY-MM-DD；None=系统今日）
 
     Returns:
         (scale, 说明文本)：1.0=正常 1R，0.5=环境弱 0.5R
     """
+    today = date or datetime.now().strftime("%Y-%m-%d")
+    cached = _day_env_cache.get(today)
+    if cached is not None:
+        return cached, f"当日市场环境统一→{'0.5R' if cached == 0.5 else '1R'}"
+    s = _market_env_scale()
+    if s is not None:
+        _day_env_cache[today] = s
+        return s, f"当日市场环境统一→{'0.5R' if s == 0.5 else '1R'}"
+    # 回退：个股自身环境判定（原 G3；指数不可得时首笔锚定当日档）
     try:
         from 分析决策.分析.indicators import environment_quality
         from 数据基础.数据.fetcher import get_daily_kline
         df = get_daily_kline(code, use_cache=True)
         if df is None or len(df) < 30:
+            _day_env_cache[today] = 1.0
             return 1.0, "数据不足→1R"
         env = environment_quality(df)
         if env["quality"] in ("weak", "bad"):
-            return 0.5, f"环境{env['quality']}→0.5R"
-        return 1.0, "环境好→1R"
-    except Exception:
+            _day_env_cache[today] = 0.5
+            return 0.5, f"个股环境{env['quality']}→0.5R"
+        _day_env_cache[today] = 1.0
+        return 1.0, "个股环境好→1R"
+    except Exception:  # noqa: BLE001 - 判定异常 → 默认 1R（放行侧）
+        _day_env_cache[today] = 1.0
         return 1.0, "环境判定异常→1R"
+
+
+def _day_open_scale() -> float | None:
+    """当日已开仓记录的 env_scale（跨会话统一锚）
+
+    当日 journal 已有开仓记录 → 返回其档位（取最弱：当日出现过 0.5R →
+    当日统一 0.5R，与 2024-06-01"保持全是 0.5R"语义一致）；
+    无当日记录 → None（首笔开仓走 _env_risk_scale 判定）。
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    scales = [float(r["env_scale"]) for r in _read_all()
+              if r.get("date") == today and r.get("status") == "open"
+              and r.get("env_scale")]
+    if not scales:
+        return None
+    return min(scales)
 
 
 def sim_open(code: str, price: float, stop: float, grade: str = "",
@@ -99,13 +168,23 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
     """模拟开仓（多头）。返回结果文本。
 
     Args:
-        risk_scale: 风险缩放系数（None=按个股环境自动判定 1R/0.5R，G3）
+        risk_scale: 风险缩放系数（None=按当日头寸统一自动判定 1R/0.5R，G3
+            2026-08-06：先查当日已开仓记录档位 → 无则按当日市场环境判定；
+            手动指定则优先且不参与统一逻辑）
     """
     risk_ps = price - stop
     if risk_ps <= 0:
         return f"❌ 止损价({stop})须低于进场价({price})"
     if risk_scale is None:
-        risk_scale, env_note = _env_risk_scale(code)
+        # 当日头寸统一（2024-06-01 知识卡）：同日不混合 1R 和 0.5R。
+        # 当日已有开仓记录 → 统一沿用当日档（含 0.5R 强制当日全降）；
+        # 无记录 → 当日市场环境判定（指数 60 日窗口）并写入记录。
+        day_scale = _day_open_scale()
+        if day_scale is not None:
+            risk_scale = day_scale
+            env_note = f"当日统一沿用{'0.5R' if day_scale == 0.5 else '1R'}"
+        else:
+            risk_scale, env_note = _env_risk_scale(code)
     else:
         env_note = f"手动缩放{risk_scale:g}"
     shares, reason = check_affordability(price, risk_ps, risk_scale=risk_scale)
@@ -120,7 +199,7 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
         "entry_price": price, "stop_loss": stop, "volume": shares,
         "grade_at_entry": grade, "ty_high": ty_high, "ty_low": ty_low,
         "status": "open", "exit_price": "", "exit_date": "", "exit_reason": "",
-        "r_multiple": "", "pnl": "",
+        "r_multiple": "", "pnl": "", "env_scale": risk_scale,
     })
     _write_all(rows)
     return (f"✅ 模拟开仓 {code}({name or '无名'}) 评级{grade or '—'}\n"

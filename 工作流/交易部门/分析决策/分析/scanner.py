@@ -48,6 +48,10 @@ def scan_single_stock(
             if df.empty or len(df) < 60:
                 return None
 
+            # 板块上下文（G1 分板块涨跌停线 2026-08-06）：df.attrs 随切片/指标计算
+            # 传播（pandas attrs 语义），gap_limit_detect 据此判定 20cm 票用 19.5% 线。
+            df.attrs["code"] = code
+
             # 快速预过滤：在计算所有指标前快速排除（仅用基础K线列）
             if not strategy.quick_prefilter(df):
                 return None
@@ -90,8 +94,10 @@ def scan_single_stock(
                 # 知识库 经验型模式/知识卡.md「环境好（非右下角）→ 正常 1R；
                 # 环境不好（右下角）→ 0.5R」（2024-06-22/29）——个股 60 日窗口
                 # 右下角特征判定（indicators.environment_quality，与 B1 大盘闸门
-                # 维度不同：B1 管大盘"做不做"，G3 管个股环境"做多少"）。
-                # 标注供候选表可见；实际仓位缩放由 sim_open/_env_risk_scale 自动执行。
+                # 维度不同：B1 管大盘"做不做"，G3 管当日市场环境"做多少"）。
+                # 标注供候选表可见（个股维度信息）；实际仓位缩放由 sim_open 执行
+                # 当日头寸统一档（2024-06-01「同一市场环境头寸统一」：当日市场
+                # 环境档 = 上证指数 60 日窗口判定，见 sim_trading._market_env_scale）。
                 try:
                     from 分析决策.分析.indicators import environment_quality
                     env = environment_quality(df)

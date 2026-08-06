@@ -459,6 +459,30 @@ class TestPlatformCount:
 # G1 经常跳空/涨跌停（品种筛选一票否决#4 · 补完计划）
 # ============================================================
 
+
+def _inject_limit_sequential(df, idxs, pct=0.10):
+    """顺序注入涨/跌停：注入点按当前前收计算（保持 1.1 关系），次根联动消除假事件"""
+    d = df.copy()
+    c = d["收盘"].values.astype(float).copy()
+    op = d["开盘"].values.astype(float).copy()
+    hi = d["最高"].values.astype(float).copy()
+    lo = d["最低"].values.astype(float).copy()
+    for i in sorted(idxs):
+        p = c[i - 1]
+        c[i] = p * (1.0 + pct)
+        op[i] = p * 1.01
+        hi[i] = c[i]
+        if i + 1 < len(c):
+            delta = c[i] * 0.995 - c[i + 1]
+            if delta != 0:
+                c[i + 1:] += delta
+                op[i + 1:] += delta
+    d["收盘"] = c
+    d["开盘"] = op
+    d["最高"] = hi
+    d["最低"] = lo
+    return d
+
 class TestGapLimitDetect:
     """知识卡原文「经常跳空/涨跌停品种——连续性不好」（2024-07-16）"""
 
@@ -498,28 +522,92 @@ class TestGapLimitDetect:
         assert not res["excluded"]
 
     def test_frequent_limit_up_exclude(self):
-        """60 根内 3 次涨停 → 排除"""
+        """60 根内 5 次涨停 → 排除（2026-08-06 定案：阈值 3→5）"""
         df = self._base()
-        for i in [70, 73, 76]:
-            df = self._set_bar(df, i, 0.10)
+        for i in [62, 65, 68, 71, 74]:
+            df = self._set_bar(df, i, 0.10, one_line=False)
         res = gap_limit_detect(df)
         assert bool(res["excluded"])
-        assert res["limit_days"] >= 3
+        assert res["limit_days"] >= 5
         assert "涨跌停" in res["reason"]
 
+    def test_3_limit_up_not_exclude(self):
+        """60 根内 3 次涨停（非一字、不高开）→ 放行（5 次阈值下不再是"经常"）"""
+        df = _inject_limit_sequential(self._base(), [62, 65, 68])
+        res = gap_limit_detect(df)
+        assert not res["excluded"]
+        assert res["limit_days"] == 3
+
     def test_frequent_gap_exclude(self):
-        """60 根内 3 次以上 3% 跳空 → 排除"""
+        """60 根内 5 次 4% 跳空 → 排除（2026-08-06 定案：跳空线 3%→4%、阈值 5 次）"""
         df = self._base()
         d = df.copy()
         op = d["开盘"].values.copy()
         c = d["收盘"].values.copy()
-        for i in [25, 35, 45, 55]:
+        for i in [25, 35, 45, 55, 65]:
             op[i] = c[i - 1] * 1.04
         d["开盘"] = op
         res = gap_limit_detect(d)
         assert bool(res["excluded"])
-        assert res["gap_days"] >= 4
+        assert res["gap_days"] >= 5
         assert "跳空" in res["reason"]
+
+    def test_20cm_board_line(self):
+        """20cm 票（代码前缀 300/688）：10% 波动不触 19.5% 线 → 5 次也不排除"""
+        df = _inject_limit_sequential(self._base(), [62, 65, 68, 71, 74])
+        df.attrs["code"] = "300123"
+        res = gap_limit_detect(df)
+        assert not res["excluded"]
+
+    def test_20cm_20pct_exclude(self):
+        """20cm 票：5 次 20% 涨停（19.5% 线）→ 排除"""
+        df = self._base()
+        for i in [62, 65, 68, 71, 74]:
+            df = self._set_bar(df, i, 0.20, one_line=False)
+        op = df["开盘"].values.copy()
+        c = df["收盘"].values.copy()
+        for i in [62, 65, 68, 71, 74]:
+            op[i] = c[i - 1] * 1.01
+        df["开盘"] = op
+        df.attrs["code"] = "688001"
+        res = gap_limit_detect(df)
+        assert bool(res["excluded"])
+        assert res["limit_days"] >= 5
+
+    def test_mainboard_20pct_exclude_compare(self):
+        """分板块对照：同数据（5 次 20% 涨停）在主板 9.5% 线下同样排除"""
+        df = self._base()
+        for i in [62, 65, 68, 71, 74]:
+            df = self._set_bar(df, i, 0.20, one_line=False)
+        op = df["开盘"].values.copy()
+        c = df["收盘"].values.copy()
+        for i in [62, 65, 68, 71, 74]:
+            op[i] = c[i - 1] * 1.01
+        df["开盘"] = op
+        df.attrs["code"] = "600000"
+        res = gap_limit_detect(df)
+        assert bool(res["excluded"])
+
+    def test_20cm_10pct_not_exclude_compare(self):
+        """分板块对照：20cm 票 5 次 10% 涨停不触 19.5% 线 → 放行（同数据主板会排除）"""
+        df = _inject_limit_sequential(self._base(), [62, 65, 68, 71, 74])
+        df.attrs["code"] = "300123"
+        res20 = gap_limit_detect(df)
+        assert not res20["excluded"]
+        df.attrs["code"] = "600000"
+        res_main = gap_limit_detect(df)
+        assert bool(res_main["excluded"])
+
+    def test_board_limit_pct(self):
+        """分板块涨跌停线判定"""
+        from 分析决策.分析.indicators import board_limit_pct
+        assert board_limit_pct("600519") == 0.095
+        assert board_limit_pct("000001") == 0.095
+        assert board_limit_pct("300001") == 0.195
+        assert board_limit_pct("301001") == 0.195
+        assert board_limit_pct("688001") == 0.195
+        assert board_limit_pct("689001") == 0.195
+        assert board_limit_pct(None) == 0.095
 
     def test_latest_one_line_limit_exclude(self):
         """最新日一字涨停（无法买入）→ 排除"""
