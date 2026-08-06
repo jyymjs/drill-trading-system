@@ -45,4 +45,5 @@ if ($src) { Copy-Item $src.FullName "产出\输出\扫描_$date.csv" -Force; Add
 & 'C:\Program Files\Python312\python.exe' main.py rcurve stats --plot *>> $log
 & 'C:\Program Files\Python312\python.exe' main.py track equity-report *>> $log
 & 'C:\Program Files\Python312\python.exe' main.py track dual-line *>> $log
+& 'C:\Program Files\Python312\python.exe' main.py dashboard --live-only *>> $log
 Add-Content -Path $log -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] scan done"

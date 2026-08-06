@@ -245,6 +245,19 @@ def cmd_diagnose(args):
             print(f"  建议手数: {_cl(pr.get('risk_per_share',1))}")
 
 
+def cmd_dashboard(args):
+    """统一可视化图表（回测 8 + 蒙卡 3 + 实盘 3）"""
+    from 分析决策.可视化.dashboard import main as dash_main
+    import sys as _sys
+    argv = ["dashboard"]
+    if getattr(args, "live_only", False):
+        argv.append("--live-only")
+    if getattr(args, "smoke", None):
+        argv += ["--smoke", str(args.smoke)]
+    _sys.argv = argv
+    return dash_main()
+
+
 def cmd_track(args):
     """交易记录管理"""
     import numpy as np
@@ -511,6 +524,12 @@ def main():
     rcurve_parser.add_argument("args", nargs=argparse.REMAINDER,
                                help="转发给 r_curve 子命令（record/record-r/list/stats/plot/delete）")
 
+    # dashboard（2026-08-07 老板指令：统一可视化图表）
+    dash_parser = subparsers.add_parser("dashboard", help="统一可视化图表（回测/蒙卡/实盘）")
+    dash_parser.add_argument("--live-only", action="store_true",
+                             help="只更新实盘图表（每日随扫描）")
+    dash_parser.add_argument("--smoke", type=int, default=None)
+
     # track
     track_parser = subparsers.add_parser("track", help="交易记录管理")
     track_parser.add_argument("action", type=str, nargs="?",
@@ -576,6 +595,8 @@ def main():
     elif args.command == "rcurve":
         from 分析决策.跟踪.r_curve import main as r_curve_main
         raise SystemExit(r_curve_main(sys.argv[2:]))
+    elif args.command == "dashboard":
+        cmd_dashboard(args)
     else:
         parser.print_help()
 
