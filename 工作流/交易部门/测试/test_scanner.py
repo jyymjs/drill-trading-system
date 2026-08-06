@@ -289,6 +289,9 @@ def test_cmd_scan_prebreak_splits(monkeypatch):
     ]
     monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
     monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": results_all)
+    # T-022 当日去重隔离（2026-08-07 修复）：真实环境下当日 scan_result 文件
+    # 存在会触发去重提前 return，测试必须 mock 掉——否则与真实环境耦合
+    monkeypatch.setattr(main_mod, "_scan_report_already_today", lambda: None)
 
     saved = []
     printed = []
@@ -427,6 +430,9 @@ def test_cmd_scan_prebreak_c23_filter(monkeypatch):
     ]
     monkeypatch.setattr(main_mod, "_load_strategy", lambda name: FakeStrategy())
     monkeypatch.setattr(main_mod, "scan", lambda strategy, mode="normal": results_all)
+    # T-022 当日去重隔离（2026-08-07 修复）：与真实环境解耦（同
+    # test_cmd_scan_prebreak_splits——当日 scan_result 文件存在会提前 return）
+    monkeypatch.setattr(main_mod, "_scan_report_already_today", lambda: None)
 
     saved = []
     printed = []

@@ -91,6 +91,12 @@ def order_card(candidates: list[dict], capital: float | None = None,
         out.append("  今日无新候选（挂单指引无内容）")
         out.append(line)
         return "\n".join(out)
+    # 池校验集（2026-08-07 修复 600001 污染）：循环外取一次，避免每票重复拉取
+    try:
+        from 数据基础.配置.stock_pool import get_stock_codes
+        known_codes = set(get_stock_codes())
+    except (ImportError, TypeError):
+        known_codes = None  # 校验不可用 → 信任上游参数校验
     for r in candidates:
         code = r.get("code", "?")
         name = r.get("name", "")
@@ -98,6 +104,17 @@ def order_card(candidates: list[dict], capital: float | None = None,
         stop = r.get("止损价", 0) or 0
         risk_ps = r.get("每股风险", 0) or 0
         grade = r.get("评级", "?")
+        # 候选有效性校验（2026-08-07 修复 600001 污染）：参数无效或池外票
+        # （触发/止损/每股风险必须 >0 且 code 在股票池）→ 标注跳过，不参与挂单。
+        # 背景：08-07 执行卡曾出现 600001（池外票、触发 10.00/止损 0.00，
+        # 与测试数据同形）——执行卡落盘污染，挂单指引不可信。
+        valid = trigger > 0 and stop > 0 and risk_ps > 0
+        if valid and known_codes is not None:
+            valid = code in known_codes
+        if not valid:
+            out.append(f"  ⚠️ [{grade}] {code} {name} | 参数无效/池外票——已剔除"
+                       "（不参与挂单；请核对数据源）")
+            continue
         shares, reason = sim_trading.check_affordability(trigger, risk_ps,
                                                          risk_scale=scale)
         if shares < 100:

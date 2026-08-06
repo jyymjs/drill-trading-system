@@ -54,9 +54,20 @@ def log(msg):
 
 
 def load_state():
+    """读取断点续传状态；跨天失效（2026-08-07 修复）
+
+    state 记录每只 daily/xdxr 完成状态供「同一天内」续传（重启跳过 done、
+    续跑 failed）。此前 done 标记永不过期 → 次日增量全部被跳过（数据停更，
+    08-06/08-07 事故根源）。现在按 _meta.run_date 判定：非今天 → 视为空，
+    当天重跑仍跳过 done（幂等 upsert，跨天自动全池重拉最新窗口）。
+    """
     if STATE_PATH.exists():
         with open(STATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            state = json.load(f)
+        today = time.strftime("%Y-%m-%d")
+        if state.get("_meta", {}).get("run_date") != today:
+            return {}
+        return state
     return {}
 
 
@@ -103,6 +114,9 @@ def main():
     known = set(S.known_symbols(con))
     log(f"库内已有 {len(known)} 只")
     state = load_state()
+    # 断点续传日期戳（2026-08-07 修复）：_meta.run_date = 本次运行日期，
+    # load_state 据此判定跨天失效；同日重跑（失败重试）仍跳过 done。
+    state["_meta"] = {"run_date": time.strftime("%Y-%m-%d")}
 
     if args.only_failed:
         failed = [s for s, r in state.items() if r.get("daily") == "failed" or r.get("xdxr") == "failed"]
