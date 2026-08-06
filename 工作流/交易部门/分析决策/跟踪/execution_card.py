@@ -106,6 +106,10 @@ def order_card(candidates: list[dict], capital: float | None = None,
             note_s = f"挂单 {shares} 股（风险 {risk_ps * shares:.0f} 元 ≤ {risk_amt:.0f} 元）"
         out.append(f"  [{grade}] {code} {name} | 触发 {trigger:.2f} | 止损 {stop:.2f}"
                    f" | 每股风险 {risk_ps:.2f} | {label}: {note_s}")
+        if shares >= 100:
+            # 条件单参数（2026-08-07 老板确认：券商条件单自动化执行）
+            out.append(f"      📋 条件单：买入条件（价格≥{trigger:.2f} → 买 {shares} 股）"
+                       f" ｜ 止损条件（价格≤{stop:.2f} → 卖出）")
     if scale != 1.0:
         out.append(f"  ※ {label}：挂单量按 0.5R 半额风险预算（{risk_amt:.0f} 元）计算；"
                    "次日确认后补仓等额。")
@@ -179,6 +183,13 @@ def position_card(rows: list[dict] | None = None) -> str:
         else:  # wait
             out.append(f"  ⏳ {code} {name}: {step['reason']}（进场 {entry:.2f} / "
                        f"止损 {stop:.2f}），持有 0.5R 等待确认")
+        # 止盈条件单（2026-08-07 老板确认：G5 TTP 回落卖出自动化）
+        # 目标价 = 进场 + 5R（G7 三区间 5R 界），回落 36%（G5 check_36pct_trail 缓冲）
+        risk_ps = entry - stop
+        if risk_ps > 0 and act in ("add", "hold", "wait"):
+            ttp_target = entry + 5.0 * risk_ps
+            out.append(f"      📋 止盈条件单：价格达 {ttp_target:.2f} 后回落 36% → 卖出"
+                       f"（5R 目标，G7 界）")
     out.append(line)
     return "\n".join(out)
 
