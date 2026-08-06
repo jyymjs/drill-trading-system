@@ -1199,6 +1199,52 @@ def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     return {"quality": quality, "signal": float(n_bad), "reason": reason}
 
 
+def phase_confirm_from_kline(df: pd.DataFrame, signal_date: str,
+                             entry_price: float, stop_loss: float) -> dict:
+    """0.5R 分步建仓·信号日→触发日→次日收线确认 完整回放（G3 2026-08-06）
+
+    供 ② sim_capital.half_phase 资金占用模拟 与 ③ 确认规则质量验证回放 共用——
+    触发日定位与回测层 tracking._track_prebreak 同规则（信号日 T 之后首根
+    最高 ≥ 触发价的 K 线为触发日/入场日），确认判定单一来源 half_position_confirm
+    （C1 收下去 / C2 动能延续 / C3 非放量阴线 / 止损层面1 优先），不复制规则。
+
+    Args:
+        df: 个股日K线（日期/开盘/收盘/最高/最低/成交量，升序）
+        signal_date: 信号日（YYYY-MM-DD；prebreak 模式信号日后才可能触发）
+        entry_price: 0.5R 起步进场价（prebreak = 触发价）
+        stop_loss: 结构止损价
+
+    Returns:
+        {"confirmed"/"stopped"/"reject": bool, "close": float,
+         "trigger_date"/"confirm_date": str, "reason": str, "wait": bool}
+        wait=True → 信号日后未触发（数据窗口不足/无触发 K 线），调用方放行处理
+        trigger_date = 入场日；confirm_date = 入场日次日（收线确认日）
+    """
+    dates = df["日期"].astype(str).str[:10].values
+    highs = df["最高"].values
+    trig_idx = None
+    for i, d in enumerate(dates):
+        if d > signal_date and highs[i] >= entry_price:
+            trig_idx = i
+            break
+    if trig_idx is None:
+        return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
+                "close": 0.0, "trigger_date": "", "confirm_date": "", "reason": "信号日后未触发"}
+    conf_idx = trig_idx + 1
+    if conf_idx >= len(df):
+        return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
+                "close": 0.0, "trigger_date": str(dates[trig_idx])[:10],
+                "confirm_date": "", "reason": "确认收线未出现（数据窗口不足）"}
+    verdict = half_position_confirm(df.iloc[:conf_idx + 1], entry_price, stop_loss)
+    return {
+        "confirmed": verdict["confirmed"], "stopped": verdict["stopped"],
+        "reject": verdict["reject"], "close": verdict["close"],
+        "trigger_date": str(dates[trig_idx])[:10],
+        "confirm_date": str(dates[conf_idx])[:10],
+        "reason": verdict["reason"], "wait": False,
+    }
+
+
 def reversal_3to1(df: pd.DataFrame, run_start: int | None = None) -> dict:
     """A 段逆转判定（内训第六节：完全逆转 = 动能四要素至少 3:1 胜过最后一段运行）
 
