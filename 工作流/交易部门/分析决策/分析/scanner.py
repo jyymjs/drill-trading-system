@@ -24,6 +24,15 @@ C23_MOM_MAX = 0.10    # 动量上限：触发价 vs 20 交易日前收盘涨幅 
 C23_RISK_MIN = 0.5    # 止损距离下限（元）：trigger - stop ≥ 0.5（太近易被扫）
 C23_RISK_MAX = 3.0    # 止损距离上限（元）：trigger - stop ≤ 3.0（太远盈亏比差）
 
+# G8 像素感池级预筛（2026-08-06）：知识卡「像素感直接pass掉，交投清淡不是真实意愿」
+# （2024-07-16 扫盘）——像素感严重（px < 阈值，评级内 = C 级硬降级）的品种在
+# 指标计算/评级前直接排除（池级预筛）。px 只用基础K线列（开/高/低/收）numpy
+# 向量化（~微秒级），预筛成本可忽略（像素感本身是评级内条件之一，预筛不改变
+# 评级口径，只是提前排除必然被评 C 的票）。
+# 阈值与策略评级内 PX_B 同值（策略/核心策略/samples/zuanqian_strategy.py PX_B=0.35，
+# 与 C23 常量同款约定：改动需两处同步）。
+G8_PX_THRESHOLD = 0.35
+
 
 def scan_single_stock(
     stock: dict,
@@ -54,6 +63,13 @@ def scan_single_stock(
 
             # 快速预过滤：在计算所有指标前快速排除（仅用基础K线列）
             if not strategy.quick_prefilter(df):
+                return None
+
+            # G8 像素感池级预筛（2026-08-06）：px < 阈值 = 像素感严重（交投清淡，
+            # 老师"像素感直接pass掉"）→ 在指标计算/评级前直接排除（评级内同样判
+            # C，预筛只提前排除，不改口径）。px 仅用基础K线列，成本 ~微秒级。
+            from 分析决策.分析.indicators import pixelation_score
+            if pixelation_score(df) < G8_PX_THRESHOLD:
                 return None
 
             # 按需计算指标：策略声明的 required_indicators → 只算需要的列

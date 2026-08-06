@@ -53,6 +53,7 @@ def cmd_run(args) -> int:
         missing_sentiment=args.missing_sentiment,
         dn_confirm=args.dn_confirm,
         c23=args.c23,
+        phase_in=args.phase_in,
     )
     try:
         params.validate()
@@ -230,6 +231,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--c23", action="store_true",
                        help="C23 收紧（T-027 2026-08-06 老板拍板）：信号层过滤 动量≤10% + 止损距离 0.5~3 元"
                             "（无前视版；阈值单一来源 tighten_compare）。默认关=V1 基线，显式开=V2 现行策略")
+    run_p.add_argument("--phase-in", action="store_true",
+                       help="G3 分步建仓（2026-08-06 · 2024-06-29 周会原文）：进场 0.5R → 下一根收线确认"
+                            "（收下去/动能接受）→ 确认补至 1R / 未确认 0.5R 平仓。默认关=现有行为"
+                            "（回测对照；模拟层 sim_trading 恒开启分步）")
 
     verify_p = sub.add_parser("verify", help="验收自检（收盘价抽查；同源重演请用 run --verify-samples）")
     verify_p.add_argument("--signals", required=True, help="signals.csv 路径")

@@ -1075,6 +1075,80 @@ def support_bounce(df: pd.DataFrame, levels: list[float] | None = None,
 # A 段逆转 3:1：内训第六节 "完全逆转 = 动能四要素至少 3:1 胜过最后一段运行"
 # ══════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════
+# G3 分步建仓·收线确认（2026-08-06 工程接入 · 2024-06-29 周会原文定案）
+# 原文（周会录屏/raw/2024-06-29周会.txt）：
+#   「就收到这 我会先进个二分之一啊 然后等下一个收线 下一个收线
+#     比如说收下去 我再进二分之一啊」
+#   「你0.5R是百分之百 因为认为前面有问题 才做0.5R」
+#   「然后回过头来仔细看 觉得优势不突出 动能无法接受 就马上平仓了」
+# 定案语义（知识卡 经验型模式/知识卡.md 仓位与环境节 2026-08-06 标注）：
+#   0.5R = 分步建仓的第一步（非终局减半）——先进 0.5R → 下一根 K 线收线确认
+#   （收下去/动能接受）→ 再补 0.5R（总 1R）；收线不确认 → 马上平仓。
+# 确认规则（可解释，纯基础K线列；判定风格对齐 exit_manager）：
+#   C1 收下去：确认日收盘 ≥ 进场价（未跌回进场价下方）
+#   C2 动能延续：确认日收盘 ≥ 开仓日收盘（未转弱）
+#   C3 非动能拒绝形态：非"放量阴线"（量比>1.5 且 收阴 = 放量抛压，动能被拒绝）
+#   三条件全满足 = 确认；任一不满足 → 不确认（平仓 0.5R）。
+#   止损优先：确认日最低 ≤ 止损价 → 层面1 止损出场（先于确认判定）。
+# ══════════════════════════════════════════════════════════
+
+def half_position_confirm(df: pd.DataFrame, entry_price: float, stop_loss: float) -> dict:
+    """0.5R 分步建仓·下一根收线确认（G3 · 2024-06-29 周会原文）
+
+    语义：0.5R = 分步建仓第一步——先进 0.5R，下一根收线确认（收下去/动能接受）
+    则补 0.5R（总 1R）；收线不确认（优势不突出/动能无法接受）→ 马上平仓。
+    出处见模块上方 G3 定案注释。
+
+    Args:
+        df: K线DataFrame，最后两根 = 开仓日 K 线 + 确认收线（调用方负责切片；
+            模拟层 sim_trading / 回测层 tracking 同源调用）
+        entry_price: 0.5R 起步进场价
+        stop_loss: 结构止损价（层面1，先于确认判定）
+
+    Returns:
+        {"confirmed": bool, "stopped": bool, "reject": bool, "wait": bool,
+         "close": float, "reason": str}
+        wait=True → 收线未出现（不足两根），继续持有等待
+        stopped=True → 确认日已触止损（层面1 优先，按止损价平仓）
+        confirmed=True → 收线确认（补 0.5R，总 1R）
+        reject=True → 收线不确认 → 马上平仓（"觉得优势不突出，动能无法接受"）
+    """
+    if len(df) < 2:
+        return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
+                "close": 0.0, "reason": "收线未出现（等待下一根）"}
+    conf = df.iloc[-1]
+    open_day = df.iloc[-2]
+    conf_close = float(conf["收盘"])
+    conf_low = float(conf["最低"])
+    # 止损优先（层面1：结构止损位先于确认判定——触止损即平，无论动能）
+    if conf_low <= stop_loss:
+        return {"confirmed": False, "stopped": True, "reject": False, "wait": False,
+                "close": conf_close, "reason": "止损触发(层面1)"}
+    conf_open = float(conf["开盘"])
+    open_close = float(open_day["收盘"])
+    # C3 动能拒绝形态：放量阴线（量比>1.5 且收阴 = 放量抛压吞没，动能被拒绝）
+    reject_vol = False
+    if "成交量" in df.columns and len(df) >= 6:
+        vol = float(conf["成交量"])
+        vol_ma5 = float(df["成交量"].iloc[-6:-1].mean())
+        reject_vol = vol_ma5 > 0 and vol > vol_ma5 * 1.5 and conf_close < conf_open
+    # C1 收下去（收盘 ≥ 进场价）+ C2 动能延续（收盘 ≥ 开仓日收盘）
+    confirmed = conf_close >= entry_price and conf_close >= open_close and not reject_vol
+    if confirmed:
+        return {"confirmed": True, "stopped": False, "reject": False, "wait": False,
+                "close": conf_close, "reason": "收线确认（收下去/动能接受）"}
+    parts = []
+    if conf_close < entry_price:
+        parts.append("收盘跌破进场价")
+    if conf_close < open_close:
+        parts.append("收盘较开仓日转弱")
+    if reject_vol:
+        parts.append("放量阴线(动能拒绝)")
+    return {"confirmed": False, "stopped": False, "reject": True, "wait": False,
+            "close": conf_close, "reason": "收线未确认：" + "/".join(parts)}
+
+
 def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     """市场环境质量判定（0.5R 机制的环境部分）
 

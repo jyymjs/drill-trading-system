@@ -12,7 +12,7 @@
     单笔风险执行检查（是否恒 ≤ 单笔风险额）+ 100 笔节奏预估（按实际信号频率）
 
 用法:
-    python 项目/回测系统/sim_capital.py [--signals 路径] [--capital 5600] [--risk-ratio 0.015]
+    python 项目/回测系统/sim_capital.py [--signals 路径] [--capital 5600] [--risk-ratio 0.02]
         [--max-positions 2] [--mode prebreak] [--hold 20d] [--grades S A B]
         [--out-csv 资金曲线.csv]
 """
@@ -239,7 +239,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--signals", default=DEFAULT_SIGNALS)
     ap.add_argument("--capital", type=float, default=5600.0, help="初始资金（默认 5600，老板约束）")
-    ap.add_argument("--risk-ratio", type=float, default=0.015, help="单笔风险比例（默认 1.5%%，老板约束）")
+    ap.add_argument("--risk-ratio", type=float, default=0.02,
+                    help="单笔风险比例（默认 2.0%%——G9 实盘线定稿参数 2026-08-06 老板拍板，"
+                         "2.0%%×3仓 与网格实验 T-023 同口径；对照实验显式传旧值 0.015）")
     ap.add_argument("--max-positions", type=int, default=2,
                     help="最多同时持仓数（默认 2，老板实盘约束；1=旧版单持仓顺序）")
     ap.add_argument("--mode", default="prebreak", choices=["normal", "prebreak"])

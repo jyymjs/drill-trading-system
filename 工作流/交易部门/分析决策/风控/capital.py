@@ -6,7 +6,13 @@ from pathlib import Path
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "journal"
 CAPITAL_FILE = CONFIG_DIR / "capital.json"
 
-RISK_RATIO = 0.015  # 单笔风险 = 总资金 × 1.5%
+# G9 资金配置定稿（2026-08-06 老板拍板）：单笔风险 = 总资金 × 2.0% × 3 仓
+# （实盘线定稿参数；与网格实验 T-023「2.0% × 3 仓 = 总风险 6%」同口径；
+# 与 calc_risk_by_drawdown 推导吻合：可承受 20% 回撤 ÷ 10 次连亏（分母留余量）= 2%，
+# 内训第26节老师口径）。
+# 注意：这是"实盘线定稿参数"——回测/模拟对照实验如需其他比例（如旧 1.5%），
+# 显式传参即可（sim_capital --risk-ratio / monte_carlo_c23 --risk-pct 均参数化）。
+RISK_RATIO = 0.02  # 单笔风险 = 总资金 × 2%
 
 
 def _ensure():

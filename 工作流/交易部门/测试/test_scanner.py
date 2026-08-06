@@ -52,11 +52,16 @@ class FakeStrategy(BaseStrategy):
 
 
 def make_kline(n: int = 100, last_close: float = 10.0) -> pd.DataFrame:
-    """生成模拟 K 线（桩策略覆盖 quick_prefilter，无需真实形态）"""
+    """生成模拟 K 线（桩策略覆盖 quick_prefilter，无需真实形态）
+
+    开盘 = 收盘×0.985：保证实体占比（px = 0.575 ≥ G8 预筛阈值 0.35），
+    避免像素感预筛（G8 2026-08-06）误伤测试桩（开=收 的零实体数据
+    会被判"像素感严重"→ px 0.2 < 0.35 排除）。
+    """
     closes = np.linspace(8.0, last_close, n)
     return pd.DataFrame({
         "日期": pd.bdate_range("2025-01-01", periods=n),
-        "开盘": closes,
+        "开盘": closes * 0.985,
         "收盘": closes,
         "最高": closes * 1.01,
         "最低": closes * 0.99,
@@ -443,3 +448,45 @@ def test_cmd_scan_prebreak_c23_filter(monkeypatch):
     assert saved[0] == (["600002"], "_c23")
     assert saved[1] == (["600001"], "")
     assert saved[2] == (["600003"], "_broken")
+
+
+# ============ G8: 像素感池级预筛（2026-08-06） ============
+
+def _px_kline(n: int = 80, body_ratio: float = 0.5) -> pd.DataFrame:
+    """构造指定实体占比的 K 线（控制 pixelation_score）"""
+    closes = np.linspace(8.0, 9.0, n)
+    spread = 0.02  # 最高/最低波幅 ±1%
+    return pd.DataFrame({
+        "日期": pd.bdate_range("2025-01-01", periods=n),
+        # 实体 = 收盘×(body_ratio)；影线 = (1-body_ratio)
+        "开盘": closes * (1 - body_ratio * spread),
+        "收盘": closes,
+        "最高": closes * (1 + spread),
+        "最低": closes * (1 - spread),
+        "成交量": np.full(n, 1e6),
+        "涨跌幅": np.zeros(n),
+        "换手率": np.zeros(n),
+    })
+
+
+def test_px_prefilter_excludes_pixelated(monkeypatch):
+    """G8: 像素感严重（px < 0.35）→ 池级预筛直接排除（不进入评级）"""
+    from 分析决策.分析.indicators import pixelation_score
+    df = _px_kline(body_ratio=0.1)  # 实体占比 10% → 长影线像素感
+    assert pixelation_score(df) < scanner.G8_PX_THRESHOLD
+    monkeypatch.setattr(scanner, "get_daily_kline", lambda code, use_cache=True: df)
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "像素股"}, FakeStrategy(), mode="prebreak")
+    assert entry is None
+
+
+def test_px_prefilter_passes_normal(monkeypatch):
+    """G8: 像素感正常（px ≥ 0.35）→ 预筛放行，正常走评级"""
+    from 分析决策.分析.indicators import pixelation_score
+    df = _px_kline(body_ratio=0.9)  # 实体占比 90% → 正常
+    assert pixelation_score(df) >= scanner.G8_PX_THRESHOLD
+    monkeypatch.setattr(scanner, "get_daily_kline", lambda code, use_cache=True: df)
+    entry = scanner.scan_single_stock(
+        {"code": "600001", "name": "正常股"}, FakeStrategy(trigger_price=10.0),
+        mode="prebreak")
+    assert entry is not None
