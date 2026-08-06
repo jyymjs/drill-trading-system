@@ -72,9 +72,13 @@ def _new_fig(w=12, h=6):
     return fig, ax
 
 
+_SUBDIR: str | None = None   # 测试归档子目录（--subdir 设置）
+
+
 def _save(fig, name: str) -> str:
-    CHART_DIR.mkdir(parents=True, exist_ok=True)
-    path = CHART_DIR / f"图表-{name}.png"
+    target = CHART_DIR / _SUBDIR if _SUBDIR else CHART_DIR
+    target.mkdir(parents=True, exist_ok=True)
+    path = target / f"图表-{name}.png"
     fig.savefig(path, dpi=130, bbox_inches="tight", facecolor=BG)
     plt.close(fig)
     return str(path)
@@ -493,7 +497,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", type=int, default=None)
     ap.add_argument("--live-only", action="store_true", help="只更新实盘图表（每日）")
+    ap.add_argument("--subdir", type=str, default=None,
+                    help="测试归档子目录（如 20260807-全面测试）")
     args = ap.parse_args()
+    if args.subdir:
+        global _SUBDIR
+        _SUBDIR = args.subdir
     if args.live_only:
         paths = plot_live_group()
         print(f"实盘图表 {len(paths)} 张已更新")
