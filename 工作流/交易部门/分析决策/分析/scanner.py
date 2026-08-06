@@ -286,6 +286,25 @@ def split_prebreak_results(results: list[dict]) -> tuple[list[dict], list[dict]]
     return candidates, broken
 
 
+def apply_vol_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
+    """放量过滤（2026-08-07 T-020 接线 · 老板拍板）
+
+    只保留放量候选（最新日成交量 ≥ 前20日均量×1.5 = 量比>1.5）——与回测
+    dn_confirm=1.5 口径对齐（回测：突破日量比 ≤1.5 视为未触发，不进场）。
+    不达标行返回 rejected 供研究（不参与挂单候选，_vol 后缀保存）。
+    放量阈值 0（数据不足）→ 放行侧（不因数据问题误杀挂单候选）。
+    """
+    passing, rejected = [], []
+    for r in results:
+        vol = r.get("成交量") or 0
+        thr = r.get("放量阈值") or 0
+        if thr > 0 and vol < thr:
+            rejected.append(r)
+        else:
+            passing.append(r)
+    return passing, rejected
+
+
 def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
     """C23 过滤（2026-08-06 老板拍板替换进策略）
 

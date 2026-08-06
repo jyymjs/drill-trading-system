@@ -148,6 +148,16 @@ def cmd_scan(args):
             print_results(c23_rejected, mode=mode)
             save_results(c23_rejected, suffix="_c23")
 
+        # 2026-08-07 T-020 接线（老板拍板）：放量过滤——只输出放量候选
+        # （最新日量比>1.5，与回测 dn_confirm=1.5 口径对齐）；不达标行保留供研究
+        from 分析决策.分析.scanner import apply_vol_filter
+        results, vol_rejected = apply_vol_filter(results)
+        if vol_rejected:
+            print(f"\n=== 放量过滤（量比≤1.5，不参与挂单候选，供研究）: "
+                  f"{len(vol_rejected)} 只 ===")
+            print_results(vol_rejected, mode=mode)
+            save_results(vol_rejected, suffix="_vol")
+
     if results:
         print_results(results, mode=mode)
         save_results(results)
