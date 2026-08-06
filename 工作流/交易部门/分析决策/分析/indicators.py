@@ -1093,12 +1093,61 @@ def support_bounce(df: pd.DataFrame, levels: list[float] | None = None,
 #   止损优先：确认日最低 ≤ 止损价 → 层面1 止损出场（先于确认判定）。
 # ══════════════════════════════════════════════════════════
 
+def confirm_conditions(df: pd.DataFrame, entry_price: float,
+                        stop_loss: float) -> dict:
+    """三条件独立评估（单一来源 · 2026-08-06 老板拍板 1B 对照实验抽出）
+
+    现状严格版 half_position_confirm（C1&C2&C3）与放宽版
+    half_position_confirm_relaxed（any2/no_c2）共用本评估，规则不复制。
+    行为与重构前完全一致（仅抽出公共评估，组合逻辑不变）。
+
+    Args:
+        df: K线DataFrame，最后两根 = 开仓日 K 线 + 确认收线（不足两根 → wait）
+        entry_price: 0.5R 起步进场价
+        stop_loss: 结构止损价（层面1，先于确认判定）
+
+    Returns:
+        {"wait": bool, "stopped": bool, "close": float,
+         "c1": bool, "c2": bool, "c3": bool, "reject_vol": bool}
+        wait=True → 收线未出现（不足两根），继续持有等待
+        stopped=True → 确认日已触止损（层面1 优先）
+        c1 收下去：确认日收盘 ≥ 进场价
+        c2 动能延续：确认日收盘 ≥ 开仓日收盘
+        c3 非放量阴线：非（量比>1.5 且收阴）
+    """
+    if len(df) < 2:
+        return {"wait": True, "stopped": False, "close": 0.0,
+                "c1": False, "c2": False, "c3": True, "reject_vol": False}
+    conf = df.iloc[-1]
+    open_day = df.iloc[-2]
+    conf_close = float(conf["收盘"])
+    conf_low = float(conf["最低"])
+    # 止损优先（层面1：结构止损位先于确认判定——触止损即平，无论动能）
+    if conf_low <= stop_loss:
+        return {"wait": False, "stopped": True, "close": conf_close,
+                "c1": False, "c2": False, "c3": True, "reject_vol": False}
+    conf_open = float(conf["开盘"])
+    open_close = float(open_day["收盘"])
+    # C3 动能拒绝形态：放量阴线（量比>1.5 且收阴 = 放量抛压吞没，动能被拒绝）
+    reject_vol = False
+    if "成交量" in df.columns and len(df) >= 6:
+        vol = float(conf["成交量"])
+        vol_ma5 = float(df["成交量"].iloc[-6:-1].mean())
+        reject_vol = vol_ma5 > 0 and vol > vol_ma5 * 1.5 and conf_close < conf_open
+    return {"wait": False, "stopped": False, "close": conf_close,
+            "c1": conf_close >= entry_price,
+            "c2": conf_close >= open_close,
+            "c3": not reject_vol,
+            "reject_vol": reject_vol}
+
+
 def half_position_confirm(df: pd.DataFrame, entry_price: float, stop_loss: float) -> dict:
     """0.5R 分步建仓·下一根收线确认（G3 · 2024-06-29 周会原文）
 
     语义：0.5R = 分步建仓第一步——先进 0.5R，下一根收线确认（收下去/动能接受）
     则补 0.5R（总 1R）；收线不确认（优势不突出/动能无法接受）→ 马上平仓。
-    出处见模块上方 G3 定案注释。
+    出处见模块上方 G3 定案注释。本函数 = 现状严格版（C1&C2&C3 全满足才确认）；
+    放宽版见 half_position_confirm_relaxed（2026-08-06 老板拍板 1B 对照实验）。
 
     Args:
         df: K线DataFrame，最后两根 = 开仓日 K 线 + 确认收线（调用方负责切片；
@@ -1114,39 +1163,68 @@ def half_position_confirm(df: pd.DataFrame, entry_price: float, stop_loss: float
         confirmed=True → 收线确认（补 0.5R，总 1R）
         reject=True → 收线不确认 → 马上平仓（"觉得优势不突出，动能无法接受"）
     """
-    if len(df) < 2:
+    cond = confirm_conditions(df, entry_price, stop_loss)
+    if cond["wait"]:
         return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
                 "close": 0.0, "reason": "收线未出现（等待下一根）"}
-    conf = df.iloc[-1]
-    open_day = df.iloc[-2]
-    conf_close = float(conf["收盘"])
-    conf_low = float(conf["最低"])
-    # 止损优先（层面1：结构止损位先于确认判定——触止损即平，无论动能）
-    if conf_low <= stop_loss:
+    if cond["stopped"]:
         return {"confirmed": False, "stopped": True, "reject": False, "wait": False,
-                "close": conf_close, "reason": "止损触发(层面1)"}
-    conf_open = float(conf["开盘"])
-    open_close = float(open_day["收盘"])
-    # C3 动能拒绝形态：放量阴线（量比>1.5 且收阴 = 放量抛压吞没，动能被拒绝）
-    reject_vol = False
-    if "成交量" in df.columns and len(df) >= 6:
-        vol = float(conf["成交量"])
-        vol_ma5 = float(df["成交量"].iloc[-6:-1].mean())
-        reject_vol = vol_ma5 > 0 and vol > vol_ma5 * 1.5 and conf_close < conf_open
-    # C1 收下去（收盘 ≥ 进场价）+ C2 动能延续（收盘 ≥ 开仓日收盘）
-    confirmed = conf_close >= entry_price and conf_close >= open_close and not reject_vol
-    if confirmed:
+                "close": cond["close"], "reason": "止损触发(层面1)"}
+    if cond["c1"] and cond["c2"] and cond["c3"]:
         return {"confirmed": True, "stopped": False, "reject": False, "wait": False,
-                "close": conf_close, "reason": "收线确认（收下去/动能接受）"}
+                "close": cond["close"], "reason": "收线确认（收下去/动能接受）"}
     parts = []
-    if conf_close < entry_price:
+    if not cond["c1"]:
         parts.append("收盘跌破进场价")
-    if conf_close < open_close:
+    if not cond["c2"]:
         parts.append("收盘较开仓日转弱")
-    if reject_vol:
+    if cond["reject_vol"]:
         parts.append("放量阴线(动能拒绝)")
     return {"confirmed": False, "stopped": False, "reject": True, "wait": False,
-            "close": conf_close, "reason": "收线未确认：" + "/".join(parts)}
+            "close": cond["close"], "reason": "收线未确认：" + "/".join(parts)}
+
+
+def half_position_confirm_relaxed(df: pd.DataFrame, entry_price: float,
+                                  stop_loss: float, mode: str = "any2") -> dict:
+    """0.5R 确认规则放宽版（2026-08-06 老板拍板 1B 对照实验 · 数据驱动定案）
+
+    与现状版关系：与 half_position_confirm 共用 confirm_conditions 条件评估
+    单一来源，仅组合逻辑放宽——现状严格版 = C1 且 C2 且 C3（全满足才确认）；
+    放宽版任一不满足不再一票否决：
+      any2  三取二：任意两条件满足即确认（C1&C2 | C1&C3 | C2&C3）
+      no_c2 去动能延续：保留 C1 收下去 + C3 非放量阴线（C2 单独不再拦截）
+    止损层面1 优先逻辑与现状版完全一致（放宽不改变止损行为）。
+
+    Args / Returns: 同 half_position_confirm（wait/stopped/confirmed/reject/
+        close/reason 结构一致；reason 标注放宽模式与放行条件）
+    """
+    cond = confirm_conditions(df, entry_price, stop_loss)
+    if cond["wait"]:
+        return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
+                "close": 0.0, "reason": "收线未出现（等待下一根）"}
+    if cond["stopped"]:
+        return {"confirmed": False, "stopped": True, "reject": False, "wait": False,
+                "close": cond["close"], "reason": "止损触发(层面1)"}
+    if mode == "any2":
+        n_ok = int(cond["c1"]) + int(cond["c2"]) + int(cond["c3"])
+        ok = n_ok >= 2
+    elif mode == "no_c2":
+        ok = cond["c1"] and cond["c3"]
+    else:
+        raise ValueError(f"未知放宽模式: {mode!r}（支持 any2 / no_c2）")
+    if ok:
+        on = [n for n, v in (("C1", cond["c1"]), ("C2", cond["c2"]), ("C3", cond["c3"])) if v]
+        return {"confirmed": True, "stopped": False, "reject": False, "wait": False,
+                "close": cond["close"], "reason": f"放宽确认({mode}:" + "&".join(on) + ")"}
+    parts = []
+    if not cond["c1"]:
+        parts.append("收盘跌破进场价")
+    if not cond["c2"]:
+        parts.append("收盘较开仓日转弱")
+    if cond["reject_vol"]:
+        parts.append("放量阴线(动能拒绝)")
+    return {"confirmed": False, "stopped": False, "reject": True, "wait": False,
+            "close": cond["close"], "reason": f"收线未确认(放宽{mode})：" + "/".join(parts)}
 
 
 def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
@@ -1200,25 +1278,35 @@ def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
 
 
 def phase_confirm_from_kline(df: pd.DataFrame, signal_date: str,
-                             entry_price: float, stop_loss: float) -> dict:
+                             entry_price: float, stop_loss: float,
+                             confirm_mode: str = "strict") -> dict:
     """0.5R 分步建仓·信号日→触发日→次日收线确认 完整回放（G3 2026-08-06）
 
     供 ② sim_capital.half_phase 资金占用模拟 与 ③ 确认规则质量验证回放 共用——
     触发日定位与回测层 tracking._track_prebreak 同规则（信号日 T 之后首根
     最高 ≥ 触发价的 K 线为触发日/入场日），确认判定单一来源 half_position_confirm
-    （C1 收下去 / C2 动能延续 / C3 非放量阴线 / 止损层面1 优先），不复制规则。
+    （strict：C1 收下去 / C2 动能延续 / C3 非放量阴线 / 止损层面1 优先），
+    confirm_mode 参数化放宽（2026-08-06 老板拍板 1B 对照实验），不复制规则：
+      strict 现状版（默认，行为零变化）= C1&C2&C3 全满足才确认
+      any2   三取二 = 任意两条件满足即确认
+      no_c2  去动能延续 = C1 收下去 + C3 非放量阴线
+      delay2 延迟二次确认 = 首根（T+1）未确认时允许下一根（T+2）再确认一次
+             （以 T+1 为开仓日重新判定；T+1 触止损 → 仍按止损出场不等待；
+              T+2 仍未确认 → 以 T+2 收盘平仓；无 T+2 → 按首根判定）
 
     Args:
         df: 个股日K线（日期/开盘/收盘/最高/最低/成交量，升序）
         signal_date: 信号日（YYYY-MM-DD；prebreak 模式信号日后才可能触发）
         entry_price: 0.5R 起步进场价（prebreak = 触发价）
         stop_loss: 结构止损价
+        confirm_mode: strict / any2 / no_c2 / delay2（默认 strict = 现状行为）
 
     Returns:
         {"confirmed"/"stopped"/"reject": bool, "close": float,
          "trigger_date"/"confirm_date": str, "reason": str, "wait": bool}
         wait=True → 信号日后未触发（数据窗口不足/无触发 K 线），调用方放行处理
-        trigger_date = 入场日；confirm_date = 入场日次日（收线确认日）
+        trigger_date = 入场日；confirm_date = 入场日次日（收线确认日；
+        delay2 模式为实际确认/平仓日 T+1 或 T+2）
     """
     dates = df["日期"].astype(str).str[:10].values
     highs = df["最高"].values
@@ -1235,7 +1323,23 @@ def phase_confirm_from_kline(df: pd.DataFrame, signal_date: str,
         return {"confirmed": False, "stopped": False, "reject": False, "wait": True,
                 "close": 0.0, "trigger_date": str(dates[trig_idx])[:10],
                 "confirm_date": "", "reason": "确认收线未出现（数据窗口不足）"}
-    verdict = half_position_confirm(df.iloc[:conf_idx + 1], entry_price, stop_loss)
+
+    def _judge(idx: int) -> dict:
+        """idx 收线（开仓日 = idx-1）按 confirm_mode 判定"""
+        if confirm_mode in ("any2", "no_c2"):
+            return half_position_confirm_relaxed(df.iloc[:idx + 1], entry_price,
+                                                 stop_loss, mode=confirm_mode)
+        return half_position_confirm(df.iloc[:idx + 1], entry_price, stop_loss)
+
+    verdict = _judge(conf_idx)
+    if confirm_mode == "delay2" and verdict["reject"] and conf_idx + 1 < len(df):
+        # 延迟二次确认：首根未确认 → 以 T+1 为开仓日看 T+2（止损层面1 优先；
+        # 注意 _judge 内部已含止损判定——T+2 触止损 → stopped，以止损价出场）
+        v2 = _judge(conf_idx + 1)
+        v2["confirm_date"] = str(dates[conf_idx + 1])[:10]
+        v2["trigger_date"] = str(dates[trig_idx])[:10]
+        v2["wait"] = False
+        return v2
     return {
         "confirmed": verdict["confirmed"], "stopped": verdict["stopped"],
         "reject": verdict["reject"], "close": verdict["close"],
