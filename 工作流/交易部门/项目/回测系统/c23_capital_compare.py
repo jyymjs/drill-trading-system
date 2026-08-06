@@ -170,7 +170,7 @@ def render_report(base: tuple[dict, dict], c23: tuple[dict, dict], args) -> str:
             lines.append(f"| {name} | {k} | {v} |")
     lines += [
         "",
-        "> 未成交信号 avgR = 触发但被资金约束挡在门外的信号集 20d 平均R（口径与 T-023 网格实验一致）。",
+        "> 未成交信号 avgR = 触发但被资金约束挡在门外的信号集 20d 平均R（口径与 C23 版 12 组网格一致）。",
         "",
         "## 三、信号量与实盘节奏",
         "",

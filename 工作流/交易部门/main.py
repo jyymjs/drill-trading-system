@@ -462,7 +462,7 @@ def cmd_capital(args):
         risk = max_risk_per_trade()
         print("\n=== 资金状况 ===\n")
         print(f"  总资金: ¥{cap:.0f}")
-        print("  单笔风险比例: 1.5%")
+        print("  单笔风险比例: 2.0%")
         print(f"  单笔最大风险: ¥{risk:.0f}")
         print("  建议修改: python main.py capital set <金额>")
     elif args.action == "set" and args.amount:

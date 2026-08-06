@@ -304,6 +304,9 @@ def main() -> int:
                            args.smoke)
     out_path = args.out or str(_ROOT / "产出" / "输出" /
                                "当前策略全面测试-20260807.md")
+    if args.smoke:
+        out_path = str(Path(out_path).with_name(Path(out_path).stem + "_smoke" + Path(out_path).suffix))
+                               "当前策略全面测试-20260807.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"报告 → {out_path}")

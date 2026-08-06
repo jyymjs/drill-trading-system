@@ -63,7 +63,7 @@ def simulate(trades: list[dict] | None = None, n_simulations: int = 10000,
             r = float(t.get("r_multiple", 0) or 0)
         except (ValueError, TypeError):
             r = 0.0
-        if r != 0:  # 过滤零R（避免偏差）
+        if r != 0:  # 过滤零R（避免偏差；实测 0 笔无影响，E-029 标注）
             r_values.append(r)
 
     r_values = np.array(r_values)

@@ -189,6 +189,9 @@ def main() -> int:
     report = render_compare(res, args.smoke)
     out_path = args.out or str(_ROOT / "产出" / "输出" /
                                "蒙特卡洛-复刻版式-排序定案-20260806.md")
+    if args.smoke:
+        out_path = str(Path(out_path).with_name(Path(out_path).stem + "_smoke" + Path(out_path).suffix))
+                               "蒙特卡洛-复刻版式-排序定案-20260806.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"报告 → {out_path}")

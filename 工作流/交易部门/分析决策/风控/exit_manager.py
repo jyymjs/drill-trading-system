@@ -187,7 +187,7 @@ def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float 
 def check_36pct_trail(position: Position, has_trailing_stop: bool = False) -> float | None:
     """层面4：36%追踪获利（TTP）
 
-    内训 19·5（正式版）：触发条件 = **利润 >5R 且没有合适的移动获利点**
+    内训 19·5（正式版）：触发条件 = **利润 ≥5R 且没有合适的移动获利点**（含 5R 边界，工程定案 E-044）
     （中间一直没有可设移动获利的位置、平保之外无任何保护措施时的兜底机制）。
     两者互斥：有合适移动获利点 → 由移动获利接管，TTP 不启用（"系统是不允许
     有这样的事情发生的"——有移动获利点还靠 TTP 兜底 = 平白浪费利润空间）。

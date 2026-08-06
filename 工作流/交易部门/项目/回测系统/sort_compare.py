@@ -193,6 +193,8 @@ def main() -> int:
     print()
     print(report)
     out_path = args.out or str(_ROOT / "产出" / "输出" / "排序对照实验-T032-20260806.md")
+    if args.smoke:
+        out_path = str(Path(out_path).with_name(Path(out_path).stem + "_smoke" + Path(out_path).suffix))
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"\n报告 → {out_path}")
