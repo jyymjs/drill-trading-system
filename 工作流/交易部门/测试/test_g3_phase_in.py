@@ -200,14 +200,33 @@ class TestSimTradingPhaseIn:
         # 补仓价 10.4：加权平均 = (10.1×200 + 10.4×200)/400 = 10.25
         assert float(r["entry_price"]) == pytest.approx(10.25)
 
-    def test_reject_exits_half(self, sim_env, monkeypatch, tmp_path):
-        """收线未确认（收盘跌破进场价）→ 0.5R 马上平仓（按确认日收盘价）"""
+    def test_reject_delay2_waits_no_t2(self, sim_env, monkeypatch, tmp_path):
+        """首根收线未确认（收盘跌破进场价）且 T+2 未出现 → delay2 等待二次确认（不平仓）"""
         kline = mk_kline([
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.95, 10.15, 9.9, 10.1, 1e6),   # 开仓日
-            (10.0, 10.2, 9.92, 10.02, 1e6),   # 确认日：收 10.02 < 进 10.1（最低 9.92 > 止损）→ 不确认
+            (10.0, 10.2, 9.92, 10.02, 1e6),   # 确认日：收 10.02 < 进 10.1（最低 9.92 > 止损）→ 首根不确认
+        ])
+        _open_half(monkeypatch, kline)
+        monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
+                            lambda c, use_cache=True: kline)
+        out = sim_trading.sim_check()
+        assert "等待延迟二次确认" in out
+        rows = sim_trading._read_all()
+        r = rows[0]
+        assert r["status"] == "open" and r["phase"] == "half"
+
+    def test_reject_delay2_second_bar_reject_exits(self, sim_env, monkeypatch, tmp_path):
+        """首根不确认 + T+2 仍不确认 → delay2 以 T+2 收盘价平仓"""
+        kline = mk_kline([
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.95, 10.15, 9.9, 10.1, 1e6),   # 开仓日
+            (10.0, 10.2, 9.92, 10.02, 1e6),   # 首根 2025-01-07：收 10.02 < 进 10.1 → 不确认
+            (10.0, 10.15, 9.95, 10.0, 1e6),   # T+2 2025-01-08：收 10.0 仍 < 进 10.1（最低 9.95 > 止损）→ 平仓
         ])
         _open_half(monkeypatch, kline)
         monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
@@ -218,10 +237,32 @@ class TestSimTradingPhaseIn:
         r = rows[0]
         assert r["status"] == "closed"
         assert "分步" in r["exit_reason"] and "未确认" in r["exit_reason"]
-        assert float(r["exit_price"]) == pytest.approx(10.02)
-        assert r["exit_date"] == _CONFIRM_DATE
-        # R = (10.02-10.1-费用)/0.2（半仓公式与全仓一致）
+        assert float(r["exit_price"]) == pytest.approx(10.0)
+        assert r["exit_date"] == "2025-01-08"
+        # R = (10.0-10.1-费用)/0.2（半仓公式与全仓一致）
         assert float(r["r_multiple"]) < 0
+
+    def test_reject_delay2_second_bar_confirms_add(self, sim_env, monkeypatch, tmp_path):
+        """首根不确认 + T+2 收回 → delay2 确认补仓 0.5R（等额，总 1R）"""
+        kline = mk_kline([
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.9, 10.1, 9.8, 10.0, 1e6),
+            (9.95, 10.15, 9.9, 10.1, 1e6),   # 开仓日
+            (10.0, 10.2, 9.92, 10.02, 1e6),   # 首根 2025-01-07：收 10.02 < 进 10.1 → 不确认
+            (10.3, 10.6, 10.2, 10.4, 1e6),    # T+2 2025-01-08：收 10.4 ≥ 进 10.1 且 ≥ 首根收 10.02 → 确认
+        ])
+        _open_half(monkeypatch, kline)
+        monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
+                            lambda c, use_cache=True: kline)
+        out = sim_trading.sim_check()
+        assert "补 0.5R" in out
+        rows = sim_trading._read_all()
+        r = rows[0]
+        assert r["status"] == "open" and r["phase"] == "confirmed"
+        # 起步 200 股 + 补仓 200 股 → 400 股；补仓价 10.4 → 加权 = (10.1×200+10.4×200)/400
+        assert int(r["volume"]) == 400
+        assert float(r["entry_price"]) == pytest.approx(10.25)
 
     def test_stop_exits_half(self, sim_env, monkeypatch, tmp_path):
         """确认日触止损（层面1 优先）→ 按止损价平仓"""
@@ -293,21 +334,36 @@ class TestTrackingPhaseIn:
         # 确认后续跟踪：到期收盘 idx15 = 11.5
         assert oc.exit_price == closes[5 + 10]
 
-    def test_prebreak_reject_exits_confirm_day(self):
-        """prebreak：触发后次日收线未确认（跌破进场价）→ 确认日收盘平仓（0.5R）"""
+    def test_prebreak_reject_exits_second_bar(self):
+        """prebreak：首根收线未确认（跌破进场价）+ T+2 仍未确认 → delay2 以 T+2 收盘平仓"""
         closes = [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.3, 10.4, 10.5, 10.6,
                   10.7, 10.8, 10.9, 11.0, 11.1]
         highs = [c + 0.2 for c in closes]
         lows = [c - 0.2 for c in closes]
         df = _kline(closes, highs, lows)
         # 信号日 idx5（收 10.5）；触发日 idx6（high 10.8 ≥ trigger 10.5，收 10.6）；
-        # 确认日 idx7：收 10.3 < 进 10.5 → 不确认 → 以 10.3 平仓
+        # 确认日 idx7：收 10.3 < 进 10.5 → 首根不确认；
+        # T+2 idx8：收 10.4 仍 < 进 10.5 → 二次不确认 → 以 T+2 收盘 10.4 平仓
         oc = track_signal(_sig(trigger=10.5), df, hold=10, phase_in=True)
         assert oc.triggered and not oc.stopped
-        assert oc.exit_price == 10.3
-        assert oc.exit_date == pd.Timestamp("2024-01-10")
-        # R = (10.3 - 10.5 - 费用)/1.0 < 0
+        assert oc.exit_price == 10.4
+        assert oc.exit_date == pd.Timestamp("2024-01-11")
+        # R = (10.4 - 10.5 - 费用)/1.0 < 0
         assert oc.r < 0
+
+    def test_prebreak_reject_second_bar_confirms_keeps(self):
+        """prebreak：首根收线未确认 + T+2 收回 → delay2 确认 → 补至 1R 继续跟踪"""
+        closes = [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.3, 10.8, 10.9, 11.0,
+                  11.1, 11.2, 11.3, 11.4, 11.5]
+        highs = [c + 0.2 for c in closes]
+        lows = [c - 0.2 for c in closes]
+        df = _kline(closes, highs, lows)
+        # 信号日 idx5（收 10.5）；触发日 idx6（收 10.6）；确认日 idx7 收 10.3 → 首根不确认；
+        # T+2 idx8 收 10.8 ≥ 进 10.5 且 ≥ idx7 收 10.3 → 确认 → 从 idx9 跟踪到 hold 末（idx15=11.5）
+        oc = track_signal(_sig(trigger=10.5), df, hold=10, phase_in=True)
+        assert oc.triggered and not oc.stopped
+        assert oc.exit_price == 11.5
+        assert oc.r > 0
 
     def test_prebreak_phase_in_stop_priority(self):
         """prebreak：确认日触止损 → 层面1 止损价出场（stopped=True）"""
@@ -321,15 +377,16 @@ class TestTrackingPhaseIn:
         assert oc.exit_price == 9.5
 
     def test_normal_phase_in_reject(self):
-        """normal：T+1 收线未确认 → 确认日收盘平仓（0.5R）"""
+        """normal：T+1 收线未确认 + T+2 仍未确认 → delay2 以 T+2 收盘平仓（0.5R）"""
         closes = [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.2, 10.3, 10.4, 10.5, 10.6]
         highs = [c + 0.2 for c in closes]
         lows = [c - 0.2 for c in closes]
         df = _kline(closes, highs, lows)
-        # 信号日 idx5 收盘 10.5 进场；确认日 idx6 收 10.2 < 进 10.5 → 平仓
+        # 信号日 idx5 收盘 10.5 进场；确认日 idx6 收 10.2 < 进 10.5 → 首根不确认；
+        # T+2 idx7 收 10.3 仍 < 进 10.5 → 二次不确认 → 以 T+2 收盘 10.3 平仓
         oc = track_signal(_sig(mode="normal", close=10.5), df, hold=10, phase_in=True)
         assert oc.triggered and not oc.stopped
-        assert oc.exit_price == 10.2
+        assert oc.exit_price == 10.3
         assert oc.r < 0
 
     def test_phase_in_default_off_same_as_base(self):

@@ -225,28 +225,32 @@ def _phase_in_track(high, low, close, dates, df, conf_idx: int, end: int, entry:
                     moving_stop: bool) -> tuple[float, pd.Timestamp, bool]:
     """G3 分步建仓·收线确认后的出场跟踪（phase_in 模式 · 2024-06-29 周会原文）
 
-    确认日 = conf_idx（开仓/触发日次日）：
+    确认日 = conf_idx（开仓/触发日次日；delay2 允许延迟至 conf_idx+1）：
       - 触止损（层面1 优先）→ 按止损价出场；
       - 收线未确认 → 确认日收盘价平仓（0.5R 马上平仓——"觉得优势不突出，
         动能无法接受，就马上平仓了"）；
       - 确认 → 补至 1R，从确认日次日继续正常跟踪（C5 移动止损同 normal 口径）。
     无确认收线空间（conf_idx > end）→ 0.5R 持有到期收盘（保守近似）。
-    确认规则单一来源：indicators.half_position_confirm。
+    确认规则单一来源：indicators.half_position_confirm_delay2（2026-08-06 老板
+    拍板替换 strict 为生产规则：首根 reject 且窗口内有 T+2 → 以 T+1 为开仓日
+    二次判定；T+2 触止损 → 止损出场；T+2 确认 → 补仓；T+2 仍未确认 → 以 T+2
+    收盘平仓；无 T+2（数据/窗口边界）→ 按首根判定）。
 
     Returns:
         (exit_price, exit_date, stopped)
     """
-    from 分析决策.分析.indicators import half_position_confirm
+    from 分析决策.分析.indicators import half_position_confirm_delay2
     if conf_idx > end:
         # 窗口内无确认收线 → 0.5R 持有到期平仓（无确认空间，保守近似）
         return _track_window(high, low, close, dates, conf_idx, end, entry, stop,
                              enable_cost, cost_multiplier, moving_stop)
-    verdict = half_position_confirm(df.iloc[:conf_idx + 1], entry, stop)
+    verdict = half_position_confirm_delay2(df, entry, stop, conf_idx, max_idx=end)
+    used = verdict["conf_idx_used"]
     if verdict["stopped"]:
-        return stop, pd.Timestamp(dates[conf_idx]), True
+        return stop, pd.Timestamp(dates[used]), True
     if verdict["reject"]:
-        return float(verdict["close"]), pd.Timestamp(dates[conf_idx]), False
-    return _track_window(high, low, close, dates, conf_idx + 1, end, entry, stop,
+        return float(verdict["close"]), pd.Timestamp(dates[used]), False
+    return _track_window(high, low, close, dates, used + 1, end, entry, stop,
                          enable_cost, cost_multiplier, moving_stop)
 
 

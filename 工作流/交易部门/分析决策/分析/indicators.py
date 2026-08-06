@@ -1227,6 +1227,46 @@ def half_position_confirm_relaxed(df: pd.DataFrame, entry_price: float,
             "close": cond["close"], "reason": f"收线未确认(放宽{mode})：" + "/".join(parts)}
 
 
+def half_position_confirm_delay2(df: pd.DataFrame, entry_price: float,
+                                 stop_loss: float, conf_idx: int,
+                                 max_idx: int | None = None) -> dict:
+    """0.5R 确认·delay2 延迟二次确认判定（2026-08-06 老板拍板替换 strict 为生产规则）
+
+    与 phase_confirm_from_kline(confirm_mode="delay2") 同一语义同一来源
+    （首根判定 + reject 时二次判定；T+1 触止损 → 仍按止损出场不等待），
+    供 引擎回测 tracking._phase_in_track / 模拟层 sim_trading._check_half_position
+    共用（回放层走 phase_confirm_from_kline，规则不复制）。
+
+    Args:
+        df: K线DataFrame（升序）
+        entry_price: 0.5R 起步进场价
+        stop_loss: 结构止损价（层面1 优先）
+        conf_idx: 首根确认收线索引（开仓日 = conf_idx-1）
+        max_idx: 二次判定可用收线索引上限（None = 数据边界 len(df)-1；
+            引擎回测传 hold 窗口末 end——窗口外无 T+2 → 按首根判定）
+
+    Returns:
+        同 half_position_confirm（wait/stopped/confirmed/reject/close/reason），
+        另附：
+          conf_idx_used: 实际判定收线索引（首根=conf_idx / 二次=conf_idx+1）
+          second_checked: 是否执行了二次判定（False = 首根 reject 但无 T+2——
+             调用方按场景处理：回测=按首根平仓 / 模拟层实时=等待 T+2）
+    """
+    v1 = half_position_confirm(df.iloc[:conf_idx + 1], entry_price, stop_loss)
+    v1["conf_idx_used"] = conf_idx
+    if not v1["reject"]:
+        v1["second_checked"] = False
+        return v1
+    limit = len(df) - 1 if max_idx is None else max_idx
+    if conf_idx + 1 <= limit:
+        v2 = half_position_confirm(df.iloc[:conf_idx + 2], entry_price, stop_loss)
+        v2["conf_idx_used"] = conf_idx + 1
+        v2["second_checked"] = True
+        return v2
+    v1["second_checked"] = False
+    return v1
+
+
 def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     """市场环境质量判定（0.5R 机制的环境部分）
 
@@ -1332,14 +1372,17 @@ def phase_confirm_from_kline(df: pd.DataFrame, signal_date: str,
         return half_position_confirm(df.iloc[:idx + 1], entry_price, stop_loss)
 
     verdict = _judge(conf_idx)
-    if confirm_mode == "delay2" and verdict["reject"] and conf_idx + 1 < len(df):
-        # 延迟二次确认：首根未确认 → 以 T+1 为开仓日看 T+2（止损层面1 优先；
-        # 注意 _judge 内部已含止损判定——T+2 触止损 → stopped，以止损价出场）
-        v2 = _judge(conf_idx + 1)
-        v2["confirm_date"] = str(dates[conf_idx + 1])[:10]
-        v2["trigger_date"] = str(dates[trig_idx])[:10]
-        v2["wait"] = False
-        return v2
+    if confirm_mode == "delay2":
+        # delay2 延迟二次确认（规则单一来源 half_position_confirm_delay2，
+        # 与引擎 tracking / 模拟层 sim_trading 同式不复制）
+        v = half_position_confirm_delay2(df, entry_price, stop_loss, conf_idx)
+        return {
+            "confirmed": v["confirmed"], "stopped": v["stopped"],
+            "reject": v["reject"], "close": v["close"],
+            "trigger_date": str(dates[trig_idx])[:10],
+            "confirm_date": str(dates[v["conf_idx_used"]])[:10],
+            "reason": v["reason"], "wait": False,
+        }
     return {
         "confirmed": verdict["confirmed"], "stopped": verdict["stopped"],
         "reject": verdict["reject"], "close": verdict["close"],
