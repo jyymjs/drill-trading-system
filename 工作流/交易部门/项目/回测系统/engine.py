@@ -285,6 +285,9 @@ class BacktestEngine:
     def _build_signal(self, code: str, sig_date: pd.Timestamp, mode: str,
                       window: pd.DataFrame, close_t: float) -> Signal | None:
         """调用现有评级（同源），产出信号或 None"""
+        # 板块上下文（G1 分板块涨跌停线 2026-08-06）：与 scanner 同法设置 attrs，
+        # gap_limit_detect 据此判定 20cm 票用 19.5% 线（回测=扫描同口径）。
+        window.attrs["code"] = code
         if mode == "normal":
             res = self.strategy.grade(window)
             if not res.get("match") or res.get("grade") not in self.params.grades:

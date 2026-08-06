@@ -1073,7 +1073,6 @@ def environment_quality(df: pd.DataFrame, window: int = 60) -> dict:
     peak = high.max()
     trough = low.min()
     bounce = (cur - trough) / trough if trough > 0 else 0
-    (peak - cur) / peak if peak > 0 else 0
     weak_bounce = bounce < 0.08
     # 3) 结构质量：横盘波幅（过低 = 死水无动能）
     rng = (peak - trough) / cur if cur > 0 else 0
@@ -1155,15 +1154,28 @@ def reversal_3to1(df: pd.DataFrame, run_start: int | None = None) -> dict:
 #   业务影响：跳空跳过止损——本应"亏 1R 止损"，实际跳空/一字封板成交在更差价位
 # G2 一字形排列：品种筛选/知识卡.md 一票否决#5「一字形排列（调整全是一字形）」
 #   业务影响：连续性差的极端形态，调整无意义，进场后无法按规则管理
-# ⚠ 阈值注：知识卡原文未给数值，以下窗口/幅度/次数为工程实现参数（非知识卡原文），
-#   按 A 股常见口径设定，待老板确认后定案（若需调整只改此区块常量）。
+# ══════════════════════════════════════════════════════════
+# G1 阈值定案（2026-08-06 · 第二批校准，全市场 5067 只 qfq 扫描，见
+# 产出/输出/g1_gap_scan/scan_gap_thresholds.py 与 threshold_table.md）：
+#   现状基线（9.5% 统一线 + 3% 跳空 + 3 次）排除率 主板 43.0% / 全市场 48.3%
+#   ——远超"少数派"定位（知识卡语义：经常跳空/涨跌停应是少数品种，参考
+#   ST 一票否决定位），且 9.5% 线对 20cm 票把常态波动算成涨跌停（创业板
+#   62.7% / 科创 76.5% 的票 60 根内出现过 ≥9.5% 波动，而 ≥19.5% 真封板线
+#   仅 23.5% / 24.5%）。
+#   定案组合：跳空 4% + 涨跌停分板块（主板 9.5% / 20cm 19.5%）+ 60 根内
+#   合计 ≥5 次 → 排除率：沪主板 23.3% / 深主板 26.0% / 创业板 13.2% /
+#   科创 22.8% / 20cm 16.1% / 全市场 21.3%（剔除 ST 后口径），全部落在
+#   目标区间 10-25%（知识卡"经常"= 60 根一个季度内 5 次剧烈事件，
+#   平均 12 根一次；20cm 真封板线 19.5% 有数据支撑：≥3 次仅占 1.8%/2.7%）。
 # ══════════════════════════════════════════════════════════
 
-GAP_LIMIT_WINDOW = 60      # 检测窗口（与 Tier0 结构检测 60 根一致）
-LIMIT_TOUCH_PCT = 0.095    # 涨跌停判定线：|收盘/前收盘-1| ≥ 9.5%（主板封板线含 0.5% 容差；
-                           # 创业/科创 20cm 票的单日大波动同视为"剧烈"——排除意图=连续性差）
-GAP_PCT = 0.03             # 跳空判定线：|开盘/前收盘-1| ≥ 3%（明显跳空）
-GAP_LIMIT_FREQ = 3         # 窗口内 跳空+涨跌停 合计 ≥ 3 次 = "经常"（平均 20 根一次）
+GAP_LIMIT_WINDOW = 60        # 检测窗口（与 Tier0 结构检测 60 根一致）
+LIMIT_TOUCH_PCT_MAIN = 0.095  # 主板涨跌停判定线：封板线 10% 含 0.5% 容差
+LIMIT_TOUCH_PCT_20CM = 0.195  # 创业/科创 20cm 判定线：封板线 20% 含 0.5% 容差
+                             # （2026-08-06 定案：20cm 分线，9.5% 会把常态波动算成涨跌停）
+GAP_PCT = 0.04               # 跳空判定线：|开盘/前收盘-1| ≥ 4%（2026-08-06 定案：3%→4%）
+GAP_LIMIT_FREQ = 5           # 窗口内 跳空+涨跌停 合计 ≥ 5 次 = "经常"（2026-08-06 定案：3→5，
+                             # 60 根一个季度内平均 12 根一次剧烈事件）
 ONE_LINE_WINDOW = 60       # 一字形检测窗口（与 G1 一致）
 ONE_LINE_AMP = 0.001       # 一字形振幅上限：|最高-最低|/前收盘 < 0.1%（几乎零波动；
                            # 2026-08-06 实测校准：0.5% 会把 20 元级窄幅横盘股日振幅误判
@@ -1171,21 +1183,45 @@ ONE_LINE_AMP = 0.001       # 一字形振幅上限：|最高-最低|/前收盘 <
 ONE_LINE_FREQ = 3          # 窗口内一字形 ≥ 3 根 = "排列"（平均 20 根一根）
 
 
-def gap_limit_detect(df: pd.DataFrame) -> dict:
+def board_limit_pct(code: str | None) -> float:
+    """按股票代码返回涨跌停判定线（G1 分板块口径 · 2026-08-06 定案）
+
+    创业板（300/301）/ 科创板（688/689）= 20cm 票 → 19.5%；
+    主板（60x/00x）及其他 → 9.5%。判定依据见模块头部 G1 定案注释。
+
+    Args:
+        code: 股票代码（无代码上下文 → 主板线 9.5%，保守侧）
+
+    Returns:
+        涨跌停判定线（0.095 或 0.195）
+    """
+    if code and code.startswith(("300", "301", "688", "689")):
+        return LIMIT_TOUCH_PCT_20CM
+    return LIMIT_TOUCH_PCT_MAIN
+
+
+def gap_limit_detect(df: pd.DataFrame, limit_pct: float | None = None) -> dict:
     """经常跳空/涨跌停检测（品种筛选一票否决#4，G1）
 
     知识卡原文：「经常跳空/涨跌停品种——连续性不好」（2024-07-16 扫盘）。
     连续性差 = 止损可能被跳空跳过（本应亏 1R 止损，实际跳空/封板成交更差价位）。
     另含当日事件检查：最新一根一字涨停（无法买入）或一字跌停（止损无法卖出）→ 排除。
 
+    板块口径（2026-08-06 定案）：涨跌停线按板块分——主板 9.5%、20cm 19.5%
+    （9.5% 对 20cm 票会把常态波动算成涨跌停）。板块来源优先级：
+    limit_pct 显式传入 > df.attrs["code"]（scanner/回测引擎已设置）> 主板线默认。
+
     Args:
         df: K线DataFrame（需 开盘/最高/最低/收盘 列）
+        limit_pct: 涨跌停判定线（None=自动按代码板块判定）
 
     Returns:
         {"excluded": bool, "limit_days": int, "gap_days": int, "latest_block": bool,
          "reason": str}
         excluded=True → 触发一票否决
     """
+    if limit_pct is None:
+        limit_pct = board_limit_pct(df.attrs.get("code"))
     w = min(GAP_LIMIT_WINDOW, len(df))
     if w < 30:
         return {"excluded": False, "limit_days": 0, "gap_days": 0,
@@ -1203,7 +1239,7 @@ def gap_limit_detect(df: pd.DataFrame) -> dict:
         if prev_close <= 0:
             continue
         chg = close[i] / prev_close - 1.0
-        if abs(chg) >= LIMIT_TOUCH_PCT:
+        if abs(chg) >= limit_pct:
             limit_days += 1
         if abs(op[i] / prev_close - 1.0) >= GAP_PCT:
             gap_days += 1
@@ -1214,7 +1250,7 @@ def gap_limit_detect(df: pd.DataFrame) -> dict:
     if prev_close > 0:
         chg = close[-1] / prev_close - 1.0
         one_price = hi[-1] == lo[-1] and lo[-1] == op[-1] and op[-1] == close[-1]
-        latest_block = one_price and abs(chg) >= LIMIT_TOUCH_PCT
+        latest_block = one_price and abs(chg) >= limit_pct
 
     total = limit_days + gap_days
     excluded = total >= GAP_LIMIT_FREQ or latest_block
