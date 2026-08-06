@@ -23,6 +23,8 @@ from 分析决策.分析.indicators import (
     channel_detect,
     conflict_zscore,
     flatness_score,
+    gap_limit_detect,
+    one_line_detect,
     overshoot_detect,
     pixelation_score,
     platform_test_count,
@@ -151,6 +153,21 @@ class ZuanQianStrategy(BaseStrategy):
         ch = channel_detect(df)
         if ch["is_channel"]:
             return f"通道上涨(R²={ch['strength']:.2f})"
+
+        # 3.5 经常跳空/涨跌停（品种筛选一票否决#4 · 补完计划 G1）
+        # 知识卡原文「经常跳空/涨跌停品种——连续性不好」：跳空会跳过止损，
+        # 本应"亏 1R 止损"实际可能跳空/封板成交在更差价位；最新日一字封板
+        # 涨停无法买入、跌停无法卖出。
+        gl = gap_limit_detect(df)
+        if gl["excluded"]:
+            return f"经常跳空/涨跌停({gl['reason']})"
+
+        # 3.6 一字形排列（品种筛选一票否决#5 · 补完计划 G2）
+        # 知识卡原文「一字形排列（调整全是一字形）」：连续性差的极端形态，
+        # 进场后无法按规则管理。
+        ol = one_line_detect(df)
+        if ol["excluded"]:
+            return f"一字形排列({ol['reason']})"
 
         # 4. 向下踩的轨迹 + 明显反应——仅标准模式检查（量化版）
         if check_retracement:

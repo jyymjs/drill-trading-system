@@ -1147,3 +1147,121 @@ def reversal_3to1(df: pd.DataFrame, run_start: int | None = None) -> dict:
         if better:
             wins += 1
     return {"reversed": wins >= 3, "win": wins, "elements": details}
+
+
+# ══════════════════════════════════════════════════════════
+# 品种筛选一票否决（补完计划 G1/G2 · 2026-08-06 工程接入）
+# G1 经常跳空/涨跌停：品种筛选/知识卡.md 一票否决#4「经常跳空/涨跌停品种——连续性不好」
+#   业务影响：跳空跳过止损——本应"亏 1R 止损"，实际跳空/一字封板成交在更差价位
+# G2 一字形排列：品种筛选/知识卡.md 一票否决#5「一字形排列（调整全是一字形）」
+#   业务影响：连续性差的极端形态，调整无意义，进场后无法按规则管理
+# ⚠ 阈值注：知识卡原文未给数值，以下窗口/幅度/次数为工程实现参数（非知识卡原文），
+#   按 A 股常见口径设定，待老板确认后定案（若需调整只改此区块常量）。
+# ══════════════════════════════════════════════════════════
+
+GAP_LIMIT_WINDOW = 60      # 检测窗口（与 Tier0 结构检测 60 根一致）
+LIMIT_TOUCH_PCT = 0.095    # 涨跌停判定线：|收盘/前收盘-1| ≥ 9.5%（主板封板线含 0.5% 容差；
+                           # 创业/科创 20cm 票的单日大波动同视为"剧烈"——排除意图=连续性差）
+GAP_PCT = 0.03             # 跳空判定线：|开盘/前收盘-1| ≥ 3%（明显跳空）
+GAP_LIMIT_FREQ = 3         # 窗口内 跳空+涨跌停 合计 ≥ 3 次 = "经常"（平均 20 根一次）
+ONE_LINE_WINDOW = 60       # 一字形检测窗口（与 G1 一致）
+ONE_LINE_AMP = 0.001       # 一字形振幅上限：|最高-最低|/前收盘 < 0.1%（几乎零波动；
+                           # 2026-08-06 实测校准：0.5% 会把 20 元级窄幅横盘股日振幅误判
+                           # 为一字形（真实一字板振幅=0，0.1% 容差足够））
+ONE_LINE_FREQ = 3          # 窗口内一字形 ≥ 3 根 = "排列"（平均 20 根一根）
+
+
+def gap_limit_detect(df: pd.DataFrame) -> dict:
+    """经常跳空/涨跌停检测（品种筛选一票否决#4，G1）
+
+    知识卡原文：「经常跳空/涨跌停品种——连续性不好」（2024-07-16 扫盘）。
+    连续性差 = 止损可能被跳空跳过（本应亏 1R 止损，实际跳空/封板成交更差价位）。
+    另含当日事件检查：最新一根一字涨停（无法买入）或一字跌停（止损无法卖出）→ 排除。
+
+    Args:
+        df: K线DataFrame（需 开盘/最高/最低/收盘 列）
+
+    Returns:
+        {"excluded": bool, "limit_days": int, "gap_days": int, "latest_block": bool,
+         "reason": str}
+        excluded=True → 触发一票否决
+    """
+    w = min(GAP_LIMIT_WINDOW, len(df))
+    if w < 30:
+        return {"excluded": False, "limit_days": 0, "gap_days": 0,
+                "latest_block": False, "reason": "数据不足"}
+    d = df.tail(w).reset_index(drop=True)
+    close = d["收盘"].values.astype(float)
+    op = d["开盘"].values.astype(float)
+    hi = d["最高"].values.astype(float)
+    lo = d["最低"].values.astype(float)
+
+    limit_days = 0
+    gap_days = 0
+    for i in range(1, len(d)):
+        prev_close = close[i - 1]
+        if prev_close <= 0:
+            continue
+        chg = close[i] / prev_close - 1.0
+        if abs(chg) >= LIMIT_TOUCH_PCT:
+            limit_days += 1
+        if abs(op[i] / prev_close - 1.0) >= GAP_PCT:
+            gap_days += 1
+
+    # 当日事件：最新一根一字封板（开=高=低=收 且 触涨跌停线）
+    latest_block = False
+    prev_close = close[-2] if len(close) >= 2 else op[-1]
+    if prev_close > 0:
+        chg = close[-1] / prev_close - 1.0
+        one_price = hi[-1] == lo[-1] and lo[-1] == op[-1] and op[-1] == close[-1]
+        latest_block = one_price and abs(chg) >= LIMIT_TOUCH_PCT
+
+    total = limit_days + gap_days
+    excluded = total >= GAP_LIMIT_FREQ or latest_block
+    if excluded:
+        parts = []
+        if total >= GAP_LIMIT_FREQ:
+            parts.append(f"60根内涨跌停{limit_days}次+跳空{gap_days}次")
+        if latest_block:
+            parts.append("最新日一字封板" + ("涨停" if chg > 0 else "跌停"))
+        reason = "/".join(parts)
+    else:
+        reason = ""
+    return {"excluded": excluded, "limit_days": limit_days, "gap_days": gap_days,
+            "latest_block": latest_block, "reason": reason}
+
+
+def one_line_detect(df: pd.DataFrame) -> dict:
+    """一字形排列检测（品种筛选一票否决#5，G2）
+
+    知识卡原文：「一字形排列（调整全是一字形）」（2024-07-25 扫盘）。
+    一字形 = 开盘即封板无波动（开≈高≈低≈收），连续性差且无法按规则管理。
+
+    Args:
+        df: K线DataFrame（需 开盘/最高/最低/收盘 列）
+
+    Returns:
+        {"excluded": bool, "one_line_count": int, "reason": str}
+        excluded=True → 触发一票否决
+    """
+    w = min(ONE_LINE_WINDOW, len(df))
+    if w < 30:
+        return {"excluded": False, "one_line_count": 0, "reason": "数据不足"}
+    d = df.tail(w).reset_index(drop=True)
+    hi = d["最高"].values.astype(float)
+    lo = d["最低"].values.astype(float)
+    cl = d["收盘"].values.astype(float)
+    op = d["开盘"].values.astype(float)
+
+    n_one = 0
+    for i in range(len(d)):
+        prev_close = cl[i - 1] if i > 0 else op[i]
+        if prev_close <= 0:
+            continue
+        amp = (hi[i] - lo[i]) / prev_close
+        body = abs(cl[i] - op[i]) / prev_close
+        if amp < ONE_LINE_AMP and body < ONE_LINE_AMP:
+            n_one += 1
+    excluded = n_one >= ONE_LINE_FREQ
+    return {"excluded": excluded, "one_line_count": n_one,
+            "reason": f"60根内一字形{n_one}根" if excluded else ""}
