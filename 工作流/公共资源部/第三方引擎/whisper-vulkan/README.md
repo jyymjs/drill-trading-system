@@ -16,7 +16,7 @@
 | `models/ggml-large-v3-turbo-q8_0.bin` | 模型（874MB，中文效果好，12GB 显存富余） |
 | `batch_transcribe.py` | 批量转写脚本（断点续传+日志+重试） |
 | `whisper.cpp-src/` | 源码（git clone，编译产物在 build/） |
-| — | 转写输出直达 `交易部/知识库/{分类}/raw/`（知识库规范：raw=素材层） |
+| — | 转写输出直达 `交易部/知识库/{分类}/原始素材/`（知识库规范：raw=素材层） |
 | `tmp/` | 临时 wav（自动清理） |
 
 ## 用法

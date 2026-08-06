@@ -29,7 +29,7 @@ LANG = "zh"          # 语言：中文
 THREADS = 2          # 每个转写进程的 CPU 线程（GPU 主算，2 线程足够，5 路不超卖 CPU）
 WORKERS = 5          # 并行转写进程数（显存 12GB / 每路~2GB，5 路安全；调大可能引发驱动崩溃）
 RETRY = 3            # 失败重试次数
-LOG_FILE = Path(r"C:\Users\32032\Desktop\deepseek\公共服务部\whisper-vulkan\transcribe.log")
+LOG_FILE = Path(r"C:\Users\32032\Desktop\deepseek\工作流\公共资源部\第三方引擎\whisper-vulkan\transcribe.log")
 # ==============================
 
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".ts"}
@@ -95,8 +95,8 @@ def process_one(cat, video, total, dup_stems):
     """处理单个视频（提取音频 + 转写，含重试），供并行 worker 调用"""
     global _done, _fail
     rel = video.relative_to(VIDEO_ROOT)
-    # 输出到 交易部/知识库/{分类}/raw/（知识库规范：raw=素材保真层）
-    out_dir = OUT_ROOT / cat / "raw"
+    # 输出到 交易部/知识库/{分类}/原始素材/（知识库规范：原始素材=素材保真层）
+    out_dir = OUT_ROOT / cat / "原始素材"
     os.makedirs(out_dir, exist_ok=True)
     # 消歧：子目录里的视频文件名加父目录前缀，避免不同子目录同名视频互相覆盖
     in_subdir = len(rel.parents) > 1

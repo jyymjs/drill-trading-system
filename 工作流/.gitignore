@@ -30,7 +30,7 @@ qc_tmp/
 .playwright-mcp/
 
 # 知识库转写稿 raw 素材（不入库）
-交易部门/策略/知识库/**/raw/
+交易部门/策略/知识库/**/原始素材/
 
 # 技能部署 junction（2026-08-07 改软链接：技能库/ 唯一源，部门副本为 junction，防误跟踪）
 工程部门/.claude/skills/

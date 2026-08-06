@@ -33,5 +33,5 @@
 | 智谱视觉配置 | `交易部门/工具链/脚本/config.local.json` | 视觉模型 API key + 默认模型（gitignore，不入库） |
 | 帧去重筛选 | `交易部门/工具链/脚本/filter_frames.py` | 帧去重与筛选（相似帧保留第一张） |
 | 帧分类（K线图筛选） | `交易部门/工具链/脚本/classify_frames_v2.py` | 帧目录 → K线图/其他分类（智谱） |
-| B站字幕抓取 | `自有工具/bilibili_subtitle/get_subtitle.py` | B站视频 → AI 字幕全文（wbi 签名+SESSDATA 登录态，多P/存文件/过期提示） |
+| B站字幕抓取 | `自有工具/B站字幕/获取字幕.py` | B站视频 → AI 字幕全文（wbi 签名+SESSDATA 登录态，多P/存文件/过期提示） |
 > 新工具入驻时在此追加，并同步更新各工具 README。

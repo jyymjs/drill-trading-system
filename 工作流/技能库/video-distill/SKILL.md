@@ -9,9 +9,9 @@ description: 视频精炼技能——触发词「精炼」。用户说「精炼�
 
 ## 做法
 
-1. **抓字幕**：调 `公共资源部/自有工具/bilibili_subtitle/get_subtitle.py` 抓 B站 AI 字幕：
+1. **抓字幕**：调 `公共资源部/自有工具/B站字幕/获取字幕.py` 抓 B站 AI 字幕：
    ```bash
-   python 公共资源部/自有工具/bilibili_subtitle/get_subtitle.py --url <链接> --out <临时目录>/subtitle.txt
+   python 公共资源部/自有工具/B站字幕/获取字幕.py --url <链接> --out <临时目录>/subtitle.txt
    ```
    - 抓取失败（SESSDATA 过期/无字幕）→ 如实告知原因，不硬做、不产出空结果
    - 非 B站视频：提示需先转写/转录成文字再精炼
