@@ -56,9 +56,10 @@ COMPARE_REPORT = OUT_DIR / "蒙特卡洛-C23版-配置对照-20260806.md"
 N_SIMULATIONS = 10_000        # 任务口径：各 10000 次（V1 为 2000 次，并排时同参数重跑）
 FEE_PER_TRADE_R = 0.0         # 与 V1 蒙特卡洛同口径：R 序列已含费，不重复扣
 
-# 资金约束层参数（老板拍板：5600 元 / 1.5% / 3 仓，T-023 折中档；--risk-pct/--max-positions 可覆盖）
+# 资金约束层参数（老板拍板：5600 元 / 2.0% / 3 仓——G9 实盘线定稿 2026-08-06，
+# 与网格实验 T-023 2.0%×3仓 同口径；--risk-pct/--max-positions 可覆盖）
 CAPITAL = 5600.0
-RISK_RATIO = 0.015
+RISK_RATIO = 0.02
 MAX_POSITIONS = 3
 GRADES = ["S"]
 MODE = "prebreak"
@@ -87,7 +88,7 @@ def run_cap_c23(df, risk_ratio: float, max_positions: int) -> tuple[list[float],
     """C23 资金约束层成交 R 序列（simulate_capital 核心零改动）
 
     Args:
-        risk_ratio: 单笔风险比例（0.015 = 1.5%）
+        risk_ratio: 单笔风险比例（0.02 = 2.0%，G9 实盘线定稿 2026-08-06）
         max_positions: 最多同时持仓数
 
     Returns:

@@ -130,7 +130,7 @@ def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float
 
 def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool = True,
                  cost_multiplier: float = 1.0, moving_stop: bool = False,
-                 dn_confirm: float = 0.0) -> Outcome:
+                 dn_confirm: float = 0.0, phase_in: bool = False) -> Outcome:
     """跟踪一笔信号在 hold 个交易日内的出场
 
     Args:
@@ -146,6 +146,11 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
             prebreak 触发后检查突破日量比 = 触发日成交量 ÷ 触发日前 20 日均量
             （口径对齐 DN 相对量比：启动K均量/调整段前 20 日均量）；
             > dn_confirm 才计入交易，量能不达标 → 视为未触发（不进场，不参与统计）。
+        phase_in: G3 分步建仓开关（2026-08-06 · 2024-06-29 周会原文定案）：
+            0.5R = 分步建仓第一步（非终局减半）——进场 0.5R → 下一根收线确认
+            （收下去/动能接受，判定见 indicators.half_position_confirm）→ 确认补至
+            1R 继续跟踪 / 不确认 0.5R 马上平仓（优势不突出，动能无法接受）。
+            默认关 = 现有行为（回测对照；模拟层 sim_trading 恒开启分步）。
 
     Returns:
         Outcome（预突破未触发时 triggered=False，不参与统计；prebreak 触发者附 vol_ratio）
@@ -157,9 +162,10 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
         return Outcome(hold, True, signal.close, signal.close, signal.date, False, 0.0)
 
     if signal.mode == "normal":
-        return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop)
-    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier, moving_stop,
-                           dn_confirm)
+        return _track_normal(signal, df, t, end, hold, enable_cost, cost_multiplier,
+                             moving_stop, phase_in)
+    return _track_prebreak(signal, df, t, end, hold, enable_cost, cost_multiplier,
+                           moving_stop, dn_confirm, phase_in)
 
 
 # ── C5 移动止损（2026-08-05 老板拍板 · 方案 C5 · 先回测后上线）──
@@ -214,10 +220,40 @@ def _track_window(high, low, close, dates, start, end, entry, stop,
     return close[end], pd.Timestamp(dates[end]), False
 
 
+def _phase_in_track(high, low, close, dates, df, conf_idx: int, end: int, entry: float,
+                    stop: float, enable_cost: bool, cost_multiplier: float,
+                    moving_stop: bool) -> tuple[float, pd.Timestamp, bool]:
+    """G3 分步建仓·收线确认后的出场跟踪（phase_in 模式 · 2024-06-29 周会原文）
+
+    确认日 = conf_idx（开仓/触发日次日）：
+      - 触止损（层面1 优先）→ 按止损价出场；
+      - 收线未确认 → 确认日收盘价平仓（0.5R 马上平仓——"觉得优势不突出，
+        动能无法接受，就马上平仓了"）；
+      - 确认 → 补至 1R，从确认日次日继续正常跟踪（C5 移动止损同 normal 口径）。
+    无确认收线空间（conf_idx > end）→ 0.5R 持有到期收盘（保守近似）。
+    确认规则单一来源：indicators.half_position_confirm。
+
+    Returns:
+        (exit_price, exit_date, stopped)
+    """
+    from 分析决策.分析.indicators import half_position_confirm
+    if conf_idx > end:
+        # 窗口内无确认收线 → 0.5R 持有到期平仓（无确认空间，保守近似）
+        return _track_window(high, low, close, dates, conf_idx, end, entry, stop,
+                             enable_cost, cost_multiplier, moving_stop)
+    verdict = half_position_confirm(df.iloc[:conf_idx + 1], entry, stop)
+    if verdict["stopped"]:
+        return stop, pd.Timestamp(dates[conf_idx]), True
+    if verdict["reject"]:
+        return float(verdict["close"]), pd.Timestamp(dates[conf_idx]), False
+    return _track_window(high, low, close, dates, conf_idx + 1, end, entry, stop,
+                         enable_cost, cost_multiplier, moving_stop)
+
+
 def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
                   enable_cost: bool = True, cost_multiplier: float = 1.0,
-                  moving_stop: bool = False) -> Outcome:
-    """normal：T 收盘进场，窗口内跟踪出场（C5 移动止损可选）"""
+                  moving_stop: bool = False, phase_in: bool = False) -> Outcome:
+    """normal：T 收盘进场，窗口内跟踪出场（C5 移动止损可选；G3 分步建仓可选）"""
     entry = signal.close
     stop = signal.stop
     high = df["最高"].values
@@ -225,9 +261,15 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
     close = df["收盘"].values
     dates = df["日期"].values
 
-    exit_price, exit_date, stopped = _track_window(
-        high, low, close, dates, t + 1, end, entry, stop,
-        enable_cost, cost_multiplier, moving_stop)
+    if phase_in:
+        # G3 分步建仓（2026-08-06）：0.5R 起步 → 下一根收线确认（T+1）
+        exit_price, exit_date, stopped = _phase_in_track(
+            high, low, close, dates, df, t + 1, end, entry, stop,
+            enable_cost, cost_multiplier, moving_stop)
+    else:
+        exit_price, exit_date, stopped = _track_window(
+            high, low, close, dates, t + 1, end, entry, stop,
+            enable_cost, cost_multiplier, moving_stop)
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0
@@ -236,12 +278,14 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
 
 def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
                     enable_cost: bool = True, cost_multiplier: float = 1.0,
-                    moving_stop: bool = False, dn_confirm: float = 0.0) -> Outcome:
+                    moving_stop: bool = False, dn_confirm: float = 0.0,
+                    phase_in: bool = False) -> Outcome:
     """prebreak：窗口内首根 最高≥trigger 才进场（触发价成交）；触发后跟踪出场（C5 移动止损可选）
 
     dn_confirm > 0 时：突破日量能确认（2026-08-06 实验）——触发后检查突破日量比
     （触发日成交量 ÷ 触发日前 20 日均量，口径对齐 DN 相对量比 ref.tail(20).mean()），
     量比 ≤ 阈值 → 视为未触发（不进场，不参与统计）；对照组（0.0）仅记录 vol_ratio 供分析。
+    phase_in=True 时：触发日进场 0.5R → 次日收线确认（G3，见 _phase_in_track）。
     """
     trigger = signal.trigger
     risk = signal.risk
@@ -268,10 +312,15 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
         return Outcome(hold, False, 0.0, 0.0, None, False, 0.0, vol_ratio)
 
     entry = trigger
-    # 2) 触发后跟踪出场（触发日次日 ~ hold 末；移动止损同 normal 口径）
-    exit_price, exit_date, stopped = _track_window(
-        high, low, close, dates, trig_idx + 1, end, entry, signal.stop,
-        enable_cost, cost_multiplier, moving_stop)
+    # 2) 触发后跟踪出场（触发日次日 ~ hold 末；移动止损同 normal 口径；G3 分步可选）
+    if phase_in:
+        exit_price, exit_date, stopped = _phase_in_track(
+            high, low, close, dates, df, trig_idx + 1, end, entry, signal.stop,
+            enable_cost, cost_multiplier, moving_stop)
+    else:
+        exit_price, exit_date, stopped = _track_window(
+            high, low, close, dates, trig_idx + 1, end, entry, signal.stop,
+            enable_cost, cost_multiplier, moving_stop)
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / risk if risk > 0 else 0.0

@@ -246,8 +246,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="C23 收紧方案 vs 现方案 · 资金约束下全量对比（T-024 后续）")
     ap.add_argument("--signals", default=str(DEFAULT_SIGNALS), help="signals.csv 路径")
     ap.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="初始资金（默认 5600）")
-    ap.add_argument("--risk-ratio", type=float, default=0.015,
-                    help="单笔风险比例（默认 1.5%%，T-023 折中档配置）")
+    ap.add_argument("--risk-ratio", type=float, default=0.02,
+                    help="单笔风险比例（默认 2.0%%——G9 实盘线定稿参数 2026-08-06 老板拍板，"
+                         "与网格实验 T-023 2.0%%×3仓 同口径；对照实验显式传旧值 0.015）")
     ap.add_argument("--max-positions", type=int, default=3,
                     help="最多同时持仓数（默认 3，T-023 折中档：2 仓已验证错误、5 仓回撤极端）")
     ap.add_argument("--mom-threshold", type=float, default=MOM_MAX,

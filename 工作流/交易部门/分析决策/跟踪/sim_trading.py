@@ -24,12 +24,17 @@ SIM_COLUMNS = [
     "entry_price", "stop_loss", "volume", "grade_at_entry",
     "ty_high", "ty_low", "status",
     "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
-    "env_scale",
+    "env_scale", "phase",
 ]
 
 # G3 当日头寸统一（补完计划第二批 · 2026-08-06 定案）：
 # 当日档进程内缓存（date -> scale）——同日多次开仓档位一致；
 # 跨会话一致性由 journal 的 env_scale 列兜底（sim_open 先查当日已开仓记录）。
+# G3 分步建仓（2026-08-06 定案，2024-06-29 周会原文）：0.5R = 分步建仓第一步
+# （非终局减半）——phase 列标注：
+#   "half"       = 0.5R 起步，待下一根收线确认（确认 → 补 0.5R 总 1R；不确认 → 平仓）
+#   "confirmed"  = 分步已确认并补至 1R（之后走正常四层面出场）
+#   ""           = 直接 1R 全仓（正常环境日，不分步）
 _day_env_cache: dict[str, float] = {}
 
 
@@ -61,6 +66,7 @@ def check_affordability(price: float, risk_per_share: float,
     G3 0.5R 环境仓位（补完计划 · 2026-08-06）：risk_scale 按个股环境质量
     传入（经验型模式/知识卡.md「环境不好（右下角）→ 0.5R」，判定见
     indicators.environment_quality），缩放单笔风险额后倒推手数。
+    分步建仓（G3 2026-08-06 定案）补仓同用 risk_scale=0.5（等额 0.5R）。
 
     Returns: (股数, 拒绝原因) — 股数 <100 表示不可买
     """
@@ -162,6 +168,61 @@ def _day_open_scale() -> float | None:
     return min(scales)
 
 
+def _check_half_position(df, r: dict) -> dict:
+    """0.5R 分步建仓·下一根收线确认检查（G3 · 2024-06-29 周会原文）
+
+    开仓日 = journal 记录日期；确认收线 = 开仓日下一根 K 线。
+    确认规则单一来源：indicators.half_position_confirm（C1 收下去/C2 动能延续/
+    C3 非放量阴线；止损层面1 优先）。确认 → 补 0.5R（等额：0.5R 风险预算内
+    可买股数，总风险 ≤ 1R 预算）；不确认 → 平仓（"觉得优势不突出，动能无法
+    接受，就马上平仓了"）。
+
+    Returns:
+        {"action": "add"/"exit_stop"/"exit_reject"/"wait"/"hold",
+         "close": float, "exit_date": str, "reason": str,
+         "add_shares": int, "add_price": float}
+        add        → 收线确认，补仓 add_shares 股 @ add_price（总 1R）
+        exit_stop  → 确认日触止损（层面1 优先，按止损价平仓）
+        exit_reject→ 收线未确认 → 0.5R 马上平仓（按确认日收盘价）
+        wait       → 收线未出现（数据不足），继续持有等待
+        hold       → 已确认但补仓受限（资金/整手不足）→ 保持 0.5R 持有
+    """
+    from 分析决策.分析.indicators import half_position_confirm
+    entry_price = float(r["entry_price"])
+    stop = float(r["stop_loss"])
+    dates = df["日期"].astype(str).str[:10].values
+    entry_idx = None
+    for i, d in enumerate(dates):
+        if d == r["date"]:
+            entry_idx = i
+            break
+    if entry_idx is None or entry_idx + 1 >= len(df):
+        return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
+                "add_shares": 0, "add_price": 0.0}
+    exit_date = str(dates[entry_idx + 1])[:10]
+    verdict = half_position_confirm(df.iloc[:entry_idx + 2], entry_price, stop)
+    if verdict["stopped"]:
+        return {"action": "exit_stop", "close": stop, "exit_date": exit_date,
+                "reason": verdict["reason"], "add_shares": 0, "add_price": 0.0}
+    if verdict["wait"]:
+        return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
+                "add_shares": 0, "add_price": 0.0}
+    if verdict["reject"]:
+        return {"action": "exit_reject", "close": verdict["close"], "exit_date": exit_date,
+                "reason": f"分步建仓收线未确认({verdict['reason']})→0.5R平仓",
+                "add_shares": 0, "add_price": 0.0}
+    # 确认 → 补仓 0.5R（等额；可买性检查防止资金/整手不足时盲目翻倍）
+    add_price = verdict["close"]
+    risk_ps = entry_price - stop
+    add_shares, reason = check_affordability(add_price, risk_ps, risk_scale=0.5)
+    if add_shares < 100:
+        return {"action": "hold", "close": add_price, "exit_date": "",
+                "reason": f"确认但补仓不可买({reason})，保持 0.5R",
+                "add_shares": 0, "add_price": 0.0}
+    return {"action": "add", "close": add_price, "exit_date": "",
+            "reason": "收线确认，补仓 0.5R", "add_shares": add_shares, "add_price": add_price}
+
+
 def sim_open(code: str, price: float, stop: float, grade: str = "",
              name: str = "", ty_high: float = 0, ty_low: float = 0,
              risk_scale: float | None = None) -> str:
@@ -170,7 +231,10 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
     Args:
         risk_scale: 风险缩放系数（None=按当日头寸统一自动判定 1R/0.5R，G3
             2026-08-06：先查当日已开仓记录档位 → 无则按当日市场环境判定；
-            手动指定则优先且不参与统一逻辑）
+            手动指定则优先且不参与统一逻辑）。
+            0.5R = 分步建仓第一步（2026-08-06 定案 · 2024-06-29 周会原文）：
+            当日开 0.5R 的持仓进入 phase="half"，下一根收线确认后补 0.5R
+            （总 1R）；收线不确认 → 马上平仓（非终局减半语义）。
     """
     risk_ps = price - stop
     if risk_ps <= 0:
@@ -186,26 +250,29 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
         else:
             risk_scale, env_note = _env_risk_scale(code)
     else:
-        env_note = f"手动缩放{risk_scale:g}"
+        env_note = f"手动缩放{risk_scale:g}R"
     shares, reason = check_affordability(price, risk_ps, risk_scale=risk_scale)
     if shares < 100:
         return f"❌ {code} 不可买：{reason}"
 
     rows = _read_all()
     tid = f"SIM{datetime.now():%Y%m%d%H%M%S}"
+    phase = "half" if risk_scale == 0.5 else ""
     rows.append({
         "trade_id": tid, "date": datetime.now().strftime("%Y-%m-%d"),
         "symbol": code, "name": name, "direction": "long", "market": "stock",
         "entry_price": price, "stop_loss": stop, "volume": shares,
         "grade_at_entry": grade, "ty_high": ty_high, "ty_low": ty_low,
         "status": "open", "exit_price": "", "exit_date": "", "exit_reason": "",
-        "r_multiple": "", "pnl": "", "env_scale": risk_scale,
+        "r_multiple": "", "pnl": "", "env_scale": risk_scale, "phase": phase,
     })
     _write_all(rows)
+    phase_note = ("，分步起步：下一根收线确认后补至 1R，未确认则平仓"
+                  if phase == "half" else "")
     return (f"✅ 模拟开仓 {code}({name or '无名'}) 评级{grade or '—'}\n"
             f"  进场 {price} | 止损 {stop} | 风险 {risk_ps:.2f}元/股 | {shares}股\n"
             f"  单笔风险 {risk_ps * shares:.0f}元（上限{max_risk_per_trade(scale=risk_scale):.0f}元）"
-            f" | {env_note} | ID {tid}")
+            f" | {env_note}{phase_note} | ID {tid}")
 
 
 def sim_check() -> str:
@@ -227,6 +294,50 @@ def sim_check() -> str:
             continue
         if df is None or len(df) < 3:
             out.append(f"  {code}: 数据不足")
+            continue
+        # G3 分步建仓（2026-08-06 · 2024-06-29 周会原文）：phase=="half" 的持仓
+        # 先做"下一根收线确认"——确认 → 补 0.5R（总 1R，phase→confirmed 后走
+        # 正常四层面出场）；不确认 → 马上平仓（0.5R）；触止损 → 层面1 平仓。
+        # 补仓后（confirmed）与直接 1R 持仓同路径。
+        phase = r.get("phase", "")
+        if phase == "half":
+            step = _check_half_position(df, r)
+            if step["action"] == "wait":
+                out.append(f"  {code}: 0.5R分步待确认（收线未出现，持有等待）")
+                continue
+            if step["action"] == "hold":
+                out.append(f"  {code}: {step['reason']}")
+                continue
+            if step["action"] == "add":
+                old_v = int(r["volume"])
+                old_e = float(r["entry_price"])
+                add_v = step["add_shares"]
+                add_p = step["add_price"]
+                new_v = old_v + add_v
+                # 加权平均成本（两笔等额 0.5R）：R 基准 = 总股数 × 每股风险（结构止损不变）
+                r["volume"] = str(new_v)
+                r["entry_price"] = str(round((old_e * old_v + add_p * add_v) / new_v, 4))
+                r["phase"] = "confirmed"
+                out.append(f"  {code}: ✅ 分步确认，补 0.5R（{add_v}股@{add_p:.2f}），"
+                           f"总仓位 1R（{new_v}股）")
+                changed += 1
+                continue
+            # exit_stop / exit_reject → 平仓（0.5R 半仓）
+            exit_price = float(step["close"])
+            pnl = (exit_price - float(r["entry_price"])) * int(r["volume"])
+            fee_in = calc_trade_fee(float(r["entry_price"]) * int(r["volume"]))
+            fee_out = calc_trade_fee(exit_price * int(r["volume"]))
+            pnl -= fee_in + fee_out
+            risk_amt = (float(r["entry_price"]) - float(r["stop_loss"])) * int(r["volume"])
+            r_mult = pnl / risk_amt if risk_amt > 0 else 0
+            r["status"] = "closed"
+            r["exit_price"] = f"{exit_price:.2f}"
+            r["exit_date"] = step["exit_date"]
+            r["exit_reason"] = step["reason"]
+            r["r_multiple"] = f"{r_mult:.2f}"
+            r["pnl"] = f"{pnl:.2f}"
+            out.append(f"  {code}: 🎯 {step['reason']} R={r_mult:+.2f} 盈亏{pnl:+,.0f}元")
+            changed += 1
             continue
         pos = Position(symbol=code, direction="long", market="stock",
                        entry_price=float(r["entry_price"]),

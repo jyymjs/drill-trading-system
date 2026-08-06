@@ -395,7 +395,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="总资产口径回撤重算（现金+持仓市值，C23 判断用）")
     ap.add_argument("--signals", default=str(DEFAULT_SIGNALS), help="signals.csv 路径")
     ap.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="初始资金（默认 5600）")
-    ap.add_argument("--risk-ratio", type=float, default=0.015, help="单笔风险比例（默认 1.5%%）")
+    ap.add_argument("--risk-ratio", type=float, default=0.02,
+                    help="单笔风险比例（默认 2.0%%——G9 实盘线定稿参数 2026-08-06 老板拍板；"
+                         "对照实验显式传旧值 0.015）")
     ap.add_argument("--max-positions", type=int, default=3, help="最多同时持仓数（默认 3）")
     ap.add_argument("--mom-threshold", type=float, default=DEFAULT_MOM,
                     help=f"C23 动量阈值（默认 {DEFAULT_MOM}，T-024 探索最优）")

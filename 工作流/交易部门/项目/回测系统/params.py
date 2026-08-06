@@ -96,6 +96,12 @@ class BacktestParams:
     #   默认关 = 显式开（--c23）：V1 基线回测仍可跑，V2 用 --c23；
     #   与 sim_capital.py --c23 语义一致（信号层过滤，不改评级与跟踪核心）。
     c23: bool = False
+    # G3 分步建仓（2026-08-06 · 2024-06-29 周会原文定案）：0.5R = 分步建仓第一步
+    # （非终局减半）——进场 0.5R → 下一根收线确认（收下去/动能接受，判定见
+    # indicators.half_position_confirm）→ 确认补至 1R 继续跟踪 / 不确认 0.5R
+    # 马上平仓（"优势不突出，动能无法接受"）。默认关 = 现有行为（回测对照用
+    # --phase-in；模拟层 sim_trading 恒开启分步——模拟 = 实盘执行口径）。
+    phase_in: bool = False
     # 覆盖默认输出目录
     output_dir: str | None = None
     # run 后自动验收自检的抽样笔数（0=不自动自检）

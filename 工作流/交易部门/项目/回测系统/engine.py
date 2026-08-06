@@ -183,7 +183,8 @@ class BacktestEngine:
                 outcomes = {h: track_signal(sig, base, h, enable_cost=self.params.enable_cost,
                                             cost_multiplier=self.params.cost_multiplier,
                                             moving_stop=self.params.moving_stop,
-                                            dn_confirm=self.params.dn_confirm)
+                                            dn_confirm=self.params.dn_confirm,
+                                            phase_in=self.params.phase_in)
                             for h in self.params.holds}
                 rec = TrackedRecord(signal=sig, outcomes=outcomes)
                 # C1 持仓警示：持仓期内（T+1 ~ 最晚出场日）跨过披露日 → 记录警示，不强制平仓
