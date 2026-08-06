@@ -117,11 +117,12 @@ class TestPositionCard:
         assert "补 0.5R 挂单 100 股 @ 10.50" in text
 
     def test_reject_exit_action(self, monkeypatch):
-        """确认日收盘跌破进场价 → 不确认平仓指令"""
+        """首根收盘跌破进场价 + T+2 仍未确认 → delay2 以 T+2 收盘平仓指令"""
         k = mk_kline([
             (10.0, 10.4, 9.9, 10.1, 1000000),
             (10.1, 10.5, 10.0, 10.2, 1000000),   # 2025-01-04 开仓日
-            (10.0, 10.2, 9.9, 10.05, 1000000),   # 2025-01-05 收盘 10.05 < 进场 10.2
+            (10.0, 10.2, 9.9, 10.05, 1000000),   # 2025-01-05 首根收盘 10.05 < 进场 10.2 → 不确认
+            (10.0, 10.2, 9.9, 10.0, 1000000),    # 2025-01-06 T+2 收盘 10.0 仍 < 进场 10.2 → 平仓
         ])
         monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                             lambda code, use_cache=True: k)
@@ -131,6 +132,23 @@ class TestPositionCard:
         text = execution_card.position_card(rows=[row])
         assert "收线未确认" in text
         assert "平仓" in text
+
+    def test_reject_waits_no_t2(self, monkeypatch):
+        """首根收盘跌破进场价但 T+2 未出现 → delay2 等待二次确认（不平仓）"""
+        k = mk_kline([
+            (10.0, 10.4, 9.9, 10.1, 1000000),
+            (10.1, 10.5, 10.0, 10.2, 1000000),   # 2025-01-04 开仓日
+            (10.0, 10.2, 9.9, 10.05, 1000000),   # 2025-01-05 首根收盘 10.05 < 进场 10.2 → 不确认
+        ])
+        monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
+                            lambda code, use_cache=True: k)
+        row = {"symbol": "600419", "name": "测试股", "date": "2025-01-04",
+               "entry_price": "10.20", "stop_loss": "9.80", "volume": "100",
+               "phase": "half", "status": "open"}
+        text = execution_card.position_card(rows=[row])
+        assert "延迟二次确认" in text
+        assert "等待" in text
+        assert "平仓" not in text
 
     def test_stop_exit_action(self, monkeypatch):
         """确认日最低 ≤ 止损价 → 层面1 止损平仓指令"""

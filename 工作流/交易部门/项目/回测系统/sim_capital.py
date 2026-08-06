@@ -56,7 +56,8 @@ def default_confirm_fn():
     """half_phase 资金模拟的默认确认判定（真实 K 线，带缓存）
 
     判定规则单一来源：indicators.phase_confirm_from_kline（信号日→触发日→
-    次日收线确认；内部复用 half_position_confirm 三条件 + 止损层面1 优先，
+    次日收线确认；confirm_mode="delay2" = 2026-08-06 老板拍板生产确认规则：
+    首根 reject 且存在 T+2 → 二次判定；内部复用 half_position_confirm_delay2，
     与回测层 tracking._phase_in_track / 模拟层 sim_trading._check_half_position
     同规则同源，不复制）。K 线经 fetcher duckdb 优先链路读取（只读）。
 
@@ -87,7 +88,8 @@ def default_confirm_fn():
         if df is None or len(df) < 2:
             return {"confirmed": True, "stopped": False, "close": 0.0,
                     "confirm_date": signal_date}
-        v = phase_confirm_from_kline(df, signal_date, entry_price, stop_loss)
+        v = phase_confirm_from_kline(df, signal_date, entry_price, stop_loss,
+                                     confirm_mode="delay2")
         if v["wait"]:
             return {"confirmed": True, "stopped": False, "close": 0.0,
                     "confirm_date": signal_date}

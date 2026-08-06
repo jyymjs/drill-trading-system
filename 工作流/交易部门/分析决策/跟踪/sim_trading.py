@@ -172,10 +172,11 @@ def _check_half_position(df, r: dict) -> dict:
     """0.5R 分步建仓·下一根收线确认检查（G3 · 2024-06-29 周会原文）
 
     开仓日 = journal 记录日期；确认收线 = 开仓日下一根 K 线。
-    确认规则单一来源：indicators.half_position_confirm（C1 收下去/C2 动能延续/
-    C3 非放量阴线；止损层面1 优先）。确认 → 补 0.5R（等额：0.5R 风险预算内
-    可买股数，总风险 ≤ 1R 预算）；不确认 → 平仓（"觉得优势不突出，动能无法
-    接受，就马上平仓了"）。
+    确认规则单一来源：indicators.half_position_confirm_delay2（2026-08-06 老板
+    拍板替换 strict 为生产规则：首根 reject 且存在第二根（T+2）→ 以 T+1 为
+    开仓日二次判定——确认 → 补 0.5R / T+2 触止损 → 止损出场 / T+2 仍未确认 →
+    以 T+2 收盘平仓；首根 reject 且无 T+2（数据只到首根）→ wait 等待二次确认，
+    次日数据到位再判；首根即确认/触止损 → 同 strict 即时处理）。
 
     Returns:
         {"action": "add"/"exit_stop"/"exit_reject"/"wait"/"hold",
@@ -184,10 +185,10 @@ def _check_half_position(df, r: dict) -> dict:
         add        → 收线确认，补仓 add_shares 股 @ add_price（总 1R）
         exit_stop  → 确认日触止损（层面1 优先，按止损价平仓）
         exit_reject→ 收线未确认 → 0.5R 马上平仓（按确认日收盘价）
-        wait       → 收线未出现（数据不足），继续持有等待
+        wait       → 收线未出现 / 首根 reject 等待二次确认（T+2 未到位），持有等待
         hold       → 已确认但补仓受限（资金/整手不足）→ 保持 0.5R 持有
     """
-    from 分析决策.分析.indicators import half_position_confirm
+    from 分析决策.分析.indicators import half_position_confirm_delay2
     entry_price = float(r["entry_price"])
     stop = float(r["stop_loss"])
     dates = df["日期"].astype(str).str[:10].values
@@ -199,8 +200,8 @@ def _check_half_position(df, r: dict) -> dict:
     if entry_idx is None or entry_idx + 1 >= len(df):
         return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
                 "add_shares": 0, "add_price": 0.0}
-    exit_date = str(dates[entry_idx + 1])[:10]
-    verdict = half_position_confirm(df.iloc[:entry_idx + 2], entry_price, stop)
+    verdict = half_position_confirm_delay2(df, entry_price, stop, entry_idx + 1)
+    exit_date = str(dates[verdict["conf_idx_used"]])[:10]
     if verdict["stopped"]:
         return {"action": "exit_stop", "close": stop, "exit_date": exit_date,
                 "reason": verdict["reason"], "add_shares": 0, "add_price": 0.0}
@@ -208,6 +209,11 @@ def _check_half_position(df, r: dict) -> dict:
         return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
                 "add_shares": 0, "add_price": 0.0}
     if verdict["reject"]:
+        if not verdict["second_checked"]:
+            # 首根 reject 且 T+2 未到位（实时模拟逐日推进）→ 等待二次确认
+            return {"action": "wait", "close": 0.0, "exit_date": "",
+                    "reason": "首根未确认，等待延迟二次确认(T+2)",
+                    "add_shares": 0, "add_price": 0.0}
         return {"action": "exit_reject", "close": verdict["close"], "exit_date": exit_date,
                 "reason": f"分步建仓收线未确认({verdict['reason']})→0.5R平仓",
                 "add_shares": 0, "add_price": 0.0}
@@ -303,7 +309,7 @@ def sim_check() -> str:
         if phase == "half":
             step = _check_half_position(df, r)
             if step["action"] == "wait":
-                out.append(f"  {code}: 0.5R分步待确认（收线未出现，持有等待）")
+                out.append(f"  {code}: 0.5R分步待确认（{step['reason']}，持有等待）")
                 continue
             if step["action"] == "hold":
                 out.append(f"  {code}: {step['reason']}")

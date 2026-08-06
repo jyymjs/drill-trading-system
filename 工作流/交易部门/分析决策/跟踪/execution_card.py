@@ -159,8 +159,8 @@ def position_card(rows: list[dict] | None = None) -> str:
         elif act == "hold":
             out.append(f"  ⏸ {code} {name}: {step['reason']}（保持 0.5R {held} 股，明日再看）")
         else:  # wait
-            out.append(f"  ⏳ {code} {name}: 收线未出现（进场 {entry:.2f} / 止损 {stop:.2f}），"
-                       "持有 0.5R 等待确认")
+            out.append(f"  ⏳ {code} {name}: {step['reason']}（进场 {entry:.2f} / "
+                       f"止损 {stop:.2f}），持有 0.5R 等待确认")
     out.append(line)
     return "\n".join(out)
 
