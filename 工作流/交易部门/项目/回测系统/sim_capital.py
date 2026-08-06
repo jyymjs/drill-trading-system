@@ -52,12 +52,72 @@ def c23_mask(df: pd.DataFrame, mom: float = DEFAULT_MOM) -> pd.Series:
             & (df["risk"] >= RISK_MIN) & (df["risk"] <= RISK_MAX))
 
 
+def default_confirm_fn():
+    """half_phase 资金模拟的默认确认判定（真实 K 线，带缓存）
+
+    判定规则单一来源：indicators.phase_confirm_from_kline（信号日→触发日→
+    次日收线确认；内部复用 half_position_confirm 三条件 + 止损层面1 优先，
+    与回测层 tracking._phase_in_track / 模拟层 sim_trading._check_half_position
+    同规则同源，不复制）。K 线经 fetcher duckdb 优先链路读取（只读）。
+
+    Returns:
+        fn(code, signal_date, entry_price, stop) ->
+        {"confirmed","stopped","close","confirm_date"}
+        confirm_date = 确认日（YYYY-MM-DD，补款扣款日；缺省 = signal_date 次日）
+        数据不可得/未触发 → 放行侧默认确认（不因数据问题误拒补仓）
+    """
+    from 分析决策.分析.indicators import phase_confirm_from_kline
+    from 数据基础.duckdb.reader import read_kline
+
+    _cache: dict[str, object] = {}
+
+    def _fn(code: str, signal_date: str, entry_price: float,
+            stop_loss: float) -> dict:
+        # signals 历史格式 code 去前导零（如 685 → 000685）；duckdb symbol 恒 6 位。
+        # 直读 duckdb（只读，全量历史 qfq）——与回放/引擎同口径；不走网络
+        # 回退（网络三源复权口径不一致会污染判定），库外个股 → 放行侧确认。
+        sym = str(code).zfill(6)
+        df = _cache.get(sym)
+        if df is None:
+            try:
+                df = read_kline(sym)
+            except Exception:  # noqa: BLE001 - 数据异常 → 放行侧
+                df = None
+            _cache[sym] = df
+        if df is None or len(df) < 2:
+            return {"confirmed": True, "stopped": False, "close": 0.0,
+                    "confirm_date": signal_date}
+        v = phase_confirm_from_kline(df, signal_date, entry_price, stop_loss)
+        if v["wait"]:
+            return {"confirmed": True, "stopped": False, "close": 0.0,
+                    "confirm_date": signal_date}
+        return {"confirmed": v["confirmed"], "stopped": v["stopped"],
+                "close": v["close"], "confirm_date": v["confirm_date"]}
+
+    return _fn
+
+
+def _final_pnl(p: dict, fee_out: float) -> float:
+    """平仓口径 pnl（统一在平仓循环实算，避免成交时按半仓预存的残留偏差）
+
+    half_phase 确认补仓的持仓：买入费用 = 两笔半仓佣金 + 补仓费（shares 已在
+    补款时翻倍）；未确认/直开持仓：单笔买入费用。出场费 = 平仓实算。
+    """
+    if p.get("half") and p.get("half_ok"):
+        fee_in = 2 * p.get("fee_in", 0) + p.get("add_fee", 0)
+    else:
+        fee_in = p.get("fee_in", 0)
+    return round((p["exit_price"] - p["entry"]) * p["shares"] - fee_in - fee_out, 2)
+
+
 def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                      max_positions: int = 2, mode: str = "prebreak",
                      hold: str = "20d", grades: list[str] | None = None,
                      c23: bool = False,
                      monthly_inject: float = 0.0,
-                     risk_growth: bool = False) -> dict:
+                     risk_growth: bool = False,
+                     half_phase: bool = False,
+                     confirm_fn=None) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
 
     Args:
@@ -78,6 +138,15 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             capital 恒定，与既有口径一致）。True 时每笔成交前按
             (capital + 累计注入) × risk_ratio 重算单笔风险额——模拟"资金增长后
             配置同步上调"（最后全面测试 A 档对照口径）。
+        half_phase: G3 0.5R 分步资金占用（2026-08-06 老板确认②，默认 False=现有
+            行为零变化）。True 时每笔成交按 0.5R 起步：首日半额风险预算 → 股数
+            减半、仅占用半仓资金；确认日（入场次一交易日）收线确认（规则单一来源
+            indicators.phase_confirm_from_kline）→ 补 0.5R 至总 1R（资金占用补全）；
+            不确认/触止损 → 该笔以半仓结束（出场价/日期/R 仍取 signals 的
+            phase_in 引擎口径——backtest_final 已按 phase_in 计算 reject 日平仓）。
+            半额预算买不起 1 手 → 回退 1R 直开（保持可执行集与默认一致，对照可比）。
+        confirm_fn: 确认判定注入（测试用）：fn(code, signal_date, entry, stop)
+            -> {"confirmed","stopped","close"}；None → default_confirm_fn（真实 K 线）
 
     Returns:
         dict: 摘要指标 + trades（逐笔成交）+ equity（资金曲线 DataFrame）
@@ -105,6 +174,13 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
     equity: list[dict] = []     # 资金曲线（起点快照 + 每笔平仓后快照 + 注入快照）
     reasons: dict[str, int] = {}
     peak, max_dd = capital, 0.0
+
+    # half_phase（G3 0.5R 分步资金占用，2026-08-06 老板确认②）：
+    # 确认判定注入（默认真实 K 线，见 default_confirm_fn）；确认日 = 入场次一交易日，
+    # 由信号日 + signals 的 phase_in 语义回放（indicators.phase_confirm_from_kline）。
+    # 判定结果在成交时立即计算（无 I/O 延迟），补款延迟到确认日扣——模拟半仓期间
+    # 资金占用 = 0.5 仓位金额。
+    _confirm = confirm_fn if confirm_fn is not None else default_confirm_fn()
 
     # 注入计划（2026-08-06 最后全面测试 A 档）：首信号自然月 → 末信号自然月，每月一笔
     injected_total = 0.0
@@ -143,11 +219,27 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             # 风险额随累计投入（初始+注入）增长——资金增长后配置同步上调口径
             risk_amt = (capital + injected_total) * risk_ratio
             max_risk_per_share = risk_amt / 100
+        # 0.5) 分步确认补款（half_phase）：到确认日（入场次一交易日）→ 收线确认的
+        #     补 0.5R（扣补仓款 + 手续费，资金占用补全）；不确认/触止损 → 无补款
+        #     （该笔以半仓结束，平仓由下方"先平到期"处理——signals 的 phase_in
+        #     引擎口径中 reject 日 = exit_date）。
+        for p in [p for p in positions if p.get("half") and not p.get("half_settled")]:
+            if p["confirm_date"] and date >= p["confirm_date"]:
+                if p["half_ok"]:
+                    # 确认补仓：扣补款 + 手续费；持仓翻倍至 1R（平仓回款口径随之
+                    # 翻倍）。pnl 不在此算——统一在平仓循环按最终股数重算（单一口径）
+                    fee_add = calc_trade_fee(p["add_cost"])
+                    balance -= p["add_cost"] + fee_add
+                    p["add_fee"] = fee_add
+                    p["shares"] *= 2
+                    p["risk_actual"] = round(p["risk_actual"] * 2, 2)
+                p["half_settled"] = True
         # 1) 先平到期持仓（exit_date ≤ 当前信号日 → 以该日成交价出场）
         for p in [p for p in positions if p["exit_date"] <= date]:
             proceed = p["exit_price"] * p["shares"]
             fee_out = calc_trade_fee(proceed)
             balance += proceed - fee_out
+            p["pnl"] = _final_pnl(p, fee_out)   # 统一口径：按最终股数实算（half 确认后翻倍）
             trades.append({**p, "exit_date": p["exit_date"], "pnl": p["pnl"]})
             equity.append({"date": p["exit_date"], "balance": round(balance, 2),
                            "injected_total": round(injected_total, 2)})
@@ -168,10 +260,22 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         price = float(row[_entry_col])
         risk_ps = float(row.get("risk", 0) or 0)
         # 3) 可买股数：资金上限与风险上限取 min，整手（100股）向下取整
+        # half_phase 待补预留：确认未决（half 且 half_ok 且未 settle）的补仓款
+        # 在确认日前不可用于其他开仓——半仓释放的资金只有"非待补部分"可用，
+        # 保证确认日补款余额恒充足（0.5R 分步资金占用的真实语义）
+        pending = sum(p.get("add_cost", 0) for p in positions
+                      if p.get("half") and p.get("half_ok")
+                      and not p.get("half_settled"))
+        avail = balance - pending
+        half = False
         if risk_ps <= 0:
             shares = 0
-        else:
-            shares = int(min(balance // price, risk_amt // risk_ps) / 100) * 100
+        elif half_phase and risk_amt * 0.5 // risk_ps >= 100:
+            # 0.5R 起步（2026-08-06 老板确认②）：半额风险预算可买 ≥1 手 → 半仓起步
+            shares = int(min(avail // price, risk_amt * 0.5 // risk_ps) / 100) * 100
+            half = shares >= 100
+        if risk_ps > 0 and not half:
+            shares = int(min(avail // price, risk_amt // risk_ps) / 100) * 100
         if shares < 100:
             if risk_ps > 0 and risk_amt // risk_ps < 100:
                 reasons[f"每股风险{risk_ps:.2f}超限(>{max_risk_per_share:.2f})"] = \
@@ -195,20 +299,38 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         balance -= cost + fee_in
         exit_price = float(row[exit_col])
         fee_out = calc_trade_fee(exit_price * shares)
-        positions.append({
+        pos = {
             "date": date, "code": row["code"], "grade": row["grade"],
             "entry": price, "exit_price": exit_price, "exit_date": ex_d[:10],
             "r": float(row[r_col]), "shares": int(shares),
             "risk_actual": round(risk_ps * shares, 2),   # 单笔实际风险（每股风险×股数）
             "risk_amt_at": round(risk_amt, 2),           # 成交时单笔风险额（risk_growth 动态档用）
             "pnl": round((exit_price - price) * shares - fee_in - fee_out, 2),
-        })
+            "fee_in": fee_in, "fee_out": fee_out,        # half_phase 补仓重算 pnl 用
+        }
+        if half:
+            # 0.5R 起步（半仓成交）：确认判定立即算（无 I/O 延迟），补款延迟到
+            # 确认日扣——半仓期间资金占用 = 0.5 仓位金额；确认 → 补等额 0.5R
+            # （总 1R）；不确认/触止损 → 半仓到 exit_date 平仓（signals phase_in 口径）
+            # 注意：止损价 = 进场价 - 每股风险（risk = entry - stop，signals 口径）
+            v = _confirm(str(row["code"]), date, price, price - risk_ps)
+            half_ok = bool(v.get("confirmed"))
+            cdate = str(v.get("confirm_date") or "")
+            if not cdate or cdate < date:
+                cdate = date
+            pos.update({
+                "half": True, "half_ok": half_ok, "half_settled": False,
+                "confirm_date": cdate, "add_cost": round(cost, 2), "add_fee": 0.0,
+                "pnl": round((exit_price - price) * shares - fee_in - fee_out, 2),
+            })
+        positions.append(pos)
 
     # 模拟结束：数据末尾仍持仓的按已记录成交平掉（不开新仓）
     for p in positions:
         proceed = p["exit_price"] * p["shares"]
         fee_out = calc_trade_fee(proceed)
         balance += proceed - fee_out
+        p["pnl"] = _final_pnl(p, fee_out)
         trades.append({**p, "pnl": p["pnl"]})
         equity.append({"date": p["exit_date"], "balance": round(balance, 2),
                        "injected_total": round(injected_total, 2)})
@@ -284,6 +406,12 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         },
         "trades": trades,
         "equity": pd.DataFrame(equity),
+        # half_phase（G3 0.5R 分步）执行统计：半仓起步笔数 / 确认补仓笔数 / 未确认半仓止步笔数
+        "half_stats": {
+            "n_half": sum(1 for t in trades if t.get("half")),
+            "n_confirm": sum(1 for t in trades if t.get("half") and t.get("half_ok")),
+            "n_reject": sum(1 for t in trades if t.get("half") and not t.get("half_ok")),
+        },
     }
 
 
@@ -305,6 +433,9 @@ def main() -> int:
                     help="每月注入金额（元，默认 0=无注入；最后全面测试 A 档=3000）")
     ap.add_argument("--risk-growth", action="store_true",
                     help="风险额随累计投入（初始+注入）增长（默认关=按初始资金恒定）")
+    ap.add_argument("--half-phase", action="store_true",
+                    help="G3 0.5R 分步资金占用（2026-08-06 老板确认②）：半仓起步、"
+                         "确认日补款、资金占用=半仓金额；默认关=整仓占用（现有行为）")
     ap.add_argument("--out-csv", default=None, help="资金曲线 CSV 输出路径（可选）")
     args = ap.parse_args()
 
@@ -334,7 +465,8 @@ def main() -> int:
                            max_positions=args.max_positions, mode=args.mode,
                            hold=args.hold, grades=args.grades, c23=args.c23,
                            monthly_inject=args.monthly_inject,
-                           risk_growth=args.risk_growth)
+                           risk_growth=args.risk_growth,
+                           half_phase=args.half_phase)
     if not res["n_exec"]:
         print("无触发信号")
         return 1
@@ -352,8 +484,8 @@ def main() -> int:
     print(f"  初始资金        {r['capital']:>10,.2f} 元 | 单笔风险 {r['risk_amt_first']:,.0f} 元起（{args.risk_ratio:.1%}"
           f"{'，随投入增长' if args.risk_growth else '，恒定'}")
     print(f"                   | 持仓上限 {r['max_positions']} 只 | 评级 {'/'.join(r['grades'])} | {r['mode']}/{r['hold']}d"
-          f"{' | C23 收紧' if args.c23 else ''}")
-    print(line)
+          f"{' | C23 收紧' if args.c23 else ''}"
+          f"{' | 0.5R分步(半仓占用)' if args.half_phase else ' | 整仓占用'}")
     print(f"  信号总数        {r['n_all']:>10,}")
     print(f"  实际可执行      {r['n_exec']:>10,}（{r['exec_rate']:.1f}%）")
     for reason, cnt in sorted(r["reasons"].items(), key=lambda x: -x[1]):

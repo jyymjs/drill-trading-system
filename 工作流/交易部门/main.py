@@ -151,6 +151,17 @@ def cmd_scan(args):
     else:
         print("\n当前没有符合条件的股票")
 
+    # 执行卡（2026-08-06 老板确认四连包①）：挂单指引卡（1R/0.5R 双路径，按当日
+    # 环境档）+ 分步建仓持仓卡（在持 0.5R 试探仓的收线确认动作指令）。
+    # prebreak 主表（C23 达标未突破候选）为挂单对象；normal 模式仅输出持仓卡。
+    try:
+        from 分析决策.跟踪.execution_card import order_card, position_card
+        print()
+        print(order_card(results if mode == "prebreak" else []))
+        print(position_card())
+    except ImportError:
+        pass
+
     # 纪律报告（每次scan自动输出）
     try:
         from 分析决策.风控.trade_guardian import discipline_report
@@ -226,6 +237,7 @@ def cmd_diagnose(args):
 def cmd_track(args):
     """交易记录管理"""
     import numpy as np
+
     from 分析决策.跟踪.equity_curve import plot_equity_curve
     from 分析决策.跟踪.monte_carlo import plot_simulation, simulate
     from 分析决策.跟踪.trade_journal import format_stats, get_all_trades, trade_stats

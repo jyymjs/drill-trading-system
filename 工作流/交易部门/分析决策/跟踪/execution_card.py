@@ -1,0 +1,180 @@
+"""实盘执行卡（2026-08-06 老板确认四连包①：1R/0.5R 双路径执行卡）
+
+扫描报告增强板块（实盘前置），三个板块：
+
+1. 当日环境档：上证指数 60 日窗口 environment_quality → 「1R 日 / 0.5R 日」。
+   判定单一来源：sim_trading._market_env_scale（指数数据不可得 → None → 1R 日，放行侧）。
+
+2. 挂单指引卡：当日环境档决定新候选挂单路径——
+   - 1R 日：新候选按 1R 挂单（风险额 = 当日资金 × 2%，5600 元 → 112 元，按当日资金实算）；
+   - 0.5R 日：新候选按 0.5R 试探挂单（风险额半额 = 56 元）+ 次日收线确认流程说明
+     （确认 → 补 0.5R 至 1R；不确认 → 平仓——2024-06-29 周会原文，见
+     indicators.half_position_confirm 模块注释，知识卡 经验型模式/知识卡.md 仓位与环境节）。
+
+3. 分步建仓持仓卡：在持 0.5R 试探仓（sim_journal phase=="half" 的行；兼容
+   trade_journal 带 phase 列的 open 行）→ half_position_confirm 三条件判定 →
+   动作指令（补 0.5R 挂单价 / 平仓 / 持有等待 / 触止损）。
+   判定逻辑与模拟层同源：复用 sim_trading._check_half_position（不复制）。
+"""
+from __future__ import annotations
+
+from datetime import datetime
+
+from 分析决策.跟踪 import sim_trading
+from 分析决策.风控.capital import get_capital
+
+
+def env_day_scale() -> tuple[float, str]:
+    """当日环境档（1R 日 / 0.5R 日）
+
+    Returns:
+        (scale, 说明)：1.0 = 1R 日（环境 good），0.5 = 0.5R 日（环境 weak/bad）；
+        指数数据不可得 → (1.0, "指数数据不可得→默认1R日")（放行侧，不因数据问题误伤挂单）
+    """
+    s = sim_trading._market_env_scale()
+    if s is None:
+        return 1.0, "指数数据不可得→默认1R日"
+    return s, ("环境好(非右下角)→1R日" if s == 1.0 else "环境弱(右下角)→0.5R日")
+
+
+def order_card(candidates: list[dict], capital: float | None = None,
+               risk_ratio: float = 0.02) -> str:
+    """挂单指引卡：当日环境档 → 新候选 1R/0.5R 挂单指引
+
+    Args:
+        candidates: prebreak 候选（需含 code/name/触发价/止损价/每股风险，
+            与 scanner prebreak 输出结构一致）
+        capital: 当日资金（缺省读取 capital.json；5600 → 1R 风险额 112 元）
+        risk_ratio: 单笔风险比例（实盘线定稿 2%，G9 2026-08-06 老板拍板）
+
+    Returns:
+        指引卡文本（含「1R 日/0.5R 日」标注与逐票挂单指引；无候选 → 相应说明）
+    """
+    scale, note = env_day_scale()
+    cap = capital if capital is not None else get_capital()
+    risk_amt = round(cap * risk_ratio * scale, 2)
+    today = datetime.now().strftime("%Y-%m-%d")
+    W = 76
+    line = "-" * W
+    label = "1R 日" if scale == 1.0 else "0.5R 日"
+    out = [line, f"〔挂单指引卡〕{today} 当日环境档 = {label}（{note}）".center(W), line]
+    out.append(f"  新候选挂单路径：{'1R 正常挂单' if scale == 1.0 else '0.5R 试探挂单'}"
+               f" | 单笔风险额 {risk_amt:.0f} 元（{cap:.0f}×{risk_ratio:.0%}"
+               f"{'×0.5' if scale != 1.0 else ''}）")
+    if scale != 1.0:
+        out.append("  流程（0.5R 试探 → 次日收线确认，2024-06-29 周会原文）：")
+        out.append("    次日收盘 ①≥进场价（收下去）②≥开仓日收盘（动能延续）"
+                   "③非放量阴线（量比≤1.5 或收阳）")
+        out.append("    → 三条件全满足：补 0.5R 至总 1R（等额挂单）；任一不满足：平仓"
+                   "（优势不突出，动能无法接受）")
+        out.append("    止损优先：次日最低 ≤ 止损价 → 层面1 止损出场（先于确认判定）")
+    out.append(line)
+    if not candidates:
+        out.append("  今日无新候选（挂单指引无内容）")
+        out.append(line)
+        return "\n".join(out)
+    for r in candidates:
+        code = r.get("code", "?")
+        name = r.get("name", "")
+        trigger = r.get("触发价", 0) or 0
+        stop = r.get("止损价", 0) or 0
+        risk_ps = r.get("每股风险", 0) or 0
+        grade = r.get("评级", "?")
+        shares, reason = sim_trading.check_affordability(trigger, risk_ps,
+                                                         risk_scale=scale)
+        if shares < 100:
+            note_s = f"不可买（{reason}）"
+        else:
+            note_s = f"挂单 {shares} 股（风险 {risk_ps * shares:.0f} 元 ≤ {risk_amt:.0f} 元）"
+        out.append(f"  [{grade}] {code} {name} | 触发 {trigger:.2f} | 止损 {stop:.2f}"
+                   f" | 每股风险 {risk_ps:.2f} | {label}: {note_s}")
+    if scale != 1.0:
+        out.append(f"  ※ {label}：挂单量按 0.5R 半额风险预算（{risk_amt:.0f} 元）计算；"
+                   "次日确认后补仓等额。")
+    out.append(line)
+    return "\n".join(out)
+
+
+def _iter_half_positions(rows: list[dict] | None = None) -> list[dict]:
+    """在持 0.5R 试探仓（phase=="half" 且 status=="open"）
+
+    数据源：sim_journal（模拟层，G3 定案后由 sim_open 写入 phase 列）；
+    兼容 trade_journal 带 phase 列的行（实盘录入 0.5R 时手动标注 phase=half，
+    见 README 说明——判定逻辑一致，不复制）。
+    """
+    if rows is None:
+        rows = sim_trading._read_all()
+    return [r for r in rows if r.get("phase") == "half" and r.get("status") == "open"]
+
+
+def position_card(rows: list[dict] | None = None) -> str:
+    """分步建仓持仓卡：在持 0.5R 试探仓 → 动作指令（补 0.5R 挂单价 / 平仓 / 等待）
+
+    判定逻辑单一来源：sim_trading._check_half_position（内部复用
+    indicators.half_position_confirm 三条件 + 止损层面1 优先；此处不复制）。
+
+    Args:
+        rows: 持仓行（缺省读取 sim_journal）；测试可注入
+
+    Returns:
+        持仓卡文本（无在持 0.5R 仓 → 一行说明）
+    """
+    halves = _iter_half_positions(rows)
+    W = 76
+    line = "-" * W
+    today = datetime.now().strftime("%Y-%m-%d")
+    out = [line, f"〔分步建仓持仓卡〕{today} 在持 0.5R 试探仓 {len(halves)} 笔".center(W), line]
+    if not halves:
+        out.append("  无在持 0.5R 试探仓（今日无分步确认动作）")
+        out.append(line)
+        return "\n".join(out)
+
+    from 数据基础.数据.fetcher import get_daily_kline
+
+    for r in halves:
+        code = r.get("symbol", "?")
+        name = r.get("name", "") or ""
+        try:
+            df = get_daily_kline(code, use_cache=True)
+        except Exception:  # noqa: BLE001 - 数据获取失败 → 卡片标注待数据
+            out.append(f"  {code} {name}: 数据获取失败，稍后重试")
+            continue
+        if df is None or len(df) < 2:
+            out.append(f"  {code} {name}: 数据不足，无法判定（明日重试）")
+            continue
+        step = sim_trading._check_half_position(df, r)
+        act = step["action"]
+        entry = float(r["entry_price"])
+        stop = float(r["stop_loss"])
+        held = int(r.get("volume", 0))
+        if act == "add":
+            out.append(f"  ✅ {code} {name}: 收线确认（{step['reason']}）→ "
+                       f"补 0.5R 挂单 {step['add_shares']} 股 @ {step['add_price']:.2f}"
+                       f"（等额，总 {held + step['add_shares']} 股 = 1R）")
+        elif act == "exit_stop":
+            out.append(f"  🛑 {code} {name}: 确认日触止损（{step['reason']}）→ 按止损 {stop:.2f} 平仓")
+        elif act == "exit_reject":
+            out.append(f"  ❌ {code} {name}: 收线未确认（{step['reason']}）→ "
+                       f"按确认日收盘 {step['close']:.2f} 平仓（0.5R 试探止步）")
+        elif act == "hold":
+            out.append(f"  ⏸ {code} {name}: {step['reason']}（保持 0.5R {held} 股，明日再看）")
+        else:  # wait
+            out.append(f"  ⏳ {code} {name}: 收线未出现（进场 {entry:.2f} / 止损 {stop:.2f}），"
+                       "持有 0.5R 等待确认")
+    out.append(line)
+    return "\n".join(out)
+
+
+def full_card(candidates: list[dict], rows: list[dict] | None = None) -> str:
+    """完整执行卡（挂单指引卡 + 分步建仓持仓卡），供 scan 报告与手工调用"""
+    return order_card(candidates) + "\n" + position_card(rows)
+
+
+def main() -> int:
+    """命令行入口：python -m 分析决策.跟踪.execution_card"""
+    print(full_card([]))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
