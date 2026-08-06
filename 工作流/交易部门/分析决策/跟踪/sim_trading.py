@@ -59,6 +59,37 @@ def _write_all(rows: list[dict]) -> None:
         w.writerows(rows)
 
 
+def _sync_r_curve(rows: list[dict]) -> int:
+    """虚拟盘线出场 R 自动同步 r_curve.csv（2026-08-07 老板拍板双线记录）
+
+    双线同账本：模拟盘 R 自动录入（note="sim"），实盘线用 rcurve record
+    （note="live"）——dual_line 双线对照读取同一 r_curve 账本。
+    防重复：只同步本次变 closed 且 r_multiple 非空的行。
+    """
+    from 分析决策.跟踪.r_curve import add_record as rcurve_add
+    n = 0
+    for r in rows:
+        if r.get("status") != "closed":
+            continue
+        try:
+            rm = float(r.get("r_multiple") or 0)
+        except (TypeError, ValueError):
+            continue
+        if r.get("_synced"):
+            continue
+        try:
+            rcurve_add(str(r.get("exit_date") or r.get("date"))[:10], rm,
+                       entry=float(r.get("entry_price") or 0) or None,
+                       stop=float(r.get("stop_loss") or 0) or None,
+                       exit_price=float(r.get("exit_price") or 0) or None,
+                       symbol=str(r.get("symbol", "")), note="sim")
+            r["_synced"] = True
+            n += 1
+        except Exception:  # noqa: BLE001 - 同步失败不阻断模拟主流程
+            continue
+    return n
+
+
 def check_affordability(price: float, risk_per_share: float,
                         risk_scale: float = 1.0) -> tuple[int, str]:
     """可买性检查：资金上限与风险上限取 min，整手向下取整
@@ -376,6 +407,9 @@ def sim_check() -> str:
             out.append(f"  {code}: {updates}（现{float(latest['收盘']):.2f}，R={pos.current_r_multiple(float(latest['收盘'])):+.2f}）")
     if changed:
         _write_all(rows)
+        n_synced = _sync_r_curve(rows)   # 双线自动同步（2026-08-07）
+        if n_synced:
+            out.append(f"  📈 R 值曲线已自动同步 {n_synced} 笔（虚拟盘线，note=sim）")
     return "\n".join(out)
 
 

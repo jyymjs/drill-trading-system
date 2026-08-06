@@ -253,6 +253,46 @@ def cmd_track(args):
     from 分析决策.跟踪.monte_carlo import plot_simulation, simulate
     from 分析决策.跟踪.trade_journal import format_stats, get_all_trades, trade_stats
 
+    if args.action == "equity-add":
+        # 净值登记（2026-08-07 老板拍板"从今天起记录曲线"· T-030 落地）
+        from 分析决策.跟踪.equity_records import add_record
+        extra = args.extra or []
+        if len(extra) < 2:
+            print("用法: track equity-add <日期YYYY-MM-DD> <净值> [--inject N]")
+            return
+        date, equity = extra[0], float(extra[1])
+        inject = float(extra[extra.index("--inject") + 1]) if "--inject" in extra else 0.0
+        rid = add_record(date, equity, inject=inject)
+        print(f"✅ 净值已登记 #{rid} {date} = {equity:,.2f} 元"
+              + (f"（含注入 {inject:,.2f}）" if inject else ""))
+
+    elif args.action == "inject":
+        # 注入登记（每月 3000 工资）
+        from 分析决策.跟踪.equity_records import add_inject
+        extra = args.extra or []
+        if len(extra) < 2:
+            print("用法: track inject <日期YYYY-MM-DD> <金额>")
+            return
+        rid = add_inject(extra[0], float(extra[1]))
+        print(f"✅ 注入已登记 #{rid} {extra[0]} = {float(extra[1]):,.2f} 元（每月工资注入）")
+
+    elif args.action == "equity-report":
+        # 净值/修正收益率报告 + 图
+        from 分析决策.跟踪.equity_records import plot_equity_curve, render_report
+        print(render_report())
+        p = plot_equity_curve()
+        if p:
+            print(f"净值曲线图 → {p}")
+
+    elif args.action == "dual-line":
+        # 双线对照（实盘线 vs 虚拟盘线）
+        from 分析决策.跟踪.dual_line import compare, plot_dual_line, render_report as dl_report
+        c = compare()
+        print(dl_report(c))
+        p = plot_dual_line()
+        if p:
+            print(f"双线图 → {p}")
+
     if args.action == "list":
         trades = get_all_trades()
         if not trades:
@@ -475,8 +515,12 @@ def main():
     track_parser = subparsers.add_parser("track", help="交易记录管理")
     track_parser.add_argument("action", type=str, nargs="?",
                             choices=["list", "add", "equity", "monte-carlo",
-                                     "sim-open", "sim-check", "sim-stats"],
+                                     "sim-open", "sim-check", "sim-stats",
+                                     "equity-add", "inject", "equity-report",
+                                     "dual-line"],
                             default="list", help="操作")
+    track_parser.add_argument("extra", nargs="*",
+                              help="equity-add/inject 参数：<日期> <数值> [--inject N]")
     track_parser.add_argument("--code", type=str, default="", help="sim-open: 股票代码")
     track_parser.add_argument("--price", type=float, default=0, help="sim-open: 进场价")
     track_parser.add_argument("--stop", type=float, default=0, help="sim-open: 止损价")

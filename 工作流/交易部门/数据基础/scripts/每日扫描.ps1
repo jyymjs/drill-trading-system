@@ -41,4 +41,8 @@ if ($latest -ne $today) {
 # 4. 报告落盘（扫描输出复制为带日期报告；源目录=数据基础\output——扫描输出的实际落盘目录）
 $src = Get-ChildItem '数据基础\output' -Filter 'scan_result*.csv' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($src) { Copy-Item $src.FullName "产出\输出\扫描_$date.csv" -Force; Add-Content -Path $log -Value "report: 扫描_$date.csv" }
+# 5. 曲线自动更新（2026-08-07 老板拍板"从今天起记录曲线"）：R 值曲线 + 净值/修正收益率 + 双线对照
+& 'C:\Program Files\Python312\python.exe' main.py rcurve stats --plot *>> $log
+& 'C:\Program Files\Python312\python.exe' main.py track equity-report *>> $log
+& 'C:\Program Files\Python312\python.exe' main.py track dual-line *>> $log
 Add-Content -Path $log -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] scan done"
