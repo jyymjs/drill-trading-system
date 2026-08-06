@@ -18,6 +18,7 @@
 """
 import numpy as np
 import pandas as pd
+
 from 分析决策.分析.indicators import (
     accumulation_zone,
     channel_detect,
@@ -33,6 +34,18 @@ from 分析决策.分析.indicators import (
     support_bounce,
 )
 from 策略.核心策略.base import BaseStrategy
+
+
+# ── T-028 评级加速（2026-08-06 老板拍板：只改实现方式，不改任何条件参数数值）──
+# 策略铁律：含浮点聚合（mean）的搜索一律用 numpy 向量化聚合 + Python 顺序扫描
+# （同 numpy 实现同数据 → 与逐窗口 np.max/np.min/np.mean 逐位一致；
+#  numba 的 np.mean 成对求和与 numpy 差 1-2 ulp，会破坏波幅格式化指纹，已弃用）；
+# 纯比较/整数计数类（platform_test_count / overshoot_detect）保留 njit。
+def _slide_stats(arr, bars, starts):
+    """候选窗口 max/min/mean 一次向量化（与逐窗口 np 调用逐位一致）"""
+    idx = starts[:, None] + np.arange(bars)[None, :]
+    w = arr[idx]
+    return w.max(axis=1), w.min(axis=1), w.mean(axis=1)
 
 
 class ZuanQianStrategy(BaseStrategy):
@@ -172,7 +185,7 @@ class ZuanQianStrategy(BaseStrategy):
         return None
 
     def _grade_dl(self, df: pd.DataFrame) -> tuple[str, str]:
-        """独立结构评级：S/A/B/C"""
+        """独立结构评级：S/A/B/C（T-028：窗口聚合一次向量化 + 原顺序扫描，逐位一致）"""
         n = len(df)
         high = df["最高"].values
         low = df["最低"].values
@@ -197,17 +210,17 @@ class ZuanQianStrategy(BaseStrategy):
             search_end = n - bars + 1
             if search_end <= 0:
                 continue
-            for start in range(search_end - 1, max(0, search_end - 30) - 1, -1):
-                seg_h = high[start:start + bars].max()
-                seg_l = low[start:start + bars].min()
-                avg_c = close[start:start + bars].mean()
-                rng = (seg_h - seg_l) / avg_c
-
+            starts = np.arange(search_end - 1, max(0, search_end - 30) - 1, -1)
+            seg_h = _slide_stats(high, bars, starts)[0]
+            seg_l = _slide_stats(low, bars, starts)[1]
+            avg_c = _slide_stats(close, bars, starts)[2]
+            rng = (seg_h - seg_l) / avg_c
+            for k, start in enumerate(starts):
                 # 结构级别检测：横盘区间振幅≥3%才有意义
-                if rng < 0.03:
+                if rng[k] < 0.03:
                     continue
-                if rng <= max_range:
-                    return grade, f"{bars}根, 波幅{rng:.1%}"
+                if rng[k] <= max_range:
+                    return grade, f"{bars}根, 波幅{rng[k]:.1%}"
         return 'C', "未找到充分盘整"
 
     def _grade_pt(self, df: pd.DataFrame) -> tuple[str, str]:
@@ -256,7 +269,7 @@ class ZuanQianStrategy(BaseStrategy):
         return 'C', f"轮廓差(紧凑{compactness:.2f}, px{px:.2f}, fl{fl:.2f})"
 
     def _grade_ty(self, df: pd.DataFrame) -> tuple[str, str]:
-        """统一区间评级：S/A/B/C"""
+        """统一区间评级：S/A/B/C（T-028：窗口聚合向量化，逐位一致）"""
         n = len(df)
         high, low = df["最高"].values, df["最低"].values
         op, cl = df["开盘"].values, df["收盘"].values
@@ -268,28 +281,39 @@ class ZuanQianStrategy(BaseStrategy):
         for bars, max_range, grade in thresholds:
             if n < bars + 5:
                 continue
-            for end in range(n - 1, max(0, n - 20) - 1, -1):
-                start = end - bars + 1
-                if start < 0:
+            ends = np.arange(n - 1, max(0, n - 20) - 1, -1)
+            starts = ends - bars + 1
+            valid = starts >= 0
+            ends, starts = ends[valid], starts[valid]
+            if len(ends) == 0:
+                continue
+            seg_body_mean = _slide_stats(body_ratios, bars, starts)[2]
+            seg_hl = (_slide_stats(high, bars, starts)[0]
+                      - _slide_stats(low, bars, starts)[1])
+            # 基准价（MA20 优先，否则收盘价；ma20 为 0/NaN → 跳过）
+            if ma20 is not None:
+                ma20v = ma20[ends]
+                denom = ma20v
+                denom_ok = ~((ma20v == 0.0) | np.isnan(ma20v))
+            else:
+                denom = cl[ends]
+                denom_ok = np.ones(len(ends), dtype=bool)
+            denom_ok = denom_ok & (denom > 0)
+            seg_range = np.where(denom_ok, seg_hl / denom, np.inf)
+            price_chg = np.zeros(len(ends))
+            pos = cl[starts] > 0
+            price_chg[pos] = np.abs(cl[ends][pos] - cl[starts][pos]) / cl[starts][pos]
+            for k in range(len(ends)):
+                if not denom_ok[k]:
                     continue
-                seg_body = body_ratios[start:end + 1]
-                if seg_body.mean() > 0.6:
+                if seg_body_mean[k] > 0.6:
                     continue
-                seg_hl = (high[start:end + 1].max() - low[start:end + 1].min())
-                if ma20 is not None and (ma20[end] == 0 or pd.isna(ma20[end])):
+                # 统一区间波幅 = 区间振幅 / 基准价
+                if seg_range[k] > max_range:
                     continue
-
-                # 统一区间波幅 = 区间振幅 / 基准价（MA20 优先，否则收盘价）
-                denom = ma20[end] if ma20 is not None else cl[end]
-                if denom <= 0:
+                if price_chg[k] > max_range * 2:
                     continue
-                seg_range = seg_hl / denom
-                if seg_range > max_range:
-                    continue
-                price_chg = abs(cl[end] - cl[start]) / cl[start] if cl[start] > 0 else 0
-                if price_chg > max_range * 2:
-                    continue
-                return grade, f"{bars}根K线, 波幅{seg_range:.1%}"
+                return grade, f"{bars}根K线, 波幅{seg_range[k]:.1%}"
         return 'C', "未发现窄幅整理或K线不足"
 
     def _grade_dn(self, df: pd.DataFrame) -> tuple[str, str]:
@@ -301,6 +325,9 @@ class ZuanQianStrategy(BaseStrategy):
         3) 动能坚决度（连续阳线+影线少）
 
         降级规则：通道感 / TY-DN间隔>1根
+
+        T-028（2026-08-06）：pandas 行访问 → numpy 数组一次提取（切片等价，
+        同 np 调用同数据 → 逐位一致）；条件参数数值零改动。
         """
         # 通道感检测
         ch = channel_detect(df)
@@ -313,23 +340,27 @@ class ZuanQianStrategy(BaseStrategy):
         n_total = len(df)
         conflict_z = 0.0
 
+        high = df["最高"].to_numpy()
+        low = df["最低"].to_numpy()
+        op = df["开盘"].to_numpy()
+        cl = df["收盘"].to_numpy()
+        vol_arr = df["成交量"].to_numpy()
+
         # 尝试不同合并根数：1根→S, 2根→A, 3根→B
         specs = [(1, self.DN_S, 'S'), (2, self.DN_A, 'A'), (3, self.DN_B, 'B')]
         for n, (v_min, b_min), grade in specs:
             if n_total < n:
                 continue
-            window = df.tail(n)
             dn_start_idx = n_total - n
 
             # 合并量比（相对口径：启动K窗口均量 vs 前面调整段日均量）
-            window_vol = float(window["成交量"].sum())
-            ref = df["成交量"].iloc[:dn_start_idx]
-            ref_mean = float(ref.tail(20).mean()) if len(ref) > 0 else 0.0
+            window_vol = float(vol_arr[dn_start_idx:].sum())
+            ref_mean = float(vol_arr[max(0, dn_start_idx - 20):dn_start_idx].mean()) if dn_start_idx > 0 else 0.0
             vol = window_vol / (ref_mean * n) if ref_mean > 0 else 0.0
 
             # 合并实体
-            first_open = window["开盘"].iloc[0]
-            last_close = window["收盘"].iloc[-1]
+            first_open = op[dn_start_idx]
+            last_close = cl[-1]
             body = abs(last_close - first_open) / last_close if last_close > 0 else 0
 
             # 冲突感z-score
@@ -338,13 +369,12 @@ class ZuanQianStrategy(BaseStrategy):
             # 动能坚决度：合并K线中阳线占比 + 影线少
             decisive = 0.5  # 默认
             try:
-                hl = window["最高"].values - window["最低"].values
-                yang_count = sum(1 for i in range(len(window))
-                                 if window["收盘"].iloc[i] > window["开盘"].iloc[i])
-                yang_ratio = yang_count / len(window)
+                hl = high[dn_start_idx:] - low[dn_start_idx:]
+                yang_count = int(np.sum(cl[dn_start_idx:] > op[dn_start_idx:]))
+                yang_ratio = yang_count / n
                 shadow_ratios = np.divide(
-                    np.abs(window["收盘"].values - window["开盘"].values),
-                    hl, out=np.ones(len(window)), where=hl > 0
+                    np.abs(cl[dn_start_idx:] - op[dn_start_idx:]),
+                    hl, out=np.ones(n), where=hl > 0
                 )
                 decisive = float(yang_ratio * 0.5 + np.mean(shadow_ratios) * 0.5)
             except Exception:
@@ -387,7 +417,7 @@ class ZuanQianStrategy(BaseStrategy):
         return 'C', f"量比{vol:.2f}x, 实体{body:.1%}, z={conflict_z:.1f}(不达标)"
 
     def _find_last_ty_index(self, df: pd.DataFrame) -> int | None:
-        """查找最后一个统一区间的结束位置
+        """查找最后一个统一区间的结束位置（T-028：窗口聚合向量化，逐位一致）
 
         Returns:
             TY最后一根K线的索引（0-based），未找到返回None
@@ -398,23 +428,29 @@ class ZuanQianStrategy(BaseStrategy):
         body_ratios = self._body_pct_series(high, low, op, cl)
         ma20 = df["MA20"].values if "MA20" in df.columns else None
 
-        for bars in [5, 4]:
+        # 原语义：ma20 有效（非 0/非 NaN）→ 用 ma20[end]，NaN → fallback cl[end]
+        for bars in (5, 4):
             if n < bars + 5:
                 continue
-            for end in range(n - 1, max(0, n - 30) - 1, -1):
-                start = end - bars + 1
-                if start < 0:
-                    continue
-                seg_body = body_ratios[start:end + 1]
-                if seg_body.mean() > 0.6:
-                    continue
-                seg_hl = (high[start:end + 1].max() - low[start:end + 1].min())
-                denom = ma20[end] if ma20 is not None and not pd.isna(ma20[end]) else cl[end]
-                if denom <= 0:
-                    continue
-                seg_range = seg_hl / denom
-                if seg_range <= 0.05:
-                    return end
+            ends = np.arange(n - 1, max(0, n - 30) - 1, -1)
+            starts = ends - bars + 1
+            valid = starts >= 0
+            ends, starts = ends[valid], starts[valid]
+            if len(ends) == 0:
+                continue
+            seg_body_mean = _slide_stats(body_ratios, bars, starts)[2]
+            seg_hl = (_slide_stats(high, bars, starts)[0]
+                      - _slide_stats(low, bars, starts)[1])
+            if ma20 is not None:
+                ma20v = ma20[ends]
+                denom = np.where(np.isnan(ma20v), cl[ends], ma20v)  # NaN → fallback 收盘
+            else:
+                denom = cl[ends]
+            seg_range = np.where(denom > 0, seg_hl / denom, np.inf)
+            ok = (denom > 0) & (seg_body_mean <= 0.6) & (seg_range <= 0.05)
+            for k in range(len(ends)):
+                if ok[k]:
+                    return int(ends[k])
         return None
 
     def _grade_sf(self, df: pd.DataFrame, dl_start: int | None) -> tuple[str, str]:
@@ -441,7 +477,7 @@ class ZuanQianStrategy(BaseStrategy):
     # ── 独立结构检测（返回起始索引） ──
 
     def _detect_consolidation_phase_v2(self, df: pd.DataFrame) -> int | None:
-        """检测独立结构起始位置"""
+        """检测独立结构起始位置（T-028：窗口聚合向量化，逐位一致）"""
         n = len(df)
         high = df["最高"].values
         low = df["最低"].values
@@ -463,14 +499,17 @@ class ZuanQianStrategy(BaseStrategy):
             search_end = n - bars + 1
             if search_end <= 0:
                 continue
-            for start in range(search_end - 1, max(0, search_end - 20) - 1, -1):
-                seg_h = high[start:start + bars].max()
-                seg_l = low[start:start + bars].min()
-                avg_c = close[start:start + bars].mean()
+            starts = np.arange(search_end - 1, max(0, search_end - 20) - 1, -1)
+            seg_h = _slide_stats(high, bars, starts)[0]
+            seg_l = _slide_stats(low, bars, starts)[1]
+            avg_c = _slide_stats(close, bars, starts)[2]
+            r = (seg_h - seg_l) / avg_c
+            for k, start in enumerate(starts):
                 # 结构级别检测
-                if (seg_h - seg_l) / avg_c < 0.03:
+                if r[k] < 0.03:
                     continue
-                if (seg_h - seg_l) / avg_c <= max_range:
+                if r[k] <= max_range:
+                    start = int(start)          # 原实现返回 Python int（np.int64 → int 无损）
                     return offset + start if offset > 0 else start
         return None
 
@@ -710,10 +749,10 @@ class ZuanQianStrategy(BaseStrategy):
         if low_60 > 0 and (close[-1] - low_60) / low_60 > 0.40:
             return False
 
-        # 3. 排除通道上涨
+        # 3. 排除通道上涨（T-028 numpy 化：布尔逐元素比较，判定逐位一致）
         recent_highs = high[-8:]
         recent_lows = low[-8:]
-        if all(recent_highs[i] <= recent_highs[i + 1] for i in range(min(7, len(recent_highs) - 1))):
+        if bool(np.all(recent_highs[:-1] <= recent_highs[1:])):
             total_range = recent_highs.max() - recent_lows.min()
             trend_range = abs(recent_highs[-1] - recent_highs[0])
             if trend_range > 0 and total_range / trend_range < 0.4:
@@ -808,7 +847,7 @@ class ZuanQianStrategy(BaseStrategy):
         }
 
     def _detect_ty_boundaries(self, df: pd.DataFrame) -> dict:
-        """检测统一区间精确边界（用于条件单价格计算）
+        """检测统一区间精确边界（用于条件单价格计算）（T-028：窗口聚合向量化，逐位一致）
 
         Returns:
             {"ty_high": float, "ty_low": float, "ty_bars": int}
@@ -821,15 +860,22 @@ class ZuanQianStrategy(BaseStrategy):
         for bars in [5, 4, 3]:
             if n < bars + 5:
                 continue
-            for end in range(n - 1, max(0, n - 20) - 1, -1):
-                start = end - bars + 1
-                if start < 0:
-                    continue
-                seg_high = high[start:end + 1].max()
-                seg_low = low[start:end + 1].min()
-                seg_range = (seg_high - seg_low) / close[end] if close[end] > 0 else 999
-                if seg_range <= 0.05:
-                    return {"ty_high": round(seg_high, 2), "ty_low": round(seg_low, 2), "ty_bars": bars}
+            ends = np.arange(n - 1, max(0, n - 20) - 1, -1)
+            starts = ends - bars + 1
+            valid = starts >= 0
+            ends, starts = ends[valid], starts[valid]
+            if len(ends) == 0:
+                continue
+            seg_high = _slide_stats(high, bars, starts)[0]
+            seg_low = _slide_stats(low, bars, starts)[1]
+            clv = close[ends]
+            seg_range = np.where(clv > 0, (seg_high - seg_low) / clv, 999.0)
+            for k in range(len(ends)):
+                if seg_range[k] <= 0.05:
+                    # 原版语义：round(np.float64) → numpy round（与 Python round 在
+                    # 2.215 这类 half 值上差 0.01，如 2.21499...→2.22；必须保持 np 语义）
+                    return {"ty_high": round(seg_high[k], 2),
+                            "ty_low": round(seg_low[k], 2), "ty_bars": bars}
         return {"ty_high": 0, "ty_low": 0, "ty_bars": 0}
 
     def _calculate_prebreak_grade(self, scores: dict) -> str:
