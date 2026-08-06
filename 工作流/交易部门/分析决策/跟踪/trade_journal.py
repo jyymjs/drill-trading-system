@@ -5,7 +5,7 @@ from pathlib import Path
 
 from 分析决策.风控.position import TradeRecord
 
-JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
+JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 TRADES_FILE = JOURNAL_DIR / "trade_journal.csv"
 
 TRADE_COLUMNS = [

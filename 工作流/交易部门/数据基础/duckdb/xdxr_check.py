@@ -17,7 +17,7 @@
 
 用法（在交易部门根目录执行）：
     python -m 数据基础.duckdb.xdxr_check [--db 路径] [--threshold 0.05] [--limit N] [--only 300093,...]
-输出：数据基础/data/duckdb_runtime/xdxr_check_<日期>.csv（待核清单）+ 摘要日志
+输出：数据基础/行情数据/duckdb_runtime/xdxr_check_<日期>.csv（待核清单）+ 摘要日志
 
 P3 依据：老板 2026-08-05 确认执行；P2 全量报告 4.3 / 第六节建议 3。
 """

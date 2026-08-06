@@ -402,7 +402,7 @@ def main() -> int:
     ap.add_argument("--mom-threshold", type=float, default=DEFAULT_MOM,
                     help=f"C23 动量阈值（默认 {DEFAULT_MOM}，T-024 探索最优）")
     ap.add_argument("--duckdb", default=None,
-                    help="duckdb 库路径（默认 交易部门/数据基础/data/t017_p2.duckdb；"
+                    help="duckdb 库路径（默认 交易部门/数据基础/行情数据/t017_p2.duckdb；"
                          "隔离 worktree 不含数据文件，需显式指定主仓库路径）")
     ap.add_argument("--smoke", type=int, default=0, help="自检：只处理前 N 笔触发信号")
     ap.add_argument("--out", default=str(OUT_DIR / f"真实回撤重算-{today}.md"),

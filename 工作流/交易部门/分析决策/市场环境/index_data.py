@@ -16,7 +16,7 @@
     2026-05-29 全市场下跌占比 71.6%，与 duckdb 全库口径 71.4% 一致）；
     全市场 = 沪 + 深 两指数家数相加
   - 日线复权：指数无除权，原始价即口径
-  - 缓存：数据基础/data/index_cache/{market}_{code}.csv（中文列，升序），
+  - 缓存：数据基础/行情数据/index_cache/{market}_{code}.csv（中文列，升序），
     覆盖回测区间后直接复用，不重复联网
 
 设计约束（无前视纪律）：指数日线仅向前看行情，不含任何未来信息；
@@ -34,8 +34,8 @@ INDEXES = [
 ]
 # C4 涨跌家数口径：沪=上证指数、深=深证成指（市场覆盖面最大，见模块 docstring）
 BREADTH_INDEXES = ["上证指数", "深证成指"]
-# 默认缓存目录（交易部门根/数据基础/data/index_cache/）
-_CACHE_DIR = Path(__file__).resolve().parents[2] / "数据基础" / "data" / "index_cache"
+# 默认缓存目录（交易部门根/数据基础/行情数据/index_cache/）
+_CACHE_DIR = Path(__file__).resolve().parents[2] / "数据基础" / "行情数据" / "index_cache"
 
 # 单次拉取上限（通达信协议上限 800 根/次）
 _PULL_BATCH = 800
@@ -55,7 +55,7 @@ def load_index_daily(name: str = "上证指数", cache_dir: Path | None = None,
 
     Args:
         name: 指数名（INDEXES 中之一，默认上证指数）
-        cache_dir: 缓存目录（默认 数据基础/data/index_cache/；测试可注入临时目录）
+        cache_dir: 缓存目录（默认 数据基础/行情数据/index_cache/；测试可注入临时目录）
         min_date: 需要的起始日期 "YYYYMMDD"（None=全量）；缓存早于该日期 → 重新拉取
         force_refresh: 强制联网重拉（忽略缓存）
         require_breadth: 需要涨跌家数列（C4 情绪闸门）；旧缓存缺 上涨家数/下跌家数 列
@@ -216,7 +216,7 @@ def load_market_breadth(cache_dir: Path | None = None, min_date: str | None = No
     与 duckdb 全库 71.4%（n=5188）一致——家数与库内个股口径吻合。
 
     Args:
-        cache_dir: 缓存目录（默认 数据基础/data/index_cache/；测试可注入临时目录）
+        cache_dir: 缓存目录（默认 数据基础/行情数据/index_cache/；测试可注入临时目录）
         min_date: 需要的起始日期 "YYYYMMDD"（None=全量）
         force_refresh: 强制联网重拉（忽略缓存）
         expected_end: 期望最近日期 "YYYYMMDD"（None=不检查新鲜度；透传 load_index_daily，

@@ -29,7 +29,7 @@ def _out_dir(params: BacktestParams) -> Path:
         return Path(params.output_dir)
     root = Path(__file__).resolve().parent.parent
     seg = f"{params.start or 'full'}_{params.end or 'full'}"
-    return root / "output" / "backtest" / seg
+    return root / "扫描输出" / "backtest" / seg
 
 
 def cmd_run(args) -> int:

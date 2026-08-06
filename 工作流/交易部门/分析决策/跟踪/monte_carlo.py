@@ -27,7 +27,7 @@ try:
 except ImportError:
     pd = None  # 回测数据源需要 pandas，实盘 journal 路径不依赖
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "扫描输出"
 
 
 def simulate(trades: list[dict] | None = None, n_simulations: int = 10000,

@@ -33,7 +33,7 @@ import pandas as pd
 # C23 条件常量单一来源：回测系统/tighten_compare.py（T-024 复算口径）
 from 回测系统.tighten_compare import DEFAULT_MOM, RISK_MAX, RISK_MIN
 
-DEFAULT_SIGNALS = os.path.join("项目", "output", "backtest", "20230701_20260804", "signals.csv")
+DEFAULT_SIGNALS = os.path.join("项目", "扫描输出", "backtest", "20230701_20260804", "signals.csv")
 
 
 def _hold_label(hold: str) -> int:

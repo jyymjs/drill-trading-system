@@ -33,9 +33,9 @@ import numpy as np
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-_JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
+_JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 EQUITY_CSV = _JOURNAL_DIR / "equity_records.csv"
-OUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUT_DIR = Path(__file__).resolve().parent.parent / "扫描输出"
 EQUITY_COLUMNS = ["id", "date", "equity", "cash", "market_value", "inject", "note"]
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]

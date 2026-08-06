@@ -22,7 +22,7 @@ from pathlib import Path
 
 # ── 配置 ──
 VIDEO_DIR = r"D:\BaiduNetdiskDownload\路肖南\周会录屏"
-OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent / "扫描输出"
 ZHIPU_KEY = "f6de857c9a5f45acafd3be75cdbb7e62.IQQmrpKGiX65q70J"
 SCRIPT = Path(__file__).resolve().parent / "extract_knowledge_weekly.py"
 LOG_FILE = Path(__file__).resolve().parent.parent / "autopilot_weekly.log"

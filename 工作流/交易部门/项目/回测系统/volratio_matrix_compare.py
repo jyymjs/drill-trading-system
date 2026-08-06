@@ -51,7 +51,7 @@ DEFAULT_SAMPLE = 400
 DEFAULT_SEED = 42
 DEFAULT_START = "20230701"
 DEFAULT_END = "20260731"
-DB_PATH = _ROOT / "数据基础" / "data" / "t017_p2.duckdb"
+DB_PATH = _ROOT / "数据基础" / "行情数据" / "t017_p2.duckdb"
 OUT_DIR = _ROOT / "产出" / "输出"
 
 # 量比分桶（左闭右开；<1.0 参考桶 + 任务要求四桶 1.0~1.5 / 1.5~2.0 / 2.0~3.0 / >3.0）

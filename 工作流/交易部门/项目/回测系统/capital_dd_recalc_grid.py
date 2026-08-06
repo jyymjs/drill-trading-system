@@ -229,7 +229,7 @@ def main() -> int:
     ap.add_argument("--signals", default=str(DEFAULT_SIGNALS), help="signals.csv 路径")
     ap.add_argument("--capital", type=float, default=DEFAULT_CAPITAL, help="初始资金（默认 5600）")
     ap.add_argument("--duckdb", default=None,
-                    help="duckdb 库路径（默认 交易部门/数据基础/data/t017_p2.duckdb；"
+                    help="duckdb 库路径（默认 交易部门/数据基础/行情数据/t017_p2.duckdb；"
                          "隔离 worktree 不含数据文件，需显式指定主仓库路径）")
     ap.add_argument("--out", default=str(OUT_DIR / f"网格实验-C23版-真实回撤-{today}.md"),
                     help="报告输出路径")

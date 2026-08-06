@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
+JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 VIOLATIONS_FILE = JOURNAL_DIR / "violations.json"
 
 

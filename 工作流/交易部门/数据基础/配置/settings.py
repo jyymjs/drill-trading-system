@@ -5,11 +5,11 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 # 数据缓存目录
-DATA_DIR = ROOT_DIR / "data" / "cache"
+DATA_DIR = ROOT_DIR / "行情数据" / "cache"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # 输出目录
-OUTPUT_DIR = ROOT_DIR / "output"
+OUTPUT_DIR = ROOT_DIR / "扫描输出"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- 股票池配置 ---
@@ -42,4 +42,4 @@ SCAN_RETRY = 2              # 失败重试次数
 
 # --- 日志 ---
 LOG_LEVEL = "INFO"
-LOG_FILE = ROOT_DIR / "output" / "trading.log"
+LOG_FILE = ROOT_DIR / "扫描输出" / "trading.log"

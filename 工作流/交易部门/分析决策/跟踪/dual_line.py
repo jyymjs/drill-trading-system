@@ -28,8 +28,8 @@ import numpy as np
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-_JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
-OUT_DIR = Path(__file__).resolve().parent.parent / "output"
+_JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
+OUT_DIR = Path(__file__).resolve().parent.parent / "扫描输出"
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False

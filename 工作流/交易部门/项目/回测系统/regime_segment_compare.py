@@ -13,7 +13,7 @@
   维度三 · 量比分桶：<1.5 / 1.5~2.0 / 2.0~3.0 / >3.0（各段内分桶统计）
   市场状态：复用 market_regime（上证指数 20/60/120 日均线规则），信号按
             信号日归属；无前视（只用 ≤ 信号日指数数据，T+1 决策时点）。
-  复算源：数据基础/data/t017_p2.duckdb 只读（vol_ratio/mom20 同引擎口径）。
+  复算源：数据基础/行情数据/t017_p2.duckdb 只读（vol_ratio/mom20 同引擎口径）。
 
 复用清单（不重写判定逻辑）：
   - tighten_compare.load_triggered / enrich / group_stats

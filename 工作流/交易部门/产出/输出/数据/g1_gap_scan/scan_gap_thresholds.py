@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 # 主仓库 duckdb（worktree 无数据文件，只读引用主仓库路径）
-DB = Path(r"C:/Users/32032/Desktop/deepseek/工作流/交易部门/数据基础/data/t017_p2.duckdb")
+DB = Path(r"C:/Users/32032/Desktop/deepseek/工作流/交易部门/数据基础/行情数据/t017_p2.duckdb")
 OUT_DIR = Path(__file__).resolve().parent
 
 WINDOW = 60        # 与 indicators.GAP_LIMIT_WINDOW 一致

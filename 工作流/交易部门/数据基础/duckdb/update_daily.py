@@ -96,7 +96,7 @@ def update_state(state, sym, **kw):
 
 def main():
     ap = argparse.ArgumentParser(description="每日盘后增量：mootdx → duckdb（daily/xdxr）")
-    ap.add_argument("--db", default=str(DB_PATH), help="duckdb 路径（默认数据基础/data/t017_p2.duckdb）")
+    ap.add_argument("--db", default=str(DB_PATH), help="duckdb 路径（默认数据基础/行情数据/t017_p2.duckdb）")
     ap.add_argument("--workers", type=int, default=WORKERS)
     ap.add_argument("--window", type=int, default=INCR_OFFSET, help="增量窗口：每次拉最新 N 条日线")
     ap.add_argument("--limit", type=int, default=0, help="冒烟测试：只处理前 N 只")

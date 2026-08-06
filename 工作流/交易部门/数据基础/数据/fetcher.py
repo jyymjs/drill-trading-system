@@ -1,7 +1,7 @@
 """数据获取 - duckdb(权威源, T-017 P5) + pytdx(通达信直连) + baostock + akshare
 
 数据源优先级（2026-08-05 P5 主链路切换）：
-  1. duckdb 库（数据基础/data/t017_p2.duckdb，全量历史 1990 起）→ 原始价 + 因子自算 qfq
+  1. duckdb 库（数据基础/行情数据/t017_p2.duckdb，全量历史 1990 起）→ 原始价 + 因子自算 qfq
   2. CSV 缓存（已 deprecated，降级为 fallback；旧文件保留可读，网络回退时仍写）
   3. pytdx（通达信协议直连，最快 ~0.1-0.3秒/只）→ 不复权数据
   4. baostock（~2-3秒/只，fallback）→ 前复权(adjustflag=2)

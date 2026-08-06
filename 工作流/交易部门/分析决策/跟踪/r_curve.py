@@ -22,9 +22,9 @@ from datetime import date
 from pathlib import Path
 
 # 数据文件与输出目录（测试时可通过模块级常量覆盖）
-JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
+JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 R_CURVE_FILE = JOURNAL_DIR / "r_curve.csv"
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "扫描输出"
 
 R_COLUMNS = ["id", "date", "r", "entry", "stop", "exit", "symbol", "note"]
 

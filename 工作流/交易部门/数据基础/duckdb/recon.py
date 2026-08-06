@@ -7,7 +7,7 @@
 
 用法（在交易部门根目录执行）：
     python -m 数据基础.duckdb.recon [--db 路径] [--sample 50] [--alert-pct 0.5]
-输出：数据基础/data/duckdb_runtime/recon_<日期>.json（含明细 + 报警清单）
+输出：数据基础/行情数据/duckdb_runtime/recon_<日期>.json（含明细 + 报警清单）
 
 P3 依据：老板 2026-08-05 确认执行；P2 全量报告第六节建议 4。
 """

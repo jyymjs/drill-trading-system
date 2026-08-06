@@ -172,7 +172,7 @@ class Config:
         self.checkpoint_path = os.path.join(self.temp_dir, "checkpoint.json")
 
         if not self.output_dir:
-            self.output_dir = os.path.join(Path(__file__).parent, "output")
+            self.output_dir = os.path.join(Path(__file__).parent, "扫描输出")
 
         # 确保目录存在
         os.makedirs(self.frames_dir, exist_ok=True)

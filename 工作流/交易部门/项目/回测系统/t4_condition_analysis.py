@@ -12,7 +12,7 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 import pandas as pd
 
-df = pd.read_csv("项目/output/backtest/20230701_20260804/signals.csv", encoding="utf-8-sig")
+df = pd.read_csv("项目/回测输出/backtest/20230701_20260804/signals.csv", encoding="utf-8-sig")
 tr = df[df["triggered_20d"] == 1]
 print(f"总信号: {len(tr)} | normal: {len(tr[tr['mode']=='normal'])} | "
       f"prebreak: {len(tr[tr['mode']=='prebreak'])}")

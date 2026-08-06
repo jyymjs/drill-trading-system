@@ -16,7 +16,7 @@ from 分析决策.风控 import exit_manager as em
 from 分析决策.风控.capital import calc_trade_fee, get_capital, max_risk_per_trade
 from 分析决策.风控.position import Position
 
-JOURNAL_DIR = Path(__file__).resolve().parent.parent / "journal"
+JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 SIM_FILE = JOURNAL_DIR / "sim_journal.csv"
 
 SIM_COLUMNS = [

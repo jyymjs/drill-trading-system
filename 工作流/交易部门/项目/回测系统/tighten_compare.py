@@ -18,7 +18,7 @@
   组合：1+2、1+3、2+3、1+2+3（组合用 --mom-threshold，默认 0.20，可依探索结果调整）
 
 口径：
-  - 复算源：数据基础/data/t017_p2.duckdb 只读，read_kline（qfq，与引擎同口径）
+  - 复算源：数据基础/行情数据/t017_p2.duckdb 只读，read_kline（qfq，与引擎同口径）
   - 触发日定位：信号日 T 之后首根 最高≥trigger（引擎 _track_prebreak 同口径）
   - 统计：胜率 / avgR / 盈亏比 / 累计R（与 dn_confirm_compare.summarize 同口径）
 

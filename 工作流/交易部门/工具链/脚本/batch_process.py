@@ -42,7 +42,7 @@ def process_one_video(video_path: str, output_dir: str, zhipu_key: str,
         "video": video_name,
         "path": video_path,
         "status": "unknown",
-        "output": "",
+        "扫描输出": "",
         "duration_s": 0,
         "error": "",
     }
@@ -87,7 +87,7 @@ def process_one_video(video_path: str, output_dir: str, zhipu_key: str,
             # 从输出中提取文件路径
             for line in proc.stdout.split("\n"):
                 if "知识文档已生成" in line or "输出:" in line:
-                    result["output"] = line.strip()
+                    result["扫描输出"] = line.strip()
             log.info(f"[{video_name}] ✅ 完成 ({elapsed:.0f}秒)")
         else:
             result["status"] = "failed"

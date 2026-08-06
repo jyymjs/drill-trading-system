@@ -87,7 +87,7 @@ def cross_grade_dl(df: pd.DataFrame, hold: str, r_col: str, stop_col: str) -> li
 def main():
     ap = argparse.ArgumentParser()
     base = os.path.dirname(os.path.abspath(__file__))
-    default_sig = os.path.join(base, "..", "output", "backtest",
+    default_sig = os.path.join(base, "..", "扫描输出", "backtest",
                                "20230701_20260804", "signals.csv")
     ap.add_argument("--signals", default=default_sig, help="signals.csv 路径")
     ap.add_argument("--report", default=None, help="报告输出路径（默认 t4/t4_dl_sensitivity.txt）")

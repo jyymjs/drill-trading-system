@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from 分析决策.跟踪.trade_journal import get_all_trades
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "扫描输出"
 
 
 def compute_returns(trades: list[dict]) -> pd.Series:

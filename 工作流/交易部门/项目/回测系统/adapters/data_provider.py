@@ -1,6 +1,6 @@
 """CacheDataProvider：duckdb 权威源直读（T-017 P5），缺省回退 CSV 缓存 → 网络
 
-- duckdb（数据基础/data/t017_p2.duckdb）：全量历史（1990 起），qfq 四价自算——
+- duckdb（数据基础/行情数据/t017_p2.duckdb）：全量历史（1990 起），qfq 四价自算——
   解锁 D1 分段一致性检查 ≥3 年数据前提（旧 CSV 缓存仅 ~3 年窗口，无法成立）
 - CSV 缓存：已 deprecated，降级为 fallback（旧文件保留可读）
 - 网络：最后兜底（get_daily_kline 内部同样 duckdb 优先）

@@ -1,16 +1,16 @@
 """duckdb 仓库配置常量（T-017 P3）
 
 路径约定：
-- DB：交易部门/数据基础/data/t017_p2.duckdb（git 不入库，见交易部门/.gitignore）
-- 运行态文件（state.json/日志/校验输出）：数据基础/data/duckdb_runtime/（git 不入库）
+- DB：交易部门/数据基础/行情数据/t017_p2.duckdb（git 不入库，见交易部门/.gitignore）
+- 运行态文件（state.json/日志/校验输出）：数据基础/行情数据/duckdb_runtime/（git 不入库）
 """
 from pathlib import Path
 
 # ── 路径 ──
 PACKAGE_DIR = Path(__file__).resolve().parent           # .../交易部门/数据基础/duckdb/
 DATA_BASE_DIR = PACKAGE_DIR.parent                      # .../交易部门/数据基础/
-DB_PATH = DATA_BASE_DIR / "data" / "t017_p2.duckdb"
-RUNTIME_DIR = DATA_BASE_DIR / "data" / "duckdb_runtime" # state/日志/校验输出
+DB_PATH = DATA_BASE_DIR / "行情数据" / "t017_p2.duckdb"
+RUNTIME_DIR = DATA_BASE_DIR / "行情数据" / "duckdb_runtime" # state/日志/校验输出
 
 # ── 通达信服务器（P1/P2 实测仅此 2 台可用，必须传 (ip, port) 元组）──
 SERVERS = [("180.153.18.170", 7709), ("60.191.117.167", 7709)]

@@ -54,8 +54,8 @@ def _get_wbi_keys(session: requests.Session) -> tuple[str, str]:
     try:
         resp = session.get(WBI_NAV_URL, headers=BASE_HEADERS, timeout=10)
         data = resp.json()
-        if data.get("data") and "wbi_img" in data["data"]:
-            d = data["data"]["wbi_img"]
+        if data.get("行情数据") and "wbi_img" in data["行情数据"]:
+            d = data["行情数据"]["wbi_img"]
             # img_url 格式: https://i0.hdslb.com/bfs/wbi/xxxxxxxxxxxx.png
             img_key = d["img_url"].rsplit("/", 1)[-1].split(".")[0]
             sub_key = d["sub_url"].rsplit("/", 1)[-1].split(".")[0]
@@ -67,8 +67,8 @@ def _get_wbi_keys(session: requests.Session) -> tuple[str, str]:
     try:
         resp = session.get(WBI_INDEX_URL, headers=BASE_HEADERS, timeout=10)
         data = resp.json()
-        if data.get("data"):
-            d = data["data"]
+        if data.get("行情数据"):
+            d = data["行情数据"]
             return d["img_key"], d["sub_key"]
     except Exception:
         pass
@@ -138,7 +138,7 @@ def get_video_info(bvid: str, cookie: str = "") -> VideoInfo:
         msg = data.get("message", "未知错误")
         raise RuntimeError(f"获取视频信息失败 (code={data['code']}): {msg}")
 
-    v = data["data"]
+    v = data["行情数据"]
     pages_raw = v.get("pages", [])
 
     pages = []
@@ -201,7 +201,7 @@ def get_play_info(bvid: str, cid: int, qn: int = 80,
         msg = data.get("message", "未知错误")
         raise RuntimeError(f"获取播放流失败 (code={data['code']}): {msg}")
 
-    d = data["data"]
+    d = data["行情数据"]
     quality = d.get("quality", qn)
     accept_q = list(d.get("accept_quality", []))
     accept_desc = list(d.get("accept_description", []))

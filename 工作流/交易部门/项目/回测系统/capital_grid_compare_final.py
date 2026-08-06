@@ -292,7 +292,7 @@ def main() -> int:
     ap.add_argument("--risk-list", default="1.5,2,3,5", help="单笔风险%% 列表（逗号分隔）")
     ap.add_argument("--pos-list", default="2,3,5", help="持仓数列表（逗号分隔）")
     ap.add_argument("--duckdb", default=None,
-                    help="duckdb 库路径（默认 交易部门/数据基础/data/t017_p2.duckdb；"
+                    help="duckdb 库路径（默认 交易部门/数据基础/行情数据/t017_p2.duckdb；"
                          "隔离 worktree 不含数据文件，需显式指定主仓库路径）")
     ap.add_argument("--out", default=str(OUT_DIR / f"网格实验-全改动后-{today}.md"),
                     help="报告输出路径")

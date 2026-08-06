@@ -48,8 +48,8 @@ DEFAULT_SAMPLE = 400
 DEFAULT_SEED = 42
 DEFAULT_START = "20230701"
 DEFAULT_END = "20260731"
-DB_PATH = _ROOT / "数据基础" / "data" / "t017_p2.duckdb"
-OUT_DIR = _ROOT / "项目" / "output" / "backtest" / "c1_prbook_compare"
+DB_PATH = _ROOT / "数据基础" / "行情数据" / "t017_p2.duckdb"
+OUT_DIR = _ROOT / "项目" / "扫描输出" / "backtest" / "c1_prbook_compare"
 
 GROUPS = [  # (标签, prbook_gate)
     ("00基线", False),

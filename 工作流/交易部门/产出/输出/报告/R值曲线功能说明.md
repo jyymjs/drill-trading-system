@@ -55,10 +55,10 @@ python main.py rcurve stats --plot
 
 ## 四、数据来源与存储
 
-- 账本：`分析决策/journal/r_curve.csv`（列：id / date / r / entry / stop / exit / symbol / note）
+- 账本：`分析决策/交易日志/r_curve.csv`（列：id / date / r / entry / stop / exit / symbol / note）
 - **同日允许多笔**（id 区分），读取按日期升序（同日按 id），累计曲线不依赖录入顺序、可复现
 - 与 `journal/trade_journal.csv` 的关系：trade_journal 是**完整交易账本**（13 列，走 `main.py track` 命令，纪律报告会读它）；r_curve.csv 是**轻量 R 跟踪通道**（过程监控用，录入最省事）。两条通道并存，不做自动同步——完整交易的 R 值可事后用 record-r 补录进曲线
-- 图表输出：`分析决策/output/r_curve.png`（深色风格，与蒙特卡洛/资金曲线图一致：累计 R 曲线 + R 回撤子图）
+- 图表输出：`分析决策/图表输出/r_curve.png`（深色风格，与蒙特卡洛/资金曲线图一致：累计 R 曲线 + R 回撤子图）
 
 ## 五、与日常流程的衔接
 

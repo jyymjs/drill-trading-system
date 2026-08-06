@@ -32,12 +32,12 @@
 │   ├── 风控/（capital/exit_manager/position）
 │   ├── 跟踪/（monte_carlo/sim_trading）
 │   ├── 市场环境/
-│   ├── journal/               # 交易日志
-│   └── output/
-├── 数据基础/                   # data（fetcher/cache/updater）+ 数据/ + 配置/
+│   ├── 交易日志/               # 交易日志（journal）
+│   └── 图表输出/               # 图表输出（output）
+├── 数据基础/                   # 行情数据（fetcher/cache/updater）+ 数据/ + 配置/ + 批处理/
 ├── 工具链/                     # 工具 + 脚本（extract_knowledge/vision_describe/batch_process…）
-├── 项目/                       # 回测系统/（独立回测项目 R-005）
-├── 产出/输出/                  # 扫描报告/回测输出/市场回顾
+├── 项目/                       # 回测系统/（独立回测项目 R-005）+ 回测输出/
+├── 产出/输出/                  # 报告/ 实验/ 数据/ 图表/（四类分层）
 └── 测试/
 ```
 

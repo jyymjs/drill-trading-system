@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).resolve().parent.parent / "journal"
+CONFIG_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 CAPITAL_FILE = CONFIG_DIR / "capital.json"
 
 # G9 资金配置定稿（2026-08-06 老板拍板）：单笔风险 = 总资金 × 2.0% × 3 仓

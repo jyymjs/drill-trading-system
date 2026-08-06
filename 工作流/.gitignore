@@ -6,12 +6,12 @@ __pycache__/
 .pytest_cache/
 
 # 行情数据缓存（454M+）
-交易部门/数据基础/data/
+交易部门/数据基础/行情数据/
 
 # 输出产物（回测/报告/图表）
-交易部门/数据基础/output/
-交易部门/分析决策/output/
-交易部门/项目/output/
+交易部门/数据基础/扫描输出/
+交易部门/分析决策/图表输出/
+交易部门/项目/回测输出/
 交易部门/产出/输出/数据/market_review/
 交易部门/产出/输出/数据/monte_carlo_report.txt
 交易部门/产出/输出/t017_p1_试点对照报告.md
@@ -19,7 +19,7 @@ __pycache__/
 交易部门/产出/临时/
 
 # 运行时日志/记录（sim_trading 等）
-交易部门/分析决策/journal/
+交易部门/分析决策/交易日志/
 交易部门/档案室/日志/
 
 # 档案备份压缩包（离线备份机制产物）
@@ -50,4 +50,4 @@ bv3_subtitle.txt
 交易部门/产出/输出/backtest_20260806_fullmarket_all/
 .claude/worktrees/
 .claude/
-!交易部门/分析决策/journal/capital.json
+!交易部门/分析决策/交易日志/capital.json

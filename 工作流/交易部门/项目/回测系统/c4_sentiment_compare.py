@@ -57,8 +57,8 @@ DEFAULT_START = "20230701"
 DEFAULT_END = "20260731"
 DEFAULT_SENT_THRESHOLD = 70.0   # C4 建议值（2026-05-29 实证 71.4%）
 PRU_DUO_DAYS = ["2026-05-29", "2024-12-27", "2024-12-30"]  # 专项日（含实测口径）
-DB_PATH = _ROOT / "数据基础" / "data" / "t017_p2.duckdb"
-OUT_DIR = _ROOT / "项目" / "output" / "backtest" / "c4_sentiment_compare"
+DB_PATH = _ROOT / "数据基础" / "行情数据" / "t017_p2.duckdb"
+OUT_DIR = _ROOT / "项目" / "扫描输出" / "backtest" / "c4_sentiment_compare"
 
 GROUPS = [  # (标签, env_gate, volume_filter, sentiment_gate)
     ("00基线", False, False, False),

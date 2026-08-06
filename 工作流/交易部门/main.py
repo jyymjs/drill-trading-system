@@ -78,7 +78,7 @@ def _load_strategy(name: str):
 def _scan_report_already_today() -> str | None:
     """当日是否已产出扫描报告（T-022 当日去重，2026-08-06）
 
-    幂等依据：OUTPUT_DIR（数据基础/output）下存在当日 scan_result_*.csv。
+    幂等依据：OUTPUT_DIR（数据基础/扫描输出）下存在当日 scan_result_*.csv。
     白天手动跑过 → 19:05 计划任务再跑时跳过，避免白跑 5 分钟 + 多份报告混淆。
 
     Returns:
@@ -563,8 +563,8 @@ def main():
                             help="每笔风险比例（版式报告口径，默认 1%）")
     track_parser.add_argument("--display-range", type=float, default=100.0,
                             help="显示范围（中间 X%，默认 100.0）")
-    track_parser.add_argument("--source", type=str, choices=["journal", "backtest"],
-                            default="journal",
+    track_parser.add_argument("--source", type=str, choices=["交易日志", "backtest"],
+                            default="交易日志",
                             help="蒙特卡洛数据源（默认 journal，无记录自动回退回测）")
     track_parser.add_argument("--mode", type=str, choices=["normal", "prebreak"],
                             default="prebreak", help="回测数据源模式（默认 prebreak）")
@@ -573,7 +573,7 @@ def main():
     track_parser.add_argument("--samples", type=int, default=500,
                             help="回测数据源抽样笔数（默认 500）")
     track_parser.add_argument("--signals", type=str,
-                            default="项目/output/backtest/20230701_20260804/signals.csv",
+                            default="项目/回测输出/backtest/20230701_20260804/signals.csv",
                             help="回测数据源 signals.csv 路径")
     track_parser.add_argument("--years", type=float, default=None,
                             help="年化收益率年数（默认回测信号跨度自动计算）")

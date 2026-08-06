@@ -80,8 +80,8 @@ def get_mixin_key(s):
     if nav.get("code") != 0:
         sys.exit(f"SESSDATA 无效或已过期（{nav.get('code')}：{nav.get('message')}）。\n"
                  "请用浏览器重新登录 bilibili.com，将新的 SESSDATA 更新到 config.local.json。")
-    img = nav["data"]["wbi_img"]["img_url"].rsplit("/", 1)[1].split(".")[0]
-    sub = nav["data"]["wbi_img"]["sub_url"].rsplit("/", 1)[1].split(".")[0]
+    img = nav["行情数据"]["wbi_img"]["img_url"].rsplit("/", 1)[1].split(".")[0]
+    sub = nav["行情数据"]["wbi_img"]["sub_url"].rsplit("/", 1)[1].split(".")[0]
     return "".join((img + sub)[i] for i in MIXIN_TAB)[:32]
 
 
@@ -98,7 +98,7 @@ def get_video_info(s, bvid):
     r = s.get(f"{API_BASE}/view", params={"bvid": bvid}, timeout=15).json()
     if r.get("code") != 0:
         sys.exit(f"视频信息获取失败（{r.get('code')}）：{r.get('message')}")
-    d = r["data"]
+    d = r["行情数据"]
     pages = d.get("pages") or []
     if not pages:
         sys.exit("该视频无分P信息，可能已被删除或设限。")
@@ -114,7 +114,7 @@ def get_subtitles(s, bvid, cid, mixin_key):
         # -101 未登录 / -352 风控（多为 SESSDATA 过期）
         sys.exit(f"字幕接口返回错误（{r.get('code')}）：{r.get('message')}。"
                  "请检查 config.local.json 中的 SESSDATA 是否已过期。")
-    return (r.get("data") or {}).get("subtitle", {}).get("subtitles", [])
+    return (r.get("行情数据") or {}).get("subtitle", {}).get("subtitles", [])
 
 
 def fetch_subtitle_text(s, sub_url):

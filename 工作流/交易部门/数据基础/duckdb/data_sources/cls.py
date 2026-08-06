@@ -71,7 +71,7 @@ def fetch_telegraph(page_size: int = CLS_PAGE) -> list[dict]:
         raise RuntimeError(f"财联社接口返回异常 errno={d.get('errno')} msg={d.get('msg')}")
 
     rows = []
-    for it in d.get("data", {}).get("roll_data", []) or []:
+    for it in d.get("行情数据", {}).get("roll_data", []) or []:
         ts = it.get("ctime")
         t = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S") if ts else ""
         rows.append({

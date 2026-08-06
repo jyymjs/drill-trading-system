@@ -40,11 +40,11 @@ PRBOOK_ITEM = {
 PRBOOK_RESP = {"totalRows": 5540, "totalPages": 2, "prbookinfos": [PRBOOK_ITEM]}
 
 # 财联社快讯样例响应（2026-08-05 实测字段结构）
-CLS_RESP = {"errno": 0, "data": {"roll_data": [
+CLS_RESP = {"errno": 0, "行情数据": {"roll_data": [
     {"ctime": 1785927036, "title": "外交部：敦促日方深刻反省历史罪责",
      "content": "外交部发言人表示……", "brief": "外交部：敦促日方深刻反省"},
 ]}}
-CLS_RESP_ERR = {"errno": 1, "msg": "sign error", "data": None}
+CLS_RESP_ERR = {"errno": 1, "msg": "sign error", "行情数据": None}
 
 
 # ───────────────────────── cninfo ─────────────────────────
