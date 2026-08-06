@@ -12,10 +12,10 @@ __pycache__/
 交易部门/数据基础/output/
 交易部门/分析决策/output/
 交易部门/项目/output/
-交易部门/产出/输出/market_review/
-交易部门/产出/输出/monte_carlo_report.txt
+交易部门/产出/输出/数据/market_review/
+交易部门/产出/输出/数据/monte_carlo_report.txt
 交易部门/产出/输出/t017_p1_试点对照报告.md
-交易部门/产出/输出/t4/
+交易部门/产出/输出/数据/t4/
 交易部门/产出/临时/
 
 # 运行时日志/记录（sim_trading 等）

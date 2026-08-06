@@ -55,7 +55,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "sim_capital_20260806_full" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "sim_capital_20260806_full" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_CAPITAL = 5600.0
 DEFAULT_MOM = 0.10          # C23 动量阈值（与 c23_capital_compare 一致，T-024 探索最优）

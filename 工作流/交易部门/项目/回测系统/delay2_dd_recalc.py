@@ -40,7 +40,7 @@ from 回测系统.confirm_replay import load_kline_cache, make_confirm_fn, rebui
 from 回测系统.sim_capital import simulate_capital
 from 分析决策.风控.capital import calc_trade_fee
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
 MAX_POS = 3

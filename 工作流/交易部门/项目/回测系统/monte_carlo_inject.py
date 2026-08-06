@@ -48,7 +48,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "sim_capital_20260806_full" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "sim_capital_20260806_full" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_REPORT = OUT_DIR / "最后全面测试-C注入版蒙特卡洛-20260806.md"
 

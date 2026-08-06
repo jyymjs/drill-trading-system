@@ -49,7 +49,7 @@ CYAN = "#00d4aa"
 PURPLE = "#b07cff"
 
 CHART_DIR = _ROOT / "产出" / "输出" / "图表"
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
 MAX_POS = 3

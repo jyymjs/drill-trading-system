@@ -38,7 +38,7 @@ from 回测系统.confirm_replay import load_kline_cache, make_confirm_fn, rebui
 from 回测系统.delay2_dd_recalc import build_total_asset_curve
 from 回测系统.sim_capital import simulate_capital
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
 MAX_POS = 3

@@ -8,7 +8,7 @@
 
 口径（与 sim_capital 验收 / capital_grid_compare 完全一致）：
   - 信号源：prebreak S 级 / dn_confirm 1.5 / entry_20d 触发价 / 2023-07~2026-07 全市场
-    （默认 = 产出/输出/sim_capital_20260806_full/signals.csv）
+    （默认 = 产出/输出/数据/sim_capital_20260806_full/signals.csv）
   - 资金配置：默认 1.5% × 3 持仓（T-023 折中档——避免 2 仓"已验证错误"和 5 仓
     极端回撤的干扰；--risk-ratio / --max-positions 可覆盖）
   - 初始资金 5600 元 / 整手 100 股 / 费用 佣金万1.3（最低1元）+ 印花税万5
@@ -54,7 +54,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 默认信号源 = sim_capital 验收同口径全量信号（prebreak/S/dn_confirm1.5/3年全市场）
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "sim_capital_20260806_full" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "sim_capital_20260806_full" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_CAPITAL = 5600.0
 DEFAULT_HOLD = "20d"

@@ -8,7 +8,7 @@ avgR -0.118），好信号被挡在门外（未成交信号 avgR +0.898）。
 
 口径（与 sim_capital 验收一致）：
   - 信号源：prebreak S 级 / dn_confirm 1.5 / entry_20d 触发价 / 2023-07~2026-07 全市场
-    （默认 = 产出/输出/sim_capital_20260806_full/signals.csv）
+    （默认 = 产出/输出/数据/sim_capital_20260806_full/signals.csv）
   - 初始资金 5600 元 / 整手 100 股 / 费用 佣金万1.3（最低1元）+ 印花税万5
   - 买入侧印花税误扣 = 已知保守口径，12 组统一，不做修复
 每组指标：终值/收益%/胜率/avgR/盈亏比/最大回撤/回撤时长/笔数/年化笔数/100笔节奏/
@@ -46,7 +46,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 默认信号源 = sim_capital 验收同口径全量信号（prebreak/S/dn_confirm1.5/3年全市场）
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "sim_capital_20260806_full" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "sim_capital_20260806_full" / "signals.csv"
 DEFAULT_CAPITAL = 5600.0
 DEFAULT_HOLD = "20d"
 DEFAULT_GRADES = ["S"]

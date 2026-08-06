@@ -1456,7 +1456,7 @@ def reversal_3to1(df: pd.DataFrame, run_start: int | None = None) -> dict:
 #   业务影响：连续性差的极端形态，调整无意义，进场后无法按规则管理
 # ══════════════════════════════════════════════════════════
 # G1 阈值定案（2026-08-06 · 第二批校准，全市场 5067 只 qfq 扫描，见
-# 产出/输出/g1_gap_scan/scan_gap_thresholds.py 与 threshold_table.md）：
+# 产出/输出/数据/g1_gap_scan/scan_gap_thresholds.py 与 threshold_table.md）：
 #   现状基线（9.5% 统一线 + 3% 跳空 + 3 次）排除率 主板 43.0% / 全市场 48.3%
 #   ——远超"少数派"定位（知识卡语义：经常跳空/涨跌停应是少数品种，参考
 #   ST 一票否决定位），且 9.5% 线对 20cm 票把常态波动算成涨跌停（创业板

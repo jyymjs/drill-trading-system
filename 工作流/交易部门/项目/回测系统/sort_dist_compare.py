@@ -44,7 +44,7 @@ from 回测系统.monte_carlo_style import render_scenario_report
 from 回测系统.regime_segment_compare import attach_regime
 from 回测系统.sim_capital import simulate_capital
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
 MAX_POS = 3
@@ -191,7 +191,6 @@ def main() -> int:
                                "蒙特卡洛-复刻版式-排序定案-20260806.md")
     if args.smoke:
         out_path = str(Path(out_path).with_name(Path(out_path).stem + "_smoke" + Path(out_path).suffix))
-                               "蒙特卡洛-复刻版式-排序定案-20260806.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"报告 → {out_path}")

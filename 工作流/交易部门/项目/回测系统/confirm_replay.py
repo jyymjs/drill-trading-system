@@ -19,7 +19,7 @@
    回答：0.5R 分步是否加剧「依赖大赢家」（预期：非主因，样本量才是——如实记录）。
 
 用法:
-    python 项目/回测系统/confirm_replay.py [--signals-final 产出/输出/backtest_final_20260806/signals.csv]
+    python 项目/回测系统/confirm_replay.py [--signals-final 产出/输出/数据/backtest_final_20260806/signals.csv]
         [--signals-c23 产出/输出/backtest_c23_20260806/signals.csv]
 """
 import argparse
@@ -712,7 +712,7 @@ def format_compare_md(c: dict, capital: float, risk_ratio: float,
     out.append("> 日期：2026-08-06 · 背景：现状版确认规则（C1 收下去 / C2 动能延续 / "
                "C3 非放量阴线，全满足才确认）误杀率 57.6%（>20% 红线），老板拍板跑 "
                "放宽版 vs 现状版对照，数据决定留哪版。")
-    out.append("> 信号源：`产出/输出/backtest_final_20260806/signals.csv`（514 笔触发 "
+    out.append("> 信号源：`产出/输出/数据/backtest_final_20260806/signals.csv`（514 笔触发 "
                "· prebreak/20d · 全 S 级）+ K 线 duckdb 只读 qfq 全量。")
     out.append("> 口径：误杀率 = 被不确认平仓（reject）的票中，平仓后 20 天内最高涨幅 "
                "≥1R 的比例；漏补率 = 确认补仓的票中 20 天内最高涨幅 ≥1R 的比例；"

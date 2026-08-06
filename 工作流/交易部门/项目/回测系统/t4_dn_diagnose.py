@@ -131,7 +131,7 @@ def main():
         fp.write(f"实体 P50/75/90/95: {pct(last_body,50):.2%}/{pct(last_body,75):.2%}/{pct(last_body,90):.2%}/{pct(last_body,95):.2%}\n")
         fp.write(f"DN 评级分布: {dn_grades}\n")
         fp.write(f"失败原因: {fail_reason}\n")
-    print("\n报告已写入 产出/输出/t4/t4_dn_diagnose.txt")
+    print("\n报告已写入 产出/输出/数据/t4/t4_dn_diagnose.txt")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ G4-G7 出场细则 + G9 资金 2%），T-023 C23 版 12 组网格结论（网格
 找全改动后最优档是否变化。
 
 关键口径（vs 改动前 C23 版网格）：
-  - 信号源：产出/输出/backtest_final_20260806/signals.csv（引擎 --c23 --phase-in
+  - 信号源：产出/输出/数据/backtest_final_20260806/signals.csv（引擎 --c23 --phase-in
     全改动叠加产出，514 笔 20d 触发）。**phase_in 出场已由引擎预计算在
     exit_20d/exit_date_20d/r_20d 列**——模拟层无需再实现 phase_in（出场信号层完成）。
   - 不再套 c23_mask：引擎 --c23 已在信号层过滤（无前视版），514 笔即 C23 后触发集；
@@ -48,7 +48,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 默认信号源 = 全改动后引擎信号（B 全面测试同源：--c23 --phase-in 全改动叠加）
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_CAPITAL = 5600.0
 MODE = "prebreak"

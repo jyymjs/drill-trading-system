@@ -50,7 +50,7 @@ from 回测系统.regime_segment_compare import attach_regime
 from 回测系统.sim_capital import simulate_capital
 from 回测系统.sort_compare import enrich_sort_cols
 
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
 MAX_POS = 3
@@ -306,7 +306,6 @@ def main() -> int:
                                "当前策略全面测试-20260807.md")
     if args.smoke:
         out_path = str(Path(out_path).with_name(Path(out_path).stem + "_smoke" + Path(out_path).suffix))
-                               "当前策略全面测试-20260807.md")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
     print(f"报告 → {out_path}")

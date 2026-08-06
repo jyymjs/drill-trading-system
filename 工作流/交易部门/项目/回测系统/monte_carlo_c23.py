@@ -48,7 +48,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 默认信号源 = sim_capital 验收同口径全量信号（prebreak/S/dn_confirm1.5/3年全市场）
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "sim_capital_20260806_full" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "sim_capital_20260806_full" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_REPORT = OUT_DIR / "蒙特卡洛-C23版-20260806.md"
 COMPARE_REPORT = OUT_DIR / "蒙特卡洛-C23版-配置对照-20260806.md"

@@ -440,7 +440,7 @@ def cmd_track(args):
                                       years=years)
         print("\n" + text)
         # 版式文本存档（供查看/归档）
-        report_path = Path("产出/输出/monte_carlo_report.txt")
+        report_path = Path("产出/输出/数据/monte_carlo_report.txt")
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(text + "\n", encoding="utf-8")
         path = plot_simulation(result, save=True)

@@ -18,7 +18,7 @@
   D 版式与标注：报告头部样本量如实标注（514 笔 / 3 年——低于严肃测试标准
      1000+ 笔 / 8-10 年，中期验证级）+ 对齐老师版式一节
 
-信号源：产出/输出/backtest_final_20260806/signals.csv（514 笔 20d 触发，
+信号源：产出/输出/数据/backtest_final_20260806/signals.csv（514 笔 20d 触发，
 全改动后信号 = C23 收紧已并入引擎 + phase_in 预计算出场 + 环境闸门/情绪闸门/
 预约披露闸门，params.json: c23=true / phase_in=true / env_gate=true /
 sentiment_gate=true / prbook_gate=true / dn_confirm=1.5）。r_20d 引擎口径
@@ -73,7 +73,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # 信号源 = 全改动后信号（C23/phase_in/闸门已并入引擎，2026-08-06 最后全面测试产物）
-DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "backtest_final_20260806" / "signals.csv"
+DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 OUT_DIR = _ROOT / "产出" / "输出"
 DEFAULT_REPORT = OUT_DIR / "蒙特卡洛-分布诊断-20260806.md"
 

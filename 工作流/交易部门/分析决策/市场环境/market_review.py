@@ -39,7 +39,7 @@ INDEXES = [
     ("沪深300", "sh000300"),
 ]
 
-OUT_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出" / "market_review"
+OUT_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出" / "数据" / "market_review"
 
 # ── 数据获取（akshare 日线——干净可靠；分钟接口东财风控暂不可用，压力位用日线近似） ──
 
