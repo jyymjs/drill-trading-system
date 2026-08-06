@@ -55,13 +55,15 @@ def c23_mask(df: pd.DataFrame, mom: float = DEFAULT_MOM) -> pd.Series:
 def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                      max_positions: int = 2, mode: str = "prebreak",
                      hold: str = "20d", grades: list[str] | None = None,
-                     c23: bool = False) -> dict:
+                     c23: bool = False,
+                     monthly_inject: float = 0.0,
+                     risk_growth: bool = False) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
 
     Args:
         df: signals.csv 全量（需 mode/code/date/grade/close/stop/risk/entry_/exit_ 列）
         capital: 初始资金（元）
-        risk_ratio: 单笔风险比例（初始资金 × 比例 = 单笔风险额，恒定不变）
+        risk_ratio: 单笔风险比例（初始资金 × 比例 = 单笔风险额；risk_growth=False 时恒定）
         max_positions: 最多同时持仓数（≥1；1 = 单持仓顺序）
         mode: normal / prebreak
         hold: 观察窗（'20d'）
@@ -69,6 +71,13 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         c23: 是否应用 C23 收紧（动量≤10% + 止损距离 0.5~3 元；2026-08-06 老板拍板
             替换进策略）。要求 df 已含 mom20 列（tighten_compare.enrich 复算）。
             仅做信号集过滤，模拟核心逻辑零改动。
+        monthly_inject: 每月注入金额（元，默认 0=无注入；>0 时从首信号自然月起
+            到末信号自然月，每自然月一笔注入进 balance。2026-08-06 最后全面测试
+            注入版资金模拟：5600 起步 + 每月 3000 定投口径）。
+        risk_growth: 风险额是否随累计投入（初始+注入）增长（默认 False=按初始
+            capital 恒定，与既有口径一致）。True 时每笔成交前按
+            (capital + 累计注入) × risk_ratio 重算单笔风险额——模拟"资金增长后
+            配置同步上调"（最后全面测试 A 档对照口径）。
 
     Returns:
         dict: 摘要指标 + trades（逐笔成交）+ equity（资金曲线 DataFrame）
@@ -83,7 +92,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
     sub = sub.sort_values(["date", "code"]).copy()
     max_date = str(sub["date"].max())[:10] if len(sub) else ""  # 数据末交易日（持仓未完成判定）
 
-    risk_amt = capital * risk_ratio                     # 单笔风险额（元，恒定）
+    risk_amt = capital * risk_ratio                     # 单笔风险额（元；risk_growth 时随注入更新）
     max_risk_per_share = risk_amt / 100                  # 每股风险上限（整手 100 股）
     _entry_col, exit_col = f"entry_{h}d", f"exit_{h}d"
     exit_date_col, r_col = f"exit_date_{h}d", f"r_{h}d"
@@ -93,21 +102,55 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
     balance = capital          # 现金（买入扣款/卖出回款，平仓后 = 总资产已实现值）
     positions: list[dict] = []  # 活跃持仓（到期才平，日线粒度）
     trades: list[dict] = []     # 已平仓成交
-    equity: list[dict] = []     # 资金曲线（起点快照 + 每笔平仓后快照）
+    equity: list[dict] = []     # 资金曲线（起点快照 + 每笔平仓后快照 + 注入快照）
     reasons: dict[str, int] = {}
     peak, max_dd = capital, 0.0
+
+    # 注入计划（2026-08-06 最后全面测试 A 档）：首信号自然月 → 末信号自然月，每月一笔
+    injected_total = 0.0
+    inject_plan_done = 0
+    inject_plan: list[tuple[str, float]] = []
+    if monthly_inject > 0 and len(sub):
+        _start_m = str(sub["date"].iloc[0])[:7]
+        _end_m = max_date[:7]
+        _months = pd.period_range(start=_start_m, end=_end_m, freq="M")
+        inject_plan = [(str(p), monthly_inject) for p in _months]
+
+    # 起点快照：首信号日前的到期注入先入账（起始月注入不落在循环外），
+    # 快照用实际 balance/injected_total——保证注入不晚于其对应现金（净曲线正确性）
     if len(sub):
-        equity.append({"date": str(sub["date"].iloc[0])[:10], "balance": round(capital, 2)})
+        _first_date = str(sub["date"].iloc[0])[:10]
+        while inject_plan and _first_date >= inject_plan[0][0]:
+            inj_date, inj_amt = inject_plan.pop(0)
+            balance += inj_amt
+            injected_total += inj_amt
+            inject_plan_done += 1
+        equity.append({"date": _first_date, "balance": round(balance, 2),
+                       "injected_total": round(injected_total, 2)})
+        peak = balance  # 起点即峰值锚（含注入后现金）
 
     for _, row in sub.iterrows():
         date = str(row["date"])[:10]
+        # 0) 到期注入（每自然月一笔，先注入后交易）
+        while inject_plan and date >= inject_plan[0][0]:
+            inj_date, inj_amt = inject_plan.pop(0)
+            balance += inj_amt
+            injected_total += inj_amt
+            inject_plan_done += 1
+            equity.append({"date": inj_date, "balance": round(balance, 2),
+                           "injected_total": round(injected_total, 2), "inject": True})
+        if risk_growth and monthly_inject > 0:
+            # 风险额随累计投入（初始+注入）增长——资金增长后配置同步上调口径
+            risk_amt = (capital + injected_total) * risk_ratio
+            max_risk_per_share = risk_amt / 100
         # 1) 先平到期持仓（exit_date ≤ 当前信号日 → 以该日成交价出场）
         for p in [p for p in positions if p["exit_date"] <= date]:
             proceed = p["exit_price"] * p["shares"]
             fee_out = calc_trade_fee(proceed)
             balance += proceed - fee_out
             trades.append({**p, "exit_date": p["exit_date"], "pnl": p["pnl"]})
-            equity.append({"date": p["exit_date"], "balance": round(balance, 2)})
+            equity.append({"date": p["exit_date"], "balance": round(balance, 2),
+                           "injected_total": round(injected_total, 2)})
             peak = max(peak, balance)
             max_dd = max(max_dd, peak - balance)
         positions = [p for p in positions if p["exit_date"] > date]
@@ -157,6 +200,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             "entry": price, "exit_price": exit_price, "exit_date": ex_d[:10],
             "r": float(row[r_col]), "shares": int(shares),
             "risk_actual": round(risk_ps * shares, 2),   # 单笔实际风险（每股风险×股数）
+            "risk_amt_at": round(risk_amt, 2),           # 成交时单笔风险额（risk_growth 动态档用）
             "pnl": round((exit_price - price) * shares - fee_in - fee_out, 2),
         })
 
@@ -166,14 +210,17 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         fee_out = calc_trade_fee(proceed)
         balance += proceed - fee_out
         trades.append({**p, "pnl": p["pnl"]})
-        equity.append({"date": p["exit_date"], "balance": round(balance, 2)})
+        equity.append({"date": p["exit_date"], "balance": round(balance, 2),
+                       "injected_total": round(injected_total, 2)})
 
     # ── 指标汇总 ──
     n_all = len(sub)
     n_exec = len(trades)
     exec_rate = n_exec / n_all * 100 if n_all else 0
-    total_pnl = balance - capital
-    total_ret = total_pnl / capital * 100 if capital else 0.0
+    total_invested = capital + injected_total          # 总投入 = 初始 + 累计注入
+    total_pnl = balance - total_invested               # 净盈利（扣除注入，2026-08-06 注入口径）
+    total_ret = total_pnl / capital * 100 if capital else 0.0  # 相对初始资金（与静态基线可比）
+    total_ret_invested = total_pnl / total_invested * 100 if total_invested else 0.0  # 相对总投入
     rs = [t["r"] for t in trades]
     avg_r = sum(rs) / n_exec if n_exec else 0.0
     wins = [t for t in trades if t["pnl"] > 0]
@@ -214,11 +261,15 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         n_days, per_year, months_for_100 = 0, 0.0, float("inf")
 
     return {
-        "capital": capital, "risk_amt": risk_amt, "max_risk_per_share": max_risk_per_share,
+        "capital": capital, "risk_amt": risk_amt, "risk_amt_first": capital * risk_ratio,
+        "max_risk_per_share": max_risk_per_share,
         "max_positions": max_positions, "mode": mode, "hold": h, "grades": grades,
         "n_all": n_all, "n_exec": n_exec, "exec_rate": exec_rate,
         "reasons": reasons,
         "end_balance": balance, "total_pnl": total_pnl, "total_ret": total_ret,
+        "total_invested": total_invested, "injected_total": injected_total,
+        "n_inject_months": inject_plan_done,
+        "total_ret_invested": total_ret_invested,
         "max_dd": max_dd, "max_dd_pct": max_dd / capital * 100 if capital else 0.0,
         "dd_days": dd_days,
         "avg_r": avg_r, "win_rate": win_rate, "profit_factor": profit_factor,
@@ -227,7 +278,8 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             "min": min((t["risk_actual"] for t in trades), default=0.0),
             "max": max((t["risk_actual"] for t in trades), default=0.0),
             "mean": float(np.mean([t["risk_actual"] for t in trades])) if trades else 0.0,
-            "over_risk_amt": sum(1 for t in trades if t["risk_actual"] > risk_amt),
+            # risk_growth 动态档：逐笔对比成交时风险额；恒定档所有 risk_amt_at 相同
+            "over_risk_amt": sum(1 for t in trades if t["risk_actual"] > t.get("risk_amt_at", risk_amt)),
             "risk_amt": risk_amt,
         },
         "trades": trades,
@@ -249,6 +301,10 @@ def main() -> int:
     ap.add_argument("--grades", nargs="+", default=["S"], help="只做评级（默认 S，老板约束）")
     ap.add_argument("--c23", action="store_true",
                     help="C23 收紧：动量≤10%% + 止损距离 0.5~3 元（2026-08-06 老板拍板替换进策略）")
+    ap.add_argument("--monthly-inject", type=float, default=0.0,
+                    help="每月注入金额（元，默认 0=无注入；最后全面测试 A 档=3000）")
+    ap.add_argument("--risk-growth", action="store_true",
+                    help="风险额随累计投入（初始+注入）增长（默认关=按初始资金恒定）")
     ap.add_argument("--out-csv", default=None, help="资金曲线 CSV 输出路径（可选）")
     args = ap.parse_args()
 
@@ -276,7 +332,9 @@ def main() -> int:
               f"（动量≤10% + 止损0.5~3元，留存 {len(kept) / n_before:.1%}）")
     res = simulate_capital(df, args.capital, args.risk_ratio,
                            max_positions=args.max_positions, mode=args.mode,
-                           hold=args.hold, grades=args.grades, c23=args.c23)
+                           hold=args.hold, grades=args.grades, c23=args.c23,
+                           monthly_inject=args.monthly_inject,
+                           risk_growth=args.risk_growth)
     if not res["n_exec"]:
         print("无触发信号")
         return 1
@@ -291,8 +349,9 @@ def main() -> int:
     print(line)
     print("模拟实盘回测·资金约束（2026-08-06 老板拍板口径）".center(W))
     print(line)
-    print(f"  初始资金        {r['capital']:>10,.2f} 元 | 单笔风险 {r['risk_amt']:,.0f} 元（{args.risk_ratio:.1%}）"
-          f" | 持仓上限 {r['max_positions']} 只 | 评级 {'/'.join(r['grades'])} | {r['mode']}/{r['hold']}d"
+    print(f"  初始资金        {r['capital']:>10,.2f} 元 | 单笔风险 {r['risk_amt_first']:,.0f} 元起（{args.risk_ratio:.1%}"
+          f"{'，随投入增长' if args.risk_growth else '，恒定'}")
+    print(f"                   | 持仓上限 {r['max_positions']} 只 | 评级 {'/'.join(r['grades'])} | {r['mode']}/{r['hold']}d"
           f"{' | C23 收紧' if args.c23 else ''}")
     print(line)
     print(f"  信号总数        {r['n_all']:>10,}")
@@ -300,8 +359,14 @@ def main() -> int:
     for reason, cnt in sorted(r["reasons"].items(), key=lambda x: -x[1]):
         print(f"    不可买原因      {reason}: {cnt}")
     print(line)
-    print(f"  终值资金        {r['end_balance']:>10,.2f} 元（{r['total_pnl']:+,.2f} 元 / {r['total_ret']:+.1f}%）")
-    print(f"  最大回撤        {r['max_dd']:>10,.2f} 元（{r['max_dd_pct']:.1f}%），最长回撤时长 {r['dd_days']} 天")
+    if args.monthly_inject > 0:
+        print(f"  总投入          {r['total_invested']:>10,.2f} 元（初始 {r['capital']:,.0f} + 注入 {r['injected_total']:,.0f}）")
+    print(f"  终值资金        {r['end_balance']:>10,.2f} 元（净盈利 {r['total_pnl']:+,.2f} 元"
+          f" / 相对初始 {r['total_ret']:+.1f}%"
+          + (f" / 相对总投入 {r['total_ret_invested']:+.1f}%" if args.monthly_inject > 0 else "")
+          + "）")
+    print(f"  最大回撤        {r['max_dd']:>10,.2f} 元（{r['max_dd_pct']:.1f}%），最长回撤时长 {r['dd_days']} 天"
+          + ("（注入掩盖口径，扣除注入后真实回撤见注入对比脚本）" if args.monthly_inject > 0 else ""))
     print(f"  交易笔数        {r['n_exec']:>10,} 笔 | 年化 {r['per_year']:.1f} 笔 | 平均持有 {r['avg_hold_days']:.1f} 交易日")
     print(f"  胜率 / 平均R    {r['win_rate']:.1%} / {r['avg_r']:.3f}")
     if r["profit_factor"] == float("inf"):
@@ -310,10 +375,10 @@ def main() -> int:
         print(f"  盈亏比(金额)    {r['profit_factor']:.2f}")
     print(f"  100笔节奏预估   {r['months_for_100']:.1f} 个月（约 {r['months_for_100'] / 12:.1f} 年）")
     print(f"  单笔风险执行    min {r['risk_exec']['min']:.2f} / mean {r['risk_exec']['mean']:.2f} / "
-          f"max {r['risk_exec']['max']:.2f} 元 | 超 {r['risk_amt']:.0f} 元违规 {r['risk_exec']['over_risk_amt']} 笔")
+          f"max {r['risk_exec']['max']:.2f} 元 | 超风险额违规 {r['risk_exec']['over_risk_amt']} 笔")
     print(line)
     print("  说明：整手100股；费用已含（佣金万1.3最低1元+印花税万5卖出）；资金曲线=每笔平仓后已实现净值")
-    print("  说明：单笔风险额 = 初始资金 × 风险比例（恒定，不随净值浮动）")
+    print("  说明：单笔风险额 = 初始资金 × 风险比例（恒定，不随净值浮动；注入档可用 --risk-growth 随投入增长）")
     print(line)
     return 0
 
