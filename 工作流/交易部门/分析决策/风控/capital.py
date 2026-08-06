@@ -34,9 +34,24 @@ def set_capital(amount: float) -> None:
         json.dump(data, f, indent=2)
 
 
-def max_risk_per_trade() -> float:
-    """单笔最大允许风险（元）"""
-    return round(get_capital() * RISK_RATIO, 2)
+def max_risk_per_trade(scale: float = 1.0) -> float:
+    """单笔最大允许风险（元）
+
+    G3 0.5R 环境仓位（补完计划 · 2026-08-06 接入）：
+    经验型模式/知识卡.md 仓位与环境「环境好（非右下角）→ 正常 1R；
+    环境不好（右下角）→ 0.5R」（2024-06-22/29）。环境判定见
+    indicators.environment_quality（个股 60 日窗口右下角特征），
+    scale=0.5 由调用方按环境质量传入。与 B1 环境闸门（gate.py，大盘指数
+    当日跌幅执行层否决/降级）维度不同：B1 管大盘"做不做"，G3 管个股
+    环境"做多少"，两者互补不重复。
+
+    Args:
+        scale: 风险缩放系数（1.0=正常 1R，0.5=环境弱 0.5R）
+
+    Returns:
+        单笔最大允许风险金额（元）
+    """
+    return round(get_capital() * RISK_RATIO * scale, 2)
 
 
 def calc_lots(risk_per_share: float) -> int:

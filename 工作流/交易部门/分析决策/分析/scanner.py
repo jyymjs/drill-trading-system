@@ -86,6 +86,21 @@ def scan_single_stock(
                     "策略": strategy.name,
                 }
 
+                # G3 0.5R 环境仓位标注（补完计划 · 2026-08-06）：
+                # 知识库 经验型模式/知识卡.md「环境好（非右下角）→ 正常 1R；
+                # 环境不好（右下角）→ 0.5R」（2024-06-22/29）——个股 60 日窗口
+                # 右下角特征判定（indicators.environment_quality，与 B1 大盘闸门
+                # 维度不同：B1 管大盘"做不做"，G3 管个股环境"做多少"）。
+                # 标注供候选表可见；实际仓位缩放由 sim_open/_env_risk_scale 自动执行。
+                try:
+                    from 分析决策.分析.indicators import environment_quality
+                    env = environment_quality(df)
+                    entry["环境"] = env["quality"]
+                    entry["风险档"] = "0.5R" if env["quality"] in ("weak", "bad") else "1R"
+                except (KeyError, ValueError, TypeError):
+                    entry["环境"] = "good"
+                    entry["风险档"] = "1R"
+
                 # 预突破模式：附加条件单关键参数
                 if mode == "prebreak":
                     entry["触发价"] = result.get("trigger_price", 0)

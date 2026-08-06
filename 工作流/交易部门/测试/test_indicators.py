@@ -18,10 +18,12 @@ from 分析决策.分析.indicators import (
     channel_detect,
     consecutive_count,
     ema,
+    gap_limit_detect,
     kdj,
     ma,
     ma_cross,
     macd,
+    one_line_detect,
     overshoot_detect,
     platform_test_count,
     profile_compactness,
@@ -451,3 +453,135 @@ class TestPlatformCount:
         """不足 20 根 K 线 → 返回 0"""
         df = make_kline(10)
         assert platform_test_count(df) == 0
+
+
+# ============================================================
+# G1 经常跳空/涨跌停（品种筛选一票否决#4 · 补完计划）
+# ============================================================
+
+class TestGapLimitDetect:
+    """知识卡原文「经常跳空/涨跌停品种——连续性不好」（2024-07-16）"""
+
+    def _base(self, n: int = 80, seed: int = 7) -> pd.DataFrame:
+        """温和随机游走基准 df（无跳空无涨跌停）"""
+        rng = np.random.default_rng(seed)
+        close = 20 + np.arange(n) * 0.02 + rng.normal(0, 0.1, n).cumsum()
+        return pd.DataFrame({
+            "开盘": close - 0.02, "收盘": close,
+            "最高": close + 0.10, "最低": close - 0.10,
+        })
+
+    def _set_bar(self, df: pd.DataFrame, i: int, chg: float,
+                 one_line: bool = True) -> pd.DataFrame:
+        """把第 i 根设为涨/跌停（可选一字形：开=高=低=收）"""
+        d = df.copy()
+        c = d["收盘"].values.copy()
+        op = d["开盘"].values.copy()
+        hi = d["最高"].values.copy()
+        lo = d["最低"].values.copy()
+        prev = c[i - 1]
+        c[i] = prev * (1 + chg)
+        if one_line:
+            op[i] = c[i]
+            hi[i] = c[i]
+            lo[i] = c[i]
+        else:
+            op[i] = prev * (1 + chg / 2)
+            hi[i] = c[i] * 1.005
+            lo[i] = min(op[i], c[i]) * 0.995
+        d["收盘"], d["开盘"], d["最高"], d["最低"] = c, op, hi, lo
+        return d
+
+    def test_normal_no_exclude(self):
+        """正常票不排除"""
+        res = gap_limit_detect(self._base())
+        assert not res["excluded"]
+
+    def test_frequent_limit_up_exclude(self):
+        """60 根内 3 次涨停 → 排除"""
+        df = self._base()
+        for i in [70, 73, 76]:
+            df = self._set_bar(df, i, 0.10)
+        res = gap_limit_detect(df)
+        assert bool(res["excluded"])
+        assert res["limit_days"] >= 3
+        assert "涨跌停" in res["reason"]
+
+    def test_frequent_gap_exclude(self):
+        """60 根内 3 次以上 3% 跳空 → 排除"""
+        df = self._base()
+        d = df.copy()
+        op = d["开盘"].values.copy()
+        c = d["收盘"].values.copy()
+        for i in [25, 35, 45, 55]:
+            op[i] = c[i - 1] * 1.04
+        d["开盘"] = op
+        res = gap_limit_detect(d)
+        assert bool(res["excluded"])
+        assert res["gap_days"] >= 4
+        assert "跳空" in res["reason"]
+
+    def test_latest_one_line_limit_exclude(self):
+        """最新日一字涨停（无法买入）→ 排除"""
+        df = self._base()
+        df = self._set_bar(df, len(df) - 1, 0.10, one_line=True)
+        res = gap_limit_detect(df)
+        assert bool(res["excluded"])
+        assert bool(res["latest_block"])
+
+    def test_latest_one_line_limit_down_exclude(self):
+        """最新日一字跌停（止损无法卖出）→ 排除"""
+        df = self._base()
+        df = self._set_bar(df, len(df) - 1, -0.10, one_line=True)
+        res = gap_limit_detect(df)
+        assert bool(res["excluded"])
+        assert bool(res["latest_block"])
+
+    def test_short_df_not_excluded(self):
+        """数据不足（<30 根）→ 不排除"""
+        res = gap_limit_detect(self._base(20))
+        assert not res["excluded"]
+        assert res["reason"] == "数据不足"
+
+
+# ============================================================
+# G2 一字形排列（品种筛选一票否决#5 · 补完计划）
+# ============================================================
+
+class TestOneLineDetect:
+    """知识卡原文「一字形排列（调整全是一字形）」（2024-07-25）"""
+
+    def _base(self, n: int = 80, seed: int = 11) -> pd.DataFrame:
+        rng = np.random.default_rng(seed)
+        close = 20 + np.arange(n) * 0.02 + rng.normal(0, 0.1, n).cumsum()
+        return pd.DataFrame({
+            "开盘": close - 0.02, "收盘": close,
+            "最高": close + 0.10, "最低": close - 0.10,
+        })
+
+    def test_normal_no_exclude(self):
+        """正常票不排除"""
+        res = one_line_detect(self._base())
+        assert not res["excluded"]
+        assert res["one_line_count"] == 0
+
+    def test_one_line_streak_exclude(self):
+        """60 根内 ≥3 根一字形（振幅<0.1% 且实体<0.1%）→ 排除"""
+        df = self._base()
+        d = df.copy()
+        c = d["收盘"].values.copy()
+        op = d["开盘"].values.copy()
+        hi = d["最高"].values.copy()
+        lo = d["最低"].values.copy()
+        for i in range(50, 80, 5):
+            p = c[i - 1]
+            c[i], op[i], hi[i], lo[i] = p, p, p * 1.0002, p * 0.9998
+        d["收盘"], d["开盘"], d["最高"], d["最低"] = c, op, hi, lo
+        res = one_line_detect(d)
+        assert bool(res["excluded"])
+        assert res["one_line_count"] >= 3
+
+    def test_short_df_not_excluded(self):
+        """数据不足（<30 根）→ 不排除"""
+        res = one_line_detect(self._base(20))
+        assert not res["excluded"]

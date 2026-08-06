@@ -48,13 +48,18 @@ def _write_all(rows: list[dict]) -> None:
         w.writerows(rows)
 
 
-def check_affordability(price: float, risk_per_share: float) -> tuple[int, str]:
+def check_affordability(price: float, risk_per_share: float,
+                        risk_scale: float = 1.0) -> tuple[int, str]:
     """可买性检查：资金上限与风险上限取 min，整手向下取整
+
+    G3 0.5R 环境仓位（补完计划 · 2026-08-06）：risk_scale 按个股环境质量
+    传入（经验型模式/知识卡.md「环境不好（右下角）→ 0.5R」，判定见
+    indicators.environment_quality），缩放单笔风险额后倒推手数。
 
     Returns: (股数, 拒绝原因) — 股数 <100 表示不可买
     """
     balance = get_capital()
-    risk_amt = max_risk_per_trade()
+    risk_amt = max_risk_per_trade(scale=risk_scale)
     if price <= 0 or risk_per_share <= 0:
         return 0, "参数无效"
     shares = int(min(balance // price, risk_amt // risk_per_share) / 100) * 100
@@ -63,13 +68,47 @@ def check_affordability(price: float, risk_per_share: float) -> tuple[int, str]:
     return shares, ""
 
 
+def _env_risk_scale(code: str) -> tuple[float, str]:
+    """G3 环境仓位判定：个股最新环境质量 → 风险缩放系数
+
+    经验型模式/知识卡.md「环境好（非右下角）→ 正常 1R；环境不好（右下角）
+    → 0.5R」（2024-06-22/29）。判定与 indicators.environment_quality 同源
+    （个股 60 日窗口右下角特征：低点下移/反弹无力/横盘死水）。
+    数据不足/拉取失败 → 默认 1R（放行侧，不因数据问题误伤开仓）。
+
+    Returns:
+        (scale, 说明文本)：1.0=正常 1R，0.5=环境弱 0.5R
+    """
+    try:
+        from 分析决策.分析.indicators import environment_quality
+        from 数据基础.数据.fetcher import get_daily_kline
+        df = get_daily_kline(code, use_cache=True)
+        if df is None or len(df) < 30:
+            return 1.0, "数据不足→1R"
+        env = environment_quality(df)
+        if env["quality"] in ("weak", "bad"):
+            return 0.5, f"环境{env['quality']}→0.5R"
+        return 1.0, "环境好→1R"
+    except Exception:
+        return 1.0, "环境判定异常→1R"
+
+
 def sim_open(code: str, price: float, stop: float, grade: str = "",
-             name: str = "", ty_high: float = 0, ty_low: float = 0) -> str:
-    """模拟开仓（多头）。返回结果文本。"""
+             name: str = "", ty_high: float = 0, ty_low: float = 0,
+             risk_scale: float | None = None) -> str:
+    """模拟开仓（多头）。返回结果文本。
+
+    Args:
+        risk_scale: 风险缩放系数（None=按个股环境自动判定 1R/0.5R，G3）
+    """
     risk_ps = price - stop
     if risk_ps <= 0:
         return f"❌ 止损价({stop})须低于进场价({price})"
-    shares, reason = check_affordability(price, risk_ps)
+    if risk_scale is None:
+        risk_scale, env_note = _env_risk_scale(code)
+    else:
+        env_note = f"手动缩放{risk_scale:g}"
+    shares, reason = check_affordability(price, risk_ps, risk_scale=risk_scale)
     if shares < 100:
         return f"❌ {code} 不可买：{reason}"
 
@@ -86,7 +125,8 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
     _write_all(rows)
     return (f"✅ 模拟开仓 {code}({name or '无名'}) 评级{grade or '—'}\n"
             f"  进场 {price} | 止损 {stop} | 风险 {risk_ps:.2f}元/股 | {shares}股\n"
-            f"  单笔风险 {risk_ps * shares:.0f}元（上限{max_risk_per_trade():.0f}元）| ID {tid}")
+            f"  单笔风险 {risk_ps * shares:.0f}元（上限{max_risk_per_trade(scale=risk_scale):.0f}元）"
+            f" | {env_note} | ID {tid}")
 
 
 def sim_check() -> str:
