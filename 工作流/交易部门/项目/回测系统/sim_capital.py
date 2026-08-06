@@ -2,7 +2,7 @@
 """R-009 模块2·资金约束回测（2026-08-06 老板拍板升级：多持仓参数化 + 完整报告指标）
 
 对回测 signals 逐笔模拟真实资金执行（A股·仅做多）：
-  - 多持仓并发：最多同时持仓 max_positions 只（默认 2，老板实盘约束画像 2026-08-05 定；
+  - 多持仓并发：最多同时持仓 max_positions 只（默认 3，实盘线定稿 2.0%×3仓 2026-08-06 拍板；
     传 1 = 旧版单持仓顺序行为）
   - 可买检查：买入金额 ≤ 可用现金；整手 100 股向下取整；
     每股风险 = entry - stop ≤ 单笔风险额/100（单笔风险额 = 初始资金 × 风险比例，恒定）
@@ -13,7 +13,7 @@
 
 用法:
     python 项目/回测系统/sim_capital.py [--signals 路径] [--capital 5600] [--risk-ratio 0.02]
-        [--max-positions 2] [--mode prebreak] [--hold 20d] [--grades S A B]
+        [--max-positions 3] [--mode prebreak] [--hold 20d] [--grades S A B]
         [--out-csv 资金曲线.csv]
 """
 import argparse
@@ -113,13 +113,15 @@ def _final_pnl(p: dict, fee_out: float) -> float:
 
 
 def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
-                     max_positions: int = 2, mode: str = "prebreak",
+                     max_positions: int = 3, mode: str = "prebreak",
                      hold: str = "20d", grades: list[str] | None = None,
                      c23: bool = False,
                      monthly_inject: float = 0.0,
                      risk_growth: bool = False,
                      half_phase: bool = False,
-                     confirm_fn=None) -> dict:
+                     confirm_fn=None,
+                     same_day_order: str = "time",
+                     cap_per_day: int = 0) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
 
     Args:
@@ -149,6 +151,12 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             半额预算买不起 1 手 → 回退 1R 直开（保持可执行集与默认一致，对照可比）。
         confirm_fn: 确认判定注入（测试用）：fn(code, signal_date, entry, stop)
             -> {"confirmed","stopped","close"}；None → default_confirm_fn（真实 K 线）
+        same_day_order: 同日多候选的处理顺序（2026-08-06 老板拍板质量优先排序实验）：
+            "time"=时间先到先得（现状，按 date,code 序）｜"s_count"=S 数降序
+            （六维评级中 S 个数多者优先）｜"risk_mid"=每股风险居中（|risk-1.5| 升序）｜
+            "mom_asc"=动量升序（需 mom20 列）｜"vol_desc"=触发日量比降序（需 vol_ratio 列）
+        cap_per_day: 每日候选处理上限（0=不限=现状；N=当日最多尝试 N 个候选入场
+            ——"挂单策略 A：只挂排序前 N"的模拟口径）
 
     Returns:
         dict: 摘要指标 + trades（逐笔成交）+ equity（资金曲线 DataFrame）
@@ -160,7 +168,33 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         sub = sub[c23_mask(sub)]
     if grades:
         sub = sub[sub["grade"].isin(grades)]
-    sub = sub.sort_values(["date", "code"]).copy()
+    # 同日多候选排序（2026-08-06 老板拍板质量优先实验；"time"=现状零变化）
+    if same_day_order == "time":
+        sub = sub.sort_values(["date", "code"])
+    else:
+        sub = sub.copy()
+        if same_day_order == "s_count":
+            sub["_key"] = (sub[["PT", "TY", "DN", "DL", "LK", "SF"]] == "S").sum(axis=1)
+            sub = sub.sort_values(["date", "_key"], ascending=[True, False],
+                                  kind="stable")
+        elif same_day_order == "risk_mid":
+            sub["_key"] = (sub["risk"].astype(float) - 1.5).abs()
+            sub = sub.sort_values(["date", "_key"], ascending=[True, True],
+                                  kind="stable")
+        elif same_day_order == "mom_asc":
+            if "mom20" not in sub.columns:
+                raise ValueError("same_day_order=mom_asc 需要 mom20 列（tighten_compare.enrich 复算）")
+            sub = sub.sort_values(["date", "mom20"], ascending=[True, True],
+                                  kind="stable")
+        elif same_day_order == "vol_desc":
+            if "vol_ratio" not in sub.columns:
+                raise ValueError("same_day_order=vol_desc 需要 vol_ratio 列（引擎算过未存，需复算）")
+            sub = sub.sort_values(["date", "vol_ratio"], ascending=[True, False],
+                                  kind="stable")
+        else:
+            raise ValueError(f"未知 same_day_order={same_day_order}")
+        sub = sub.drop(columns=["_key"], errors="ignore")
+    sub = sub.copy()
     max_date = str(sub["date"].max())[:10] if len(sub) else ""  # 数据末交易日（持仓未完成判定）
 
     risk_amt = capital * risk_ratio                     # 单笔风险额（元；risk_growth 时随注入更新）
@@ -207,8 +241,12 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                        "injected_total": round(injected_total, 2)})
         peak = balance  # 起点即峰值锚（含注入后现金）
 
+    _cur_day, _day_cnt = None, 0   # cap_per_day 每日候选计数（2026-08-06 老板拍板）
+
     for _, row in sub.iterrows():
         date = str(row["date"])[:10]
+        if date != _cur_day:
+            _cur_day, _day_cnt = date, 0
         # 0) 到期注入（每自然月一笔，先注入后交易）
         while inject_plan and date >= inject_plan[0][0]:
             inj_date, inj_amt = inject_plan.pop(0)
@@ -236,12 +274,18 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                     p["shares"] *= 2
                     p["risk_actual"] = round(p["risk_actual"] * 2, 2)
                 p["half_settled"] = True
+        # 1.5) 每日候选上限（2026-08-06 老板拍板挂单策略 A 模拟：同日只挂排序前 N）
+        if cap_per_day and _day_cnt >= cap_per_day:
+            reasons["每日候选上限(挂单前N)"] = reasons.get("每日候选上限(挂单前N)", 0) + 1
+            continue
+        _day_cnt += 1
         # 1) 先平到期持仓（exit_date ≤ 当前信号日 → 以该日成交价出场）
         for p in [p for p in positions if p["exit_date"] <= date]:
             proceed = p["exit_price"] * p["shares"]
             fee_out = calc_trade_fee(proceed)
             balance += proceed - fee_out
             p["pnl"] = _final_pnl(p, fee_out)   # 统一口径：按最终股数实算（half 确认后翻倍）
+            p["fee_out"] = fee_out              # E-058 回写：trades 出场费按最终股数（half 确认补仓后旧值按半仓计，重建现金流会少计补仓费）
             trades.append({**p, "exit_date": p["exit_date"], "pnl": p["pnl"]})
             equity.append({"date": p["exit_date"], "balance": round(balance, 2),
                            "injected_total": round(injected_total, 2)})
@@ -315,6 +359,10 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             # 确认日扣——半仓期间资金占用 = 0.5 仓位金额；确认 → 补等额 0.5R
             # （总 1R）；不确认/触止损 → 半仓到 exit_date 平仓（signals phase_in 口径）
             # 注意：止损价 = 进场价 - 每股风险（risk = entry - stop，signals 口径）
+            # E-047 口径（2026-08-06 定案）：补仓 = **按初始 R 基准等额补仓**
+            # （add_cost = 入场价×半仓股数，不随确认日市价调整）——确认日 C1 要求
+            # 收盘≥进场价，故实盘按市价等额买入的实际风险敞口 ≤ 1R 预算（只低不高）；
+            # 模拟以初始价等效（出场按 exit_price 实算），与实盘语义一致。
             v = _confirm(str(row["code"]), date, price, price - risk_ps)
             half_ok = bool(v.get("confirmed"))
             cdate = str(v.get("confirm_date") or "")
@@ -333,6 +381,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         fee_out = calc_trade_fee(proceed)
         balance += proceed - fee_out
         p["pnl"] = _final_pnl(p, fee_out)
+        p["fee_out"] = fee_out              # E-058 回写（同上方平仓循环）
         trades.append({**p, "pnl": p["pnl"]})
         equity.append({"date": p["exit_date"], "balance": round(balance, 2),
                        "injected_total": round(injected_total, 2)})
@@ -424,7 +473,7 @@ def main() -> int:
     ap.add_argument("--risk-ratio", type=float, default=0.02,
                     help="单笔风险比例（默认 2.0%%——G9 实盘线定稿参数 2026-08-06 老板拍板，"
                          "2.0%%×3仓 与网格实验 T-023 同口径；对照实验显式传旧值 0.015）")
-    ap.add_argument("--max-positions", type=int, default=2,
+    ap.add_argument("--max-positions", type=int, default=3,
                     help="最多同时持仓数（默认 2，老板实盘约束；1=旧版单持仓顺序）")
     ap.add_argument("--mode", default="prebreak", choices=["normal", "prebreak"])
     ap.add_argument("--hold", default="20d", choices=["5d", "10d", "20d"])

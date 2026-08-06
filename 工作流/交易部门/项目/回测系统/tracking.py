@@ -277,6 +277,10 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0
+    # E-046 口径（2026-08-06 标注）：phase_in 模式下 0.5R 不确认 → 确认日平仓的
+    # R 按**全仓 R** 计（实际只持 0.5R，金额损益为其一半）——回测层 R 分布口径
+    # 保持全仓基准（与全量回测历史数字一致，不重跑）；资金层（sim_capital）
+    # pnl 按最终股数实算（半仓损益真实），两口径互不影响。
     return Outcome(hold, True, entry, round(float(exit_price), 4), exit_date, stopped, round(float(r), 4))
 
 
@@ -328,5 +332,7 @@ def _track_prebreak(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: in
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / risk if risk > 0 else 0.0
+    # E-046 口径（2026-08-06 标注）：同 _track_normal——phase_in reject 平仓 R 按
+    # 全仓 R 计（半仓实际损益为其一半），回测 R 分布保持全仓基准；资金层实算不受影响。
     return Outcome(hold, True, round(float(entry), 4), round(float(exit_price), 4),
                    exit_date, stopped, round(float(r), 4), vol_ratio)

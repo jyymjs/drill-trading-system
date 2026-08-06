@@ -87,8 +87,12 @@ class BacktestEngine:
         if codes is None:
             codes = self.params.codes
         if codes is None:
-            from 数据基础.配置.stock_pool import get_stock_codes
-            codes = get_stock_codes()
+            # ST 过滤（2026-08-07 实盘开盘审计接入）：扫描层已有名称级 ST 剔除，
+            # 引擎股票池此前无过滤（仅靠 G1 行为性兜底）——统一为同一来源
+            # stock_pool.is_st_name，保证回测信号集与实盘扫描同口径
+            from 数据基础.配置.stock_pool import get_all_stocks, is_st_name
+            codes = [s["code"] for s in get_all_stocks()
+                     if not is_st_name(s.get("name", ""))]
 
         result = EngineResult()
         if not codes:

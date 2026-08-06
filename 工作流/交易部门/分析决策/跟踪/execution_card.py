@@ -1,6 +1,6 @@
 """实盘执行卡（2026-08-06 老板确认四连包①：1R/0.5R 双路径执行卡）
 
-扫描报告增强板块（实盘前置），三个板块：
+扫描报告增强板块（实盘前置），四个板块：
 
 1. 当日环境档：上证指数 60 日窗口 environment_quality → 「1R 日 / 0.5R 日」。
    判定单一来源：sim_trading._market_env_scale（指数数据不可得 → None → 1R 日，放行侧）。
@@ -10,18 +10,30 @@
    - 0.5R 日：新候选按 0.5R 试探挂单（风险额半额 = 56 元）+ 次日收线确认流程说明
      （确认 → 补 0.5R 至 1R；不确认 → 平仓——2024-06-29 周会原文，见
      indicators.half_position_confirm 模块注释，知识卡 经验型模式/知识卡.md 仓位与环境节）。
+   - 排序（2026-08-06 老板拍板质量优先）：sort_by="risk_mid" 时候选按每股风险
+     居中排序（|每股风险-1.5| 升序，T-032 实验定案：同日多候选选谁的标准，
+     +88.8% → +107.3%）；"none"= 扫描原序。
 
 3. 分步建仓持仓卡：在持 0.5R 试探仓（sim_journal phase=="half" 的行；兼容
    trade_journal 带 phase 列的 open 行）→ half_position_confirm 三条件判定 →
    动作指令（补 0.5R 挂单价 / 平仓 / 持有等待 / 触止损）。
    判定逻辑与模拟层同源：复用 sim_trading._check_half_position（不复制）。
+
+4. 系统状态行（2026-08-06 老板拍板全自动+熔断式）：连败预警（连续止损 ≥5 笔）、
+   在持仓位与板块分散提示、账户数据校验——审核层移除后仅系统级警报介入。
+
+落盘（2026-08-06 全自动执行链）：full_card 默认写 `产出/输出/执行卡_YYYYMMDD.md`
+（T-022 同日覆盖），扫描计划任务自动落盘——「扫描输出即挂单依据，不审核」。
 """
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from 分析决策.跟踪 import sim_trading
 from 分析决策.风控.capital import get_capital
+
+_CARD_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出"
 
 
 def env_day_scale() -> tuple[float, str]:
@@ -38,14 +50,17 @@ def env_day_scale() -> tuple[float, str]:
 
 
 def order_card(candidates: list[dict], capital: float | None = None,
-               risk_ratio: float = 0.02) -> str:
+               risk_ratio: float = 0.02, sort_by: str = "risk_mid") -> str:
     """挂单指引卡：当日环境档 → 新候选 1R/0.5R 挂单指引
 
     Args:
-        candidates: prebreak 候选（需含 code/name/触发价/止损价/每股风险，
+        candidates: prebreak 候选（需含 code/name/触发价/止损价/每股风险/评级，
             与 scanner prebreak 输出结构一致）
         capital: 当日资金（缺省读取 capital.json；5600 → 1R 风险额 112 元）
         risk_ratio: 单笔风险比例（实盘线定稿 2%，G9 2026-08-06 老板拍板）
+        sort_by: 候选排序（2026-08-06 老板拍板质量优先，T-032 定案）：
+            "risk_mid"=每股风险居中优先（|每股风险-1.5| 升序，默认）；
+            "none"=扫描原序
 
     Returns:
         指引卡文本（含「1R 日/0.5R 日」标注与逐票挂单指引；无候选 → 相应说明）
@@ -57,6 +72,9 @@ def order_card(candidates: list[dict], capital: float | None = None,
     W = 76
     line = "-" * W
     label = "1R 日" if scale == 1.0 else "0.5R 日"
+    if sort_by == "risk_mid":
+        candidates = sorted(candidates,
+                            key=lambda r: abs((r.get("每股风险", 0) or 0) - 1.5))
     out = [line, f"〔挂单指引卡〕{today} 当日环境档 = {label}（{note}）".center(W), line]
     out.append(f"  新候选挂单路径：{'1R 正常挂单' if scale == 1.0 else '0.5R 试探挂单'}"
                f" | 单笔风险额 {risk_amt:.0f} 元（{cap:.0f}×{risk_ratio:.0%}"
@@ -165,9 +183,58 @@ def position_card(rows: list[dict] | None = None) -> str:
     return "\n".join(out)
 
 
-def full_card(candidates: list[dict], rows: list[dict] | None = None) -> str:
-    """完整执行卡（挂单指引卡 + 分步建仓持仓卡），供 scan 报告与手工调用"""
-    return order_card(candidates) + "\n" + position_card(rows)
+def system_status(rows: list[dict] | None = None) -> str:
+    """系统状态行（2026-08-06 老板拍板全自动+熔断式警报——审核层移除后仅系统级介入）
+
+    警报项（触发仅提醒，不停止交易——实盘三纪律：连亏期别慌）：
+      ① 连败预警：sim_journal 已平仓连续止损 ≥5 笔（蒙卡最大连败 18-22，5 为提醒线）
+      ② 在持仓位 + 板块分散提示（3 仓同板块 ≥2 时人工目检，G15 人工纪律保留）
+      ③ 账户校验：journal 无任何记录 → 提示（数据缺失时执行卡结论不可信）
+
+    Args:
+        rows: journal 行（缺省读取 sim_journal）；测试可注入
+    """
+    rows = rows if rows is not None else sim_trading._read_all()
+    out = []
+    closed = [r for r in rows if r.get("status") == "closed"]
+    losing = 0
+    for r in reversed(closed):
+        try:
+            rm = float(r.get("r_multiple", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if rm < 0:
+            losing += 1
+        else:
+            break
+    if losing >= 5:
+        out.append(f"  ⚠️ 熔断预警：连续止损 {losing} 笔（提醒线 5）——不停止交易，"
+                   "按三纪律：连亏期别慌（大赢家在路上），请老板关注")
+    open_rows = [r for r in rows if r.get("status") == "open"]
+    if open_rows:
+        codes = "、".join(f"{r.get('symbol', '?')}" for r in open_rows)
+        out.append(f"  ℹ️ 在持仓位（{len(open_rows)} 仓）：{codes}"
+                   "——人工目检板块分散（同板块 ≥2 只请留意）")
+    if not rows:
+        out.append("  ⚠️ 账户校验：sim_journal 无记录——数据缺失，本卡挂单指引仅供参考，"
+                   "核对数据后再执行")
+    return "\n".join(out)
+
+
+def full_card(candidates: list[dict], rows: list[dict] | None = None,
+              write_file: bool = True, sort_by: str = "risk_mid") -> str:
+    """完整执行卡（系统状态 + 挂单指引卡 + 分步建仓持仓卡）
+
+    2026-08-06 全自动执行链：默认落盘 `产出/输出/执行卡_YYYYMMDD.md`
+    （T-022 同日覆盖；计划任务与手动调用同款）——扫描输出即挂单依据，不审核。
+    """
+    card = "〔系统状态〕\n" + system_status(rows) + "\n" \
+        + order_card(candidates, sort_by=sort_by) + "\n" + position_card(rows)
+    if write_file:
+        _CARD_DIR.mkdir(parents=True, exist_ok=True)
+        fname = _CARD_DIR / f"执行卡_{datetime.now().strftime('%Y%m%d')}.md"
+        fname.write_text(card, encoding="utf-8")
+    return card
 
 
 def main() -> int:

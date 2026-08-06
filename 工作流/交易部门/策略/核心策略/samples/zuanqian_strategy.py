@@ -485,9 +485,11 @@ class ZuanQianStrategy(BaseStrategy):
             return 'C', "数据不足,看不清观望"
 
         b_range = (before["最高"].max() - before["最低"].min()) / before["最低"].min()
+        # 边界修正（2026-08-07 实盘开盘审计）：定义"<12% S / 12-25% A"——
+        # b_range == 0.12 整点原判 S（>0.12 才 A），应为 A（含 12% 边界）
         if b_range > 0.25:
             return 'C', f"3rd(前期释放{b_range:.1%}>25%)"
-        elif b_range > 0.12:
+        elif b_range >= 0.12:
             return 'A', f"2nd(部分释放{b_range:.1%})"
         return 'S', f"1st(积累充分{b_range:.1%})"
 

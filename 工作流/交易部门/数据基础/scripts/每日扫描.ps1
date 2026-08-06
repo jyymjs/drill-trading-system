@@ -25,7 +25,16 @@ if ($latest -ne $today) {
     Add-Content -Path $log -Value "data not fresh, run update first"
     & 'C:\Program Files\Python312\python.exe' -m 数据基础.duckdb.update_daily --workers 8 --xdxr-check *>> $log
     $latest2 = & 'C:\Program Files\Python312\python.exe' -c "import duckdb; con=duckdb.connect(r'数据基础\data\t017_p2.duckdb',read_only=True); print(con.execute('select max(date) from daily').fetchone()[0])" 2>&1
-    if ($latest2.Trim() -ne $today) { Add-Content -Path $log -Value "update failed, abort scan"; exit 1 }
+    if ($latest2.Trim() -ne $today) {
+        # 容错（2026-08-06）：增量失败重试一次；仍失败 → 用旧数据继续扫描 + 报告标注（不再中止）
+        Add-Content -Path $log -Value "update retry (first attempt failed)"
+        & 'C:\Program Files\Python312\python.exe' -m 数据基础.duckdb.update_daily --workers 8 --xdxr-check *>> $log
+        $latest3 = & 'C:\Program Files\Python312\python.exe' -c "import duckdb; con=duckdb.connect(r'数据基础\data	017_p2.duckdb',read_only=True); print(con.execute('select max(date) from daily').fetchone()[0])" 2>&1
+        if ($latest3.Trim() -ne $today) {
+            Add-Content -Path $log -Value "update failed after retry, scan with old data (db date: $($latest3.Trim()))"
+            $env:SCAN_STALE_DATA = $latest3.Trim()
+        }
+    }
 }
 # 3. 全市场扫描（prebreak S 级候选，5600 元整手约束）
 & 'C:\Program Files\Python312\python.exe' main.py scan --strategy zuanqian_strategy --mode prebreak --max-price 50 *>> $log

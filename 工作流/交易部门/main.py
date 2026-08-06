@@ -99,6 +99,13 @@ def cmd_scan(args):
         print(f"当日扫描报告已产出（{existing}），跳过重复扫描（T-022 当日去重）")
         print("如需强制重扫：删除当日 scan_result 文件后再运行")
         return
+    # 旧数据标注（2026-08-06 容错）：增量更新失败重试后仍失败 → 扫描用旧数据继续，
+    # 输出显著标注数据日期（每日扫描.ps1 设置 SCAN_STALE_DATA）
+    import os as _os
+    _stale = _os.environ.get("SCAN_STALE_DATA")
+    if _stale:
+        print(f"⚠️⚠️⚠️  数据为旧日期（{_stale}，增量更新失败），本扫描结果仅供参考，"
+              "挂单请核对数据后再执行 ⚠️⚠️⚠️")
     strategy = _load_strategy(args.strategy)
     if strategy is None:
         print(f"❌ 未找到策略: '{args.strategy}'")
@@ -151,14 +158,18 @@ def cmd_scan(args):
     else:
         print("\n当前没有符合条件的股票")
 
-    # 执行卡（2026-08-06 老板确认四连包①）：挂单指引卡（1R/0.5R 双路径，按当日
-    # 环境档）+ 分步建仓持仓卡（在持 0.5R 试探仓的收线确认动作指令）。
+    # 执行卡（2026-08-06 老板确认四连包① + 08-07 实盘开盘接线）：
+    # 挂单指引卡（1R/0.5R 双路径，按当日环境档，候选按 risk_mid 排序）
+    # + 分步建仓持仓卡（在持 0.5R 试探仓确认动作）+ 系统状态行（熔断警报）。
     # prebreak 主表（C23 达标未突破候选）为挂单对象；normal 模式仅输出持仓卡。
+    # full_card 自动落盘 产出/输出/执行卡_YYYYMMDD.md（T-022 同日覆盖）——
+    # 扫描输出即挂单依据（T-033 全自动执行链，老板 08-06 拍板）。
     try:
-        from 分析决策.跟踪.execution_card import order_card, position_card
+        from 分析决策.跟踪.execution_card import full_card
+        card = full_card(results if mode == "prebreak" else [],
+                         sort_by="risk_mid")
         print()
-        print(order_card(results if mode == "prebreak" else []))
-        print(position_card())
+        print(card)
     except ImportError:
         pass
 

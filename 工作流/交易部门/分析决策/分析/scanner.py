@@ -293,12 +293,26 @@ def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
     "不达标"返回 filtered 供研究（不参与挂单候选）。判定字段由
     scan_single_stock prebreak 分支写入（C23 / C23原因 / 动量20日%）。
 
+    常量防漂移（2026-08-07 实盘开盘审计）：本地值与 tighten_compare 单一来源
+    运行时校验一致（可用时），不一致即报错——防"两处同步"漏改。
+
     Args:
         results: prebreak 扫描候选（含 C23 标记）
 
     Returns:
         (passing, filtered): C23 达标候选主表 / 不达标研究列表
     """
+    try:
+        from 回测系统.tighten_compare import DEFAULT_MOM, RISK_MAX, RISK_MIN
+        if (C23_MOM_MAX, C23_RISK_MIN, C23_RISK_MAX) != \
+                (DEFAULT_MOM, RISK_MIN, RISK_MAX):
+            raise RuntimeError(
+                "C23 常量与 tighten_compare 单一来源不一致——请同步（scanner 本地值 "
+                f"{(C23_MOM_MAX, C23_RISK_MIN, C23_RISK_MAX)} vs 回测 "
+                f"{(DEFAULT_MOM, RISK_MIN, RISK_MAX)}）")
+    except ImportError:
+        pass  # 无 项目/ 路径（独立调用）→ 跳过校验，本地值兜底
+
     passing = [r for r in results if r.get("C23") == "达标"]
     filtered = [r for r in results if r.get("C23") != "达标"]
     return passing, filtered
