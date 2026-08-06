@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 
@@ -68,8 +69,23 @@ class TrackedRecord:
 
 
 def _find_signal_index(df: pd.DataFrame, signal_date: pd.Timestamp) -> int:
-    """按日期定位信号日在基础K线中的行索引（确定性：取首个匹配）"""
+    """按日期定位信号日在基础K线中的行索引（确定性：取首个匹配）
+
+    T-028（2026-08-06）：线性扫描 → 二分定位（K线日期升序，引擎保证）。
+    原实现对每根K线构造 pd.Timestamp 逐一比较，是全量回测实测最大热点
+    （引擎 profile：5481 次调用占 25% wall 时间）。
+    快路径（升序 datetime64/可比对象列）：np.searchsorted 二分命中；重复日期
+    取最左=首个匹配，语义同原实现。
+    兜底路径（类型不可比/乱序的测试构造数据）：回退原线性扫描——任何输入下
+    返回结果与原实现逐位一致。
+    """
     dates = df["日期"].values
+    try:
+        t = int(np.searchsorted(dates, signal_date))
+        if 0 <= t < len(dates) and pd.Timestamp(dates[t]) == signal_date:
+            return t
+    except TypeError:
+        pass  # 混合类型列不可比较 → 走兜底线性扫描
     for i, d in enumerate(dates):
         if pd.Timestamp(d) == signal_date:
             return i

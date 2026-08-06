@@ -1,6 +1,7 @@
 """技术指标计算 - 纯 pandas 实现"""
 import numpy as np
 import pandas as pd
+from numba import njit
 
 
 def ma(series: pd.Series, n: int) -> pd.Series:
@@ -150,6 +151,64 @@ def consecutive_count(series: pd.Series, condition) -> int:
     return int(rev_mask.iloc[:pos].sum())
 
 
+@njit(cache=True)
+def _platform_test_count_nb(close, high, n, tolerance, min_gap) -> int:
+    """平台测试计数核心（njit，T-028 2026-08-06）：与 Python 版逐位一致
+
+    - 同循环顺序、同运算（abs(p-lv)/(lv+1e-8)<=tolerance / 间隔合并）；
+    - overshoot 集合用列表替代（n≤60，线性 in 开销可忽略，语义等价）；
+    - close[i] 用全数组索引、highs 为 high[-n:] 视图——与原实现精确一致。
+    """
+    prices = close[-n:]
+    highs = high[-n:]
+
+    overshoot = []
+    for i in range(10, n - 5):
+        if (highs[i] > highs[i - 1]
+                and highs[i] >= highs[i - 2]
+                and highs[i] > highs[i + 1]
+                and highs[i] > highs[i + 2]
+                and (close[i] - close[-1]) / close[i] > 0.02):
+            overshoot.append(i)
+
+    levels = []
+    counts = []
+    last_touch = []
+
+    for i in range(len(prices)):
+        skip = False
+        for oi in range(len(overshoot)):
+            if overshoot[oi] == i:
+                skip = True
+                break
+        if skip:
+            continue
+        p = prices[i]
+        matched = False
+        for j in range(len(levels)):
+            lv = levels[j]
+            if abs(p - lv) / (lv + 1e-8) <= tolerance:
+                if len(last_touch) and i - last_touch[j] < min_gap:
+                    last_touch[j] = i
+                    matched = True
+                    break
+                counts[j] += 1
+                last_touch[j] = i
+                matched = True
+                break
+        if not matched:
+            levels.append(p)
+            counts.append(1)
+            last_touch.append(i)
+
+    if len(counts) == 0:
+        return 0
+    best = counts[0]
+    for c in counts[1:]:
+        best = max(best, c)
+    return best
+
+
 def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int = 5) -> int:
     """平台位测试次数计数（PT 维度核心）
 
@@ -171,50 +230,9 @@ def platform_test_count(df: pd.DataFrame, tolerance: float = 0.01, min_gap: int 
     close = df["收盘"].values
     high = df["最高"].values
 
-    # 取最近60根K线
+    # 取最近60根K线（T-028：核心循环 njit 化，逐位一致）
     n = min(60, len(df))
-    prices = close[-n:]
-    highs_window = high[-n:]
-
-    # 检测过高点位置（创新高后回落>2%）
-    overshoot_positions = set()
-    for i in range(10, n - 5):
-        # 局部最高点
-        # 检查局部最高点后是否回落超过2%
-        if (highs_window[i] > highs_window[i-1]
-                and highs_window[i] >= highs_window[i-2]
-                and highs_window[i] > highs_window[i+1]
-                and highs_window[i] > highs_window[i+2]
-                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02):
-            overshoot_positions.add(i)
-
-    levels = []
-    counts = []
-    last_touch = []
-
-    for i in range(len(prices)):
-        # 跳过过高点位置
-        if i in overshoot_positions:
-            continue
-        p = prices[i]
-        matched = False
-        for j, lv in enumerate(levels):
-            if abs(p - lv) / (lv + 1e-8) <= tolerance:
-                # 检查间隔：间隔太近算同一次
-                if last_touch and i - last_touch[j] < min_gap:
-                    last_touch[j] = i
-                    matched = True
-                    break
-                counts[j] += 1
-                last_touch[j] = i
-                matched = True
-                break
-        if not matched:
-            levels.append(p)
-            counts.append(1)
-            last_touch.append(i)
-
-    return max(counts) if counts else 0
+    return _platform_test_count_nb(close, high, n, tolerance, min_gap)
 
 
 def profile_compactness(df: pd.DataFrame, window: int = 20) -> float:
@@ -309,11 +327,8 @@ def pixelation_score(df: pd.DataFrame, window: int = 30) -> float:
     body_ratio = np.clip(body_ratio, 0.0, 1.0)
     shadow_score = float(np.mean(body_ratio))  # 高=实体多=好
 
-    # 2) K线连续性（连续同向比例）
-    same_dir = 0
-    for i in range(2, len(cl)):
-        if (cl[i] >= cl[i - 1]) == (cl[i - 1] >= cl[i - 2]):
-            same_dir += 1
+    # 2) K线连续性（连续同向比例；T-028 numpy 化：布尔逐元素比较 sum，整数计数逐位一致）
+    same_dir = int(np.sum((cl[2:] >= cl[1:-1]) == (cl[1:-1] >= cl[:-2])))
     continuity = same_dir / max(len(cl) - 2, 1)
     # 太高或太低都不好，0.3~0.7 最佳（横盘整理）
     continuity_score = 1.0 - abs(continuity - 0.5) * 2
@@ -406,13 +421,17 @@ def conflict_zscore(df: pd.DataFrame, dn_start_idx: int | None = None,
     if dn_start_idx is None:
         dn_start_idx = n - 1  # 默认最后一根
 
-    # 调整结构区域：DN启动前的K线
+    # 调整结构区域：DN启动前的K线（T-028 numpy 化：列一次提取，切片等价 df.iloc，逐位一致）
     cons_start = max(0, dn_start_idx - consolidation_window)
     cons_end = max(cons_start + 1, dn_start_idx)
 
-    cons = df.iloc[cons_start:cons_end]
-    cons_hl = cons["最高"].values - cons["最低"].values
-    cons_body = np.abs(cons["收盘"].values - cons["开盘"].values)
+    high = df["最高"].to_numpy()
+    low = df["最低"].to_numpy()
+    close = df["收盘"].to_numpy()
+    op = df["开盘"].to_numpy()
+
+    cons_hl = high[cons_start:cons_end] - low[cons_start:cons_end]
+    cons_body = np.abs(close[cons_start:cons_end] - op[cons_start:cons_end])
     cons_ratio = np.divide(cons_body, cons_hl, out=np.ones_like(cons_body), where=cons_hl > 0)
 
     if len(cons_ratio) < 5 or np.std(cons_ratio) == 0:
@@ -422,9 +441,9 @@ def conflict_zscore(df: pd.DataFrame, dn_start_idx: int | None = None,
     cons_std = np.std(cons_ratio)
 
     # 启动K线（DN起始+后续最多3根合并）
-    dn_bars = df.iloc[dn_start_idx:min(dn_start_idx + 3, n)]
-    dn_hl = dn_bars["最高"].values - dn_bars["最低"].values
-    dn_body = np.abs(dn_bars["收盘"].values - dn_bars["开盘"].values)
+    dn_end = min(dn_start_idx + 3, n)
+    dn_hl = high[dn_start_idx:dn_end] - low[dn_start_idx:dn_end]
+    dn_body = np.abs(close[dn_start_idx:dn_end] - op[dn_start_idx:dn_end])
     dn_ratio = np.divide(dn_body, dn_hl, out=np.ones_like(dn_body), where=dn_hl > 0)
     dn_max_ratio = np.max(dn_ratio) if len(dn_ratio) > 0 else 0
 
@@ -590,6 +609,41 @@ def channel_detect(df: pd.DataFrame, n: int = 8) -> dict:
     return {"is_channel": is_channel, "strength": r2 if is_channel else 0.0}
 
 
+@njit(cache=True)
+def _overshoot_detect_nb(close, high, n) -> tuple:
+    """过高点检测核心（njit，T-028 2026-08-06）：与 Python 版逐位一致
+
+    返回 (has_overshoot, position)；close 为全数组（close[i]/close[-1] 与原实现一致），
+    recent_high 为 high[-n:] 视图；pre_low/post_low 用切片 min 扫描。
+    """
+    recent_close = close[-n:]
+    recent_high = high[-n:]
+
+    local_high_idx = -1
+    local_high_val = 0.0
+    for i in range(10, n - 5):
+        if (recent_high[i] > recent_high[i - 1]
+                and recent_high[i] >= recent_high[i - 2]
+                and recent_high[i] > recent_high[i + 1]
+                and recent_high[i] > recent_high[i + 2]
+                and (close[i] - close[-1]) / close[i] > 0.02
+                and recent_high[i] > local_high_val):
+            local_high_val = recent_high[i]
+            local_high_idx = i
+
+    if local_high_idx >= 0:
+        pre_low = recent_close[0]
+        for k in range(1, local_high_idx):
+            pre_low = min(pre_low, recent_close[k])
+        post_low = recent_close[local_high_idx]
+        for k in range(local_high_idx + 1, n):
+            post_low = min(post_low, recent_close[k])
+        if pre_low < post_low < local_high_val:
+            return True, local_high_idx
+
+    return False, -1
+
+
 def overshoot_detect(df: pd.DataFrame, window: int = 60) -> dict:
     """过高点检测
 
@@ -608,32 +662,11 @@ def overshoot_detect(df: pd.DataFrame, window: int = 60) -> dict:
 
     close = df["收盘"].values
     n = min(window, len(df))
-    recent_close = close[-n:]
     recent_high = df["最高"].values[-n:]
 
-    # 找局部最高点
-    local_high_idx = -1
-    local_high_val = 0
-    for i in range(10, n - 5):  # 排除边界
-        # 检查这个高点后是否回落超过2%
-        if (recent_high[i] > recent_high[i - 1]
-                and recent_high[i] >= recent_high[i - 2]
-                and recent_high[i] > recent_high[i + 1]
-                and recent_high[i] > recent_high[i + 2]
-                and i < n - 1 and (close[i] - close[-1]) / close[i] > 0.02
-                and recent_high[i] > local_high_val):
-            local_high_val = recent_high[i]
-            local_high_idx = i
-
-    # 过高点：创了收盘新高后回落
-    if local_high_idx >= 0:
-        # 检查此高点前是否有更低的起点
-        pre_low = min(recent_close[:local_high_idx])
-        post_low = recent_close[local_high_idx:].min()
-        if pre_low < post_low < local_high_val:
-            return {"has_overshoot": True, "position": local_high_idx}
-
-    return {"has_overshoot": False, "position": -1}
+    # 找局部最高点（T-028：njit 化，循环顺序/运算逐位一致）
+    has, pos = _overshoot_detect_nb(close, recent_high, n)
+    return {"has_overshoot": has, "position": pos}
 
 
 def support_resistance_levels(df: pd.DataFrame, n_bins: int = 20) -> list[float]:
