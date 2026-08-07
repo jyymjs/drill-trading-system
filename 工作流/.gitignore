@@ -51,3 +51,6 @@ bv3_subtitle.txt
 .claude/worktrees/
 .claude/
 !交易部门/分析决策/交易日志/capital.json
+
+# agency-agents 研究副本（NEXUS 人格池，按需取用，不入库）
+公共资源部/第三方引擎/agency-agents/
