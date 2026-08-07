@@ -62,12 +62,13 @@ def safe(fn, *a, **kw):
 
 def collect_group(sig: pd.DataFrame, klines: dict, name: str, capital: float,
                   inject: float, risk_ratio: float = RISK_RATIO,
-                  max_positions: int = MAX_POS) -> dict:
+                  max_positions: int = MAX_POS,
+                  same_day_order: str = "risk_mid") -> dict:
     """单组资金层：simulate_capital → 16 维度数据收集"""
     sim = simulate_capital(sig, capital, risk_ratio, max_positions=max_positions,
                            mode="prebreak", hold="20d", grades=["S"],
                            half_phase=True, confirm_fn=make_confirm_fn("delay2"),
-                           same_day_order="risk_mid", monthly_inject=inject)
+                           same_day_order=same_day_order, monthly_inject=inject)
     trades = sim["trades"]
     rs = capital_trade_r(trades)
     avg_risk = float(np.mean([t["risk_actual"] for t in trades])) if trades else 0.0
@@ -264,6 +265,8 @@ def main() -> int:
                          "（如 B2,8401.26,0,0.012855 / G4,8401.26,0,0.02,4）")
     ap.add_argument("--tag", default="20260808",
                     help="输出目录后缀（完整周期用 2019fullcycle，避免覆盖 3 年数据）")
+    ap.add_argument("--order", default="risk_mid",
+                    help="同日候选排序（risk_mid/dist_asc，P2-5 对比用）")
     args = ap.parse_args()
 
     global DATA_DIR
@@ -300,7 +303,8 @@ def main() -> int:
         mp = spec[4] if len(spec) > 4 else MAX_POS
         print(f"[{name}] 资金层模拟（{capital:.0f} × {rr:.2%} × {mp}仓"
               f"{' + 月注入3000' if inject else ''}）…")
-        groups_data[name] = collect_group(sig, klines, name, capital, inject, rr, mp)
+        groups_data[name] = collect_group(sig, klines, name, capital, inject, rr, mp,
+                                          same_day_order=args.order)
         o = groups_data[name]["overview"]
         print(f"  → {o['n_exec']} 笔 | {o['total_ret']:+.1f}% | avgR {o['avg_r']:+.3f}"
               f" | 回撤 {groups_data[name]['dd']['max_dd_pct']:.1f}%"

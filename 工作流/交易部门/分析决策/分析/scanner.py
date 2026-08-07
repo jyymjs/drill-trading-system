@@ -347,7 +347,11 @@ def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
 
 
 def apply_bear_vol_cap(results: list[dict], regime: str | None) -> tuple[list[dict], list[dict]]:
-    """量比熊市上限（R-037③ · T-026 数据支撑，2026-08-08）
+    """量比熊市上限（R-037③ · ⚠️ 2026-08-09 对照实验证伪——见报告，勿启用）
+
+    T-026 熊市>3.0 回落在现行口径（C23+dn_confirm 1.5）7.5 年数据不成立：
+    熊市量比>3.0 触发 avgR +2.058/胜率73.1%（全组最高）——加上限会剔除最好的票。
+    保留函数仅供研究，勿在扫描链路启用。
 
     熊市段量比 >3.0 的突破是情绪化追高（T-026 全量分段：熊市 >3.0 组 avgR 0.513
     < 2.0~3.0 组 0.774——倒 U，量比越高越好在熊市不成立）。

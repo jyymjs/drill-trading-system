@@ -158,24 +158,6 @@ def cmd_scan(args):
             print_results(vol_rejected, mode=mode)
             save_results(vol_rejected, suffix="_vol")
 
-        # R-037③ 量比熊市上限（T-026 数据支撑，2026-08-08）：熊市段量比>3.0
-        # 的突破是情绪化追高（avgR 0.513 < 0.774）——移出挂单候选供研究
-        from 分析决策.分析.scanner import apply_bear_vol_cap
-        regime = None
-        try:
-            from 回测系统.market_regime import load_index_df, regime_series
-            idx = load_index_df()
-            if idx is not None and not idx.empty:
-                series = regime_series(idx)
-                regime = str(series.iloc[-1]) if len(series) else None
-        except Exception:  # noqa: BLE001 - 市场状态不可得 → 放行侧
-            regime = None
-        results, bear_rejected = apply_bear_vol_cap(results, regime)
-        if bear_rejected:
-            print(f"\n=== 量比熊市上限（{regime}市，量比>3.0，不参与挂单候选，供研究）: "
-                  f"{len(bear_rejected)} 只 ===")
-            print_results(bear_rejected, mode=mode)
-            save_results(bear_rejected, suffix="_bearvol")
 
     if results:
         print_results(results, mode=mode)

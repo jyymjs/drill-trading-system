@@ -193,6 +193,13 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                 raise ValueError("same_day_order=vol_desc 需要 vol_ratio 列（引擎算过未存，需复算）")
             sub = sub.sort_values(["date", "vol_ratio"], ascending=[True, False],
                                   kind="stable")
+        elif same_day_order == "dist_asc":
+            # 触发距离优先（P2-5 · 2026-08-09）：|触发价-收盘|/收盘 升序——贴价候选优先
+            # （7.5 年信号层：贴价<0.5% avgR +1.965/胜率72.4% vs >3% +0.296）
+            sub["_key"] = ((sub["trigger"].astype(float) - sub["close"].astype(float))
+                           .abs() / sub["close"].astype(float))
+            sub = sub.sort_values(["date", "_key"], ascending=[True, True],
+                                  kind="stable")
         else:
             raise ValueError(f"未知 same_day_order={same_day_order}")
         sub = sub.drop(columns=["_key"], errors="ignore")
