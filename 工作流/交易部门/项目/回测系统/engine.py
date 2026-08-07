@@ -359,6 +359,12 @@ def _mp_init(engine: BacktestEngine) -> None:
     """进程池 worker 初始化：注入只读共享引擎（每进程恰一次）"""
     global _MP_ENGINE
     _MP_ENGINE = engine
+    # 闸门日期映射预建（2026-08-08 提速方案 C：每信号全列扫描 → O(1) dict 查）
+    try:
+        from 分析决策.市场环境.gate import build_gate_maps
+        build_gate_maps(engine._index_df, engine._breadth_df)
+    except Exception:  # noqa: BLE001 - 映射构建失败回退旧逻辑，不阻断
+        pass
 
 
 def _mp_process_stock(code: str) -> tuple[list[TrackedRecord], dict]:
@@ -374,3 +380,85 @@ def _mp_process_stock(code: str) -> tuple[list[TrackedRecord], dict]:
     after = eng.gate_counts
     diff = {k: after[k] - before.get(k, 0) for k in after}
     return recs, diff
+
+
+def rerun_track_with_cost(signals_path, params, klines=None) -> list:
+    """D2 2倍成本压力·跟踪层复用（2026-08-08 提速方案 A）
+
+    信号/评级/闸门与成本无关（成本只影响 _trade_cost），D2 无需整引擎重跑：
+    读基线 signals.csv → 重建 Signal → 批量 K 线 → 仅重算 track_signal(cost_multiplier=2.0)。
+    结果与旧全量重跑口径一致（触发判定/止损/出场逻辑同源），时间从 ~45% 引擎耗时 → 秒级。
+    """
+    import pandas as _pd
+    from 回测系统.confirm_replay import load_kline_cache
+    from 回测系统.report import SCORE_SHORT
+    from 回测系统.tracking import Signal, TrackedRecord, track_signal
+
+    df = _pd.read_csv(signals_path, encoding="utf-8-sig")
+    if df.empty:
+        return []
+    codes = df["code"].astype(str).unique().tolist()
+    klines = klines if klines is not None else load_kline_cache(codes)
+    records = []
+    for _, row in df.iterrows():
+        sig = Signal(
+            code=str(row["code"]), date=_pd.Timestamp(row["date"]), mode=row["mode"],
+            grade=row["grade"],
+            scores={k: (str(row.get(SCORE_SHORT[k], "C")) or "C", "")
+                    for k in Signal.SCORE_KEYS},
+            close=float(row["close"]), trigger=float(row["trigger"]),
+            stop=float(row["stop"]), risk=float(row["risk"]),
+        )
+        base = klines.get(sig.code)
+        if base is None:
+            continue
+        outcomes = {h: track_signal(sig, base, h, enable_cost=True, cost_multiplier=2.0,
+                                    moving_stop=params.moving_stop,
+                                    dn_confirm=params.dn_confirm,
+                                    phase_in=params.phase_in)
+                    for h in params.holds}
+        records.append(TrackedRecord(signal=sig, outcomes=outcomes))
+    return records
+
+
+def read_signals_records(signals_path, params) -> list:
+    """从 signals.csv 重建 TrackedRecord 列表（2026-08-08 提速方案 D：信号缓存复用）
+
+    列名约定与 report.signals_to_frame 一致；各 hold 结果从动态列重建。
+    用于：参数指纹未变时跳过引擎直接复用信号集（网格/多组实验同源场景）。
+    """
+    import pandas as _pd
+    from 回测系统.report import SCORE_SHORT
+    from 回测系统.tracking import Outcome, Signal, TrackedRecord
+
+    df = _pd.read_csv(signals_path, encoding="utf-8-sig")
+    if df.empty:
+        return []
+    records = []
+    for _, row in df.iterrows():
+        sig = Signal(
+            code=str(row["code"]), date=_pd.Timestamp(row["date"]), mode=row["mode"],
+            grade=row["grade"],
+            scores={k: (str(row.get(SCORE_SHORT[k], "C")) or "C", "")
+                    for k in Signal.SCORE_KEYS},
+            close=float(row["close"]), trigger=float(row["trigger"]),
+            stop=float(row["stop"]), risk=float(row["risk"]),
+        )
+        outcomes = {}
+        for h in params.holds:
+            tr = row.get(f"triggered_{h}d")
+            if _pd.isna(tr):
+                continue  # 缓存源未跑该 hold → 跳过
+            en, ex, ed, st, rv = (row.get(f"entry_{h}d"), row.get(f"exit_{h}d"),
+                                  row.get(f"exit_date_{h}d"), row.get(f"stopped_{h}d"),
+                                  row.get(f"r_{h}d"))
+            outcomes[h] = Outcome(
+                hold=h, triggered=bool(int(tr)),
+                entry_price=float(en) if not _pd.isna(en) else 0.0,
+                exit_price=float(ex) if not _pd.isna(ex) else 0.0,
+                exit_date=_pd.Timestamp(ed) if isinstance(ed, str) and ed else None,
+                stopped=bool(int(st)) if not _pd.isna(st) else False,
+                r=float(rv) if not _pd.isna(rv) else 0.0,
+            )
+        records.append(TrackedRecord(signal=sig, outcomes=outcomes))
+    return records

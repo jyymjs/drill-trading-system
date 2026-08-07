@@ -1532,25 +1532,8 @@ def gap_limit_detect(df: pd.DataFrame, limit_pct: float | None = None) -> dict:
     hi = d["最高"].values.astype(float)
     lo = d["最低"].values.astype(float)
 
-    limit_days = 0
-    gap_days = 0
-    for i in range(1, len(d)):
-        prev_close = close[i - 1]
-        if prev_close <= 0:
-            continue
-        chg = close[i] / prev_close - 1.0
-        if abs(chg) >= limit_pct:
-            limit_days += 1
-        if abs(op[i] / prev_close - 1.0) >= GAP_PCT:
-            gap_days += 1
-
-    # 当日事件：最新一根一字封板（开=高=低=收 且 触涨跌停线）
-    latest_block = False
-    prev_close = close[-2] if len(close) >= 2 else op[-1]
-    if prev_close > 0:
-        chg = close[-1] / prev_close - 1.0
-        one_price = hi[-1] == lo[-1] and lo[-1] == op[-1] and op[-1] == close[-1]
-        latest_block = one_price and abs(chg) >= limit_pct
+    limit_days, gap_days, latest_block, chg = _gap_limit_count_nb(
+        close, op, hi, lo, limit_pct, GAP_PCT)
 
     total = limit_days + gap_days
     excluded = total >= GAP_LIMIT_FREQ or latest_block
@@ -1589,15 +1572,49 @@ def one_line_detect(df: pd.DataFrame) -> dict:
     cl = d["收盘"].values.astype(float)
     op = d["开盘"].values.astype(float)
 
+    n_one = _one_line_count_nb(hi, lo, cl, op, ONE_LINE_AMP)
+    excluded = n_one >= ONE_LINE_FREQ
+    return {"excluded": excluded, "one_line_count": n_one,
+            "reason": f"60根内一字形{n_one}根" if excluded else ""}
+
+
+@njit(cache=True)
+def _gap_limit_count_nb(close, op, hi, lo, limit_pct, gap_pct):
+    """跳空/涨跌停计数核心（B 提速 2026-08-08）：与 Python 版逐位一致"""
+    n = len(close)
+    limit_days = 0
+    gap_days = 0
+    for i in range(1, n):
+        prev_close = close[i - 1]
+        if prev_close <= 0:
+            continue
+        chg = close[i] / prev_close - 1.0
+        if abs(chg) >= limit_pct:
+            limit_days += 1
+        if abs(op[i] / prev_close - 1.0) >= gap_pct:
+            gap_days += 1
+    latest_block = False
+    chg_latest = 0.0
+    prev_close = close[n - 2] if n >= 2 else op[n - 1]
+    if prev_close > 0:
+        chg_latest = close[n - 1] / prev_close - 1.0
+        one_price = (hi[n - 1] == lo[n - 1] and lo[n - 1] == op[n - 1]
+                     and op[n - 1] == close[n - 1])
+        latest_block = one_price and abs(chg_latest) >= limit_pct
+    return limit_days, gap_days, latest_block, chg_latest
+
+
+@njit(cache=True)
+def _one_line_count_nb(hi, lo, cl, op, amp_th):
+    """一字形计数核心（B 提速 2026-08-08）：与 Python 版逐位一致"""
+    n = len(hi)
     n_one = 0
-    for i in range(len(d)):
+    for i in range(n):
         prev_close = cl[i - 1] if i > 0 else op[i]
         if prev_close <= 0:
             continue
         amp = (hi[i] - lo[i]) / prev_close
         body = abs(cl[i] - op[i]) / prev_close
-        if amp < ONE_LINE_AMP and body < ONE_LINE_AMP:
+        if amp < amp_th and body < amp_th:
             n_one += 1
-    excluded = n_one >= ONE_LINE_FREQ
-    return {"excluded": excluded, "one_line_count": n_one,
-            "reason": f"60根内一字形{n_one}根" if excluded else ""}
+    return n_one

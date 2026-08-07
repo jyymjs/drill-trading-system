@@ -53,7 +53,7 @@ from 回测系统.sort_compare import enrich_sort_cols
 DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
 CAPITAL = 5600.0
 RISK_RATIO = 0.02
-MAX_POS = 3
+MAX_POS = 5  # 2026-08-08 老板确认：8401 + 108 元 + 5 仓（完整周期 B2_5 最优）
 N_SIM = 10000
 INJECT = 3000.0
 REGIME_LABEL = {"牛": "牛市", "熊": "熊市", "震荡": "震荡"}

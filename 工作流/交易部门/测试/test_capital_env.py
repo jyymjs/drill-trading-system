@@ -159,13 +159,13 @@ class TestSimOpenDayUnified:
         monkeypatch.setattr(sim_trading, "_market_env_scale", lambda: 0.5)
         out = self._open(monkeypatch, tmp_path, "000001", make_df("good"))
         assert "0.5R" in out
-        assert "上限56" in out
+        assert "上限1000" in out  # 模拟线 10 万 × 2% × 0.5R（2026-08-08 无资金限制对照）
 
     def test_good_market_env_full_risk(self, monkeypatch, tmp_path):
         monkeypatch.setattr(sim_trading, "_market_env_scale", lambda: 1.0)
         out = self._open(monkeypatch, tmp_path, "000001", make_df("bad"))
         assert "1R" in out
-        assert "上限112" in out
+        assert "上限2000" in out  # 模拟线 10 万 × 2% × 1R（2026-08-08 无资金限制对照）
 
     def test_day_journal_unifies_second_open(self, monkeypatch, tmp_path):
         """当日头寸统一：第一笔 0.5R（个股环境差）→ 第二笔（个股环境好）
@@ -191,7 +191,7 @@ class TestSimOpenDayUnified:
         out = self._open(monkeypatch, tmp_path, "000001", make_df("good"),
                          risk_scale=0.5)
         assert "手动缩放0.5" in out
-        assert "上限56" in out
+        assert "上限1000" in out  # 模拟线 10 万 × 2% × 0.5R（2026-08-08 无资金限制对照）
 
     def test_manual_scale_sets_day_unified(self, monkeypatch, tmp_path):
         """手动 0.5R 写入当日统一锚：后续自动开仓沿用 0.5R（当日出现降档信号

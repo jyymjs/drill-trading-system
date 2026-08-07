@@ -81,6 +81,15 @@ def scan_single_stock(
                 result = strategy.prebreak_grade(df)
                 match = result.get("match", False)
                 grade = result.get("grade", "C")
+                # R-035（2026-08-08 投资研究员扫描讨论发现）：prebreak 5 条件不含 DN，
+                # DN=C（动能不达标）的票会混入挂单候选（301508 中机认检实锤：标准 6 条件
+                # 诊断不符合但 prebreak 入选）——加 DN 最低门槛：DN=C 剔除，与标准评级
+                # Tier1 任一 C → 整体 C 的语义一致
+                if match and hasattr(strategy, "_grade_dn"):
+                    dn_g, _ = strategy._grade_dn(df)
+                    if dn_g == "C":
+                        match = False
+                        grade = "C"
             elif hasattr(strategy, 'grade'):
                 result = strategy.grade(df)
                 match = result.get("match", False)
@@ -335,3 +344,30 @@ def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
     passing = [r for r in results if r.get("C23") == "达标"]
     filtered = [r for r in results if r.get("C23") != "达标"]
     return passing, filtered
+
+
+def apply_bear_vol_cap(results: list[dict], regime: str | None) -> tuple[list[dict], list[dict]]:
+    """量比熊市上限（R-037③ · T-026 数据支撑，2026-08-08）
+
+    熊市段量比 >3.0 的突破是情绪化追高（T-026 全量分段：熊市 >3.0 组 avgR 0.513
+    < 2.0~3.0 组 0.774——倒 U，量比越高越好在熊市不成立）。
+    熊市时量比 >3.0 的候选移出挂单主表（进研究列表）；牛/震荡段不过滤
+    （T-026：牛/震荡段量比单调正贡献，不放上限）；市场状态不可得 → 放行侧。
+
+    量比 = 最新成交量 / 前20日均量 = 成交量×1.5/放量阈值（放量阈值=前20日均量×1.5）。
+
+    Returns:
+        (passing, rejected)：passing 挂单候选 / rejected 研究列表（量比超上限）
+    """
+    if regime != "熊":
+        return results, []
+    passing, rejected = [], []
+    for r in results:
+        vol = r.get("成交量") or 0
+        thr = r.get("放量阈值") or 0
+        ratio = vol * 1.5 / thr if thr > 0 else None
+        if ratio is not None and ratio > 3.0:
+            rejected.append(r)
+        else:
+            passing.append(r)
+    return passing, rejected

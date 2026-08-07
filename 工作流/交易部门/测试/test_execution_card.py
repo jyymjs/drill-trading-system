@@ -109,7 +109,7 @@ class TestPositionCard:
         monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                             lambda code, use_cache=True: k)
         monkeypatch.setattr(execution_card.sim_trading, "check_affordability",
-                            lambda price, risk_ps, risk_scale=1.0: (100, ""))
+                            lambda price, risk_ps, risk_scale=1.0, capital=None: (100, ""))
         row = {"symbol": "600419", "name": "测试股", "date": "2025-01-04",
                "entry_price": "10.20", "stop_loss": "9.80", "volume": "100",
                "phase": "half", "status": "open"}

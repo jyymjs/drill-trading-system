@@ -158,6 +158,25 @@ def cmd_scan(args):
             print_results(vol_rejected, mode=mode)
             save_results(vol_rejected, suffix="_vol")
 
+        # R-037③ 量比熊市上限（T-026 数据支撑，2026-08-08）：熊市段量比>3.0
+        # 的突破是情绪化追高（avgR 0.513 < 0.774）——移出挂单候选供研究
+        from 分析决策.分析.scanner import apply_bear_vol_cap
+        regime = None
+        try:
+            from 回测系统.market_regime import load_index_df, regime_series
+            idx = load_index_df()
+            if idx is not None and not idx.empty:
+                series = regime_series(idx)
+                regime = str(series.iloc[-1]) if len(series) else None
+        except Exception:  # noqa: BLE001 - 市场状态不可得 → 放行侧
+            regime = None
+        results, bear_rejected = apply_bear_vol_cap(results, regime)
+        if bear_rejected:
+            print(f"\n=== 量比熊市上限（{regime}市，量比>3.0，不参与挂单候选，供研究）: "
+                  f"{len(bear_rejected)} 只 ===")
+            print_results(bear_rejected, mode=mode)
+            save_results(bear_rejected, suffix="_bearvol")
+
     if results:
         print_results(results, mode=mode)
         save_results(results)
@@ -449,36 +468,53 @@ def cmd_track(args):
               f"{np.percentile(result['final_equities'], 97.5):.1f}R")
         print(f"  图片已保存: {path}")
 
-    elif args.action in ("sim-open", "sim-check", "sim-stats"):
+    elif args.action in ("sim-open", "sim-auto-open", "sim-check", "sim-stats",
+                         "strategy-health", "observe", "hypothesis-check"):
         # R-009 模块3：模拟交易流水线（模拟/小仓验证阶段）
-        from 分析决策.跟踪.sim_trading import sim_check, sim_open, sim_stats
+        # sim-auto-open（2026-08-08 老板确认方案①③）：扫描候选 → 模拟条件单（10万名义）
+        # strategy-health（R-036②）：三方偏差体检（模拟线 vs 实盘 vs 回测预期）
+        from 分析决策.跟踪.sim_trading import (sim_auto_open, sim_check,
+                                                sim_open, sim_stats)
         if args.action == "sim-open":
             if not args.code or args.price <= 0 or args.stop <= 0:
                 print("用法: track sim-open --code 600777 --price 8.5 --stop 8.0 [--grade B] [--name xxx]")
                 return
             print("\n" + sim_open(args.code, args.price, args.stop,
                                   grade=args.grade, name=args.name))
+        elif args.action == "sim-auto-open":
+            print("\n" + sim_auto_open())
         elif args.action == "sim-check":
             print("\n" + sim_check())
+        elif args.action == "strategy-health":
+            from 分析决策.跟踪.strategy_health import health_report
+            print("\n" + health_report())
+        elif args.action == "observe":
+            from 分析决策.跟踪.observe_pool import summarize
+            print("\n" + summarize())
+        elif args.action == "hypothesis-check":
+            from 分析决策.跟踪.observe_pool import hypothesis_check
+            print("\n" + hypothesis_check())
         else:
             print("\n" + sim_stats())
 
 
 def cmd_capital(args):
     """资金管理"""
-    from 分析决策.风控.capital import get_capital, max_risk_per_trade, set_capital
+    from 分析决策.风控.capital import (get_capital, get_risk_ratio,
+                                        max_risk_per_trade, set_capital)
     if args.action == "show":
         cap = get_capital()
         risk = max_risk_per_trade()
         print("\n=== 资金状况 ===\n")
         print(f"  总资金: ¥{cap:.0f}")
-        print("  单笔风险比例: 2.0%")
+        print(f"  单笔风险比例: {get_risk_ratio():.2%}")
         print(f"  单笔最大风险: ¥{risk:.0f}")
-        print("  建议修改: python main.py capital set <金额>")
+        print("  建议修改: python main.py capital set <金额> [--risk-ratio 比例]")
     elif args.action == "set" and args.amount:
-        set_capital(args.amount)
+        set_capital(args.amount, args.risk_ratio)
         risk = max_risk_per_trade()
         print(f"\n资金已更新为 ¥{args.amount:.0f}")
+        print(f"  单笔风险比例: {get_risk_ratio():.2%}")
         print(f"  单笔最大风险: ¥{risk:.0f}")
 
 
@@ -544,9 +580,11 @@ def main():
     track_parser = subparsers.add_parser("track", help="交易记录管理")
     track_parser.add_argument("action", type=str, nargs="?",
                             choices=["list", "add", "equity", "monte-carlo",
-                                     "sim-open", "sim-check", "sim-stats",
-                                     "equity-add", "inject", "equity-report",
-                                     "dual-line"],
+                                     "sim-open", "sim-auto-open", "sim-check",
+                                     "sim-stats", "strategy-health",
+                                     "observe", "hypothesis-check",
+                                     "equity-add", "inject",
+                                     "equity-report", "dual-line"],
                             default="list", help="操作")
     track_parser.add_argument("extra", nargs="*",
                               help="equity-add/inject 参数：<日期> <数值> [--inject N]")
@@ -584,6 +622,8 @@ def main():
                           choices=["show", "set"], default="show", help="操作")
     cap_parser.add_argument("amount", type=float, nargs="?", default=0,
                           help="设置资金金额")
+    cap_parser.add_argument("--risk-ratio", type=float, default=None,
+                          help="风险比例（缺省保持现值；注入不机械抬风险额）")
 
     args = parser.parse_args()
 

@@ -143,11 +143,14 @@ class ZuanQianStrategy(BaseStrategy):
 
     # ── Tier 0：一票否决 ──
 
-    def _tier0_reject(self, df: pd.DataFrame, check_retracement: bool = True) -> str | None:
+    def _tier0_reject(self, df: pd.DataFrame, check_retracement: bool = True,
+                      ch: dict | None = None, trace: dict | None = None) -> str | None:
         """Tier 0 一票否决：结构太小 / 完全释放 / 无回踩(可选)
 
         Args:
             check_retracement: True=标准模式（检查回踩），False=预突破模式（跳过）
+            ch/trace: 复用 grade() 已算结果（B 提速 2026-08-08：消除同窗重复计算；
+                None=自算，外部独立调用行为不变）
         """
         n = len(df)
         close = df["收盘"].values
@@ -163,7 +166,7 @@ class ZuanQianStrategy(BaseStrategy):
             return f"完全释放({(close[-1]-low_60)/low_60:.1%}>40%)"
 
         # 3. 通道感检测（2024年扫盘最高频排除条件）
-        ch = channel_detect(df)
+        ch = ch if ch is not None else channel_detect(df)
         if ch["is_channel"]:
             return f"通道上涨(R²={ch['strength']:.2f})"
 
@@ -185,7 +188,7 @@ class ZuanQianStrategy(BaseStrategy):
         # 4. 向下踩的轨迹 + 明显反应——仅标准模式检查（量化版）
         if check_retracement:
             # 4a. 向下踩轨迹（下影线+阳线反弹模式）
-            trace = step_down_trace(df)
+            trace = trace if trace is not None else step_down_trace(df)
             if not trace["has_trace"]:
                 # 无向下踩 → 可能是"直接往上冲"
                 recent_close = close[-10:]
@@ -201,15 +204,19 @@ class ZuanQianStrategy(BaseStrategy):
 
         return None
 
-    def _grade_dl(self, df: pd.DataFrame) -> tuple[str, str]:
-        """独立结构评级：S/A/B/C（T-028：窗口聚合一次向量化 + 原顺序扫描，逐位一致）"""
+    def _grade_dl(self, df: pd.DataFrame,
+                  overshoot: dict | None = None) -> tuple[str, str]:
+        """独立结构评级：S/A/B/C（T-028：窗口聚合一次向量化 + 原顺序扫描，逐位一致）
+
+        overshoot: 复用 grade() 已算结果（B 提速 2026-08-08）；None=自算
+        """
         n = len(df)
         high = df["最高"].values
         low = df["最低"].values
         close = df["收盘"].values
 
         # 过高点检测：如果存在过高点，从新起点重新计数
-        overshoot = overshoot_detect(df)
+        overshoot = overshoot if overshoot is not None else overshoot_detect(df)
         if overshoot["has_overshoot"]:
             pos = overshoot["position"]
             if pos > 0:
@@ -333,8 +340,10 @@ class ZuanQianStrategy(BaseStrategy):
                 return grade, f"{bars}根K线, 波幅{seg_range[k]:.1%}"
         return 'C', "未发现窄幅整理或K线不足"
 
-    def _grade_dn(self, df: pd.DataFrame) -> tuple[str, str]:
+    def _grade_dn(self, df: pd.DataFrame, ch: dict | None = None) -> tuple[str, str]:
         """动能评级：S/A/B/C（基于至多3根合并规则 + 冲突感量化）
+
+        ch: 复用 grade() 已算通道检测结果（B 提速 2026-08-08）；None=自算
 
         三个维度综合判定：
         1) 量比+实体（原始数值）
@@ -347,7 +356,7 @@ class ZuanQianStrategy(BaseStrategy):
         同 np 调用同数据 → 逐位一致）；条件参数数值零改动。
         """
         # 通道感检测
-        ch = channel_detect(df)
+        ch = ch if ch is not None else channel_detect(df)
         channel_penalty = ch["is_channel"]
 
         # 启动K与TY间隔检测
@@ -495,15 +504,19 @@ class ZuanQianStrategy(BaseStrategy):
 
     # ── 独立结构检测（返回起始索引） ──
 
-    def _detect_consolidation_phase_v2(self, df: pd.DataFrame) -> int | None:
-        """检测独立结构起始位置（T-028：窗口聚合向量化，逐位一致）"""
+    def _detect_consolidation_phase_v2(self, df: pd.DataFrame,
+                                       overshoot: dict | None = None) -> int | None:
+        """检测独立结构起始位置（T-028：窗口聚合向量化，逐位一致）
+
+        overshoot: 复用 grade() 已算结果（B 提速 2026-08-08）；None=自算
+        """
         n = len(df)
         high = df["最高"].values
         low = df["最低"].values
         close = df["收盘"].values
 
         # 过高点检测
-        overshoot = overshoot_detect(df)
+        overshoot = overshoot if overshoot is not None else overshoot_detect(df)
         offset = 0
         if overshoot["has_overshoot"]:
             offset = overshoot["position"]
@@ -549,11 +562,17 @@ class ZuanQianStrategy(BaseStrategy):
         if df.empty or len(df) < 60:
             return {"grade": "C", "scores": {"数据": ("C", f"仅{len(df)}行")}, "dl_start": None, "match": False}
 
+        # ── B 提速（2026-08-08）：公共检测一次算好复用（同窗同结果，逐位一致）──
+        ch = channel_detect(df)
+        trace = step_down_trace(df)
+
         # ── Tier 0：一票否决 ──
-        reject = self._tier0_reject(df)
+        reject = self._tier0_reject(df, ch=ch, trace=trace)
         if reject:
             return {"grade": "C", "scores": {"Tier0": ("C", reject)}, "dl_start": None, "match": False}
 
+        overshoot = overshoot_detect(df)
+        react = reaction_quality(df)
         scores = {}
 
         # ── Tier 1：核心三要素 ──
@@ -567,13 +586,13 @@ class ZuanQianStrategy(BaseStrategy):
         scores["TY统一区间"] = (ty_g, ty_r)
 
         # DN 动能
-        dn_g, dn_r = self._grade_dn(df)
+        dn_g, dn_r = self._grade_dn(df, ch=ch)
         scores["DN动能"] = (dn_g, dn_r)
 
         # ── Tier 2：质量分级 ──
 
         # DL 独立结构
-        dl_g, dl_r = self._grade_dl(df)
+        dl_g, dl_r = self._grade_dl(df, overshoot=overshoot)
         scores["DL独立结构"] = (dl_g, dl_r)
 
         # LK 轮廓质量
@@ -584,7 +603,7 @@ class ZuanQianStrategy(BaseStrategy):
         dl_start = None
         sf_g, sf_r = 'C', "无法判断"
         try:
-            dl_start = self._detect_consolidation_phase_v2(df)
+            dl_start = self._detect_consolidation_phase_v2(df, overshoot=overshoot)
             if dl_start is not None:
                 sf_g, sf_r = self._grade_sf(df, dl_start)
             else:
@@ -598,8 +617,6 @@ class ZuanQianStrategy(BaseStrategy):
         # 过高点已在 DL 中处理
         # 回踩轨迹和反应质量作为加分项
 
-        trace = step_down_trace(df)
-        react = reaction_quality(df)
         bonus = 0  # 加分累计
 
         if trace["quality"] == "good":
@@ -632,7 +649,7 @@ class ZuanQianStrategy(BaseStrategy):
         # 意图模式标注（独立模式，不影响标准评级；供报告/prebreak 使用）
         intent = None
         try:
-            intent = self._check_intent_mode(df)
+            intent = self._check_intent_mode(df, dl_g=dl_g, react=react)
         except Exception:
             intent = None
 
@@ -703,19 +720,24 @@ class ZuanQianStrategy(BaseStrategy):
 
     # ── 意图模式（内训第14节两脉流程，2026-08-04 补课代码化） ──
 
-    def _check_intent_mode(self, df: pd.DataFrame) -> dict | None:
+    def _check_intent_mode(self, df: pd.DataFrame, dl_g: str | None = None,
+                           react: dict | None = None) -> dict | None:
         """意图模式判定（量化版）
 
         一脉：独立结构 → 筹码集中区 → POC 验证 → 有利突破或依托
         二脉：关键位三次测试（放宽：可不在一结构内） → 有利突破或明显反应回踩
         硬约束：被回踩/被破位的必须是独立结构（DL≥B 视为结构存在）
 
+        Args:
+            dl_g/react: 复用 grade() 已算结果（B 提速 2026-08-08）；None=自算
+
         Returns:
             {"mode": "intent", "poc": float, "concentration": float,
              "zone_ratio": float, "support": bool, "reason": str} 或 None
         """
         # 硬约束：独立结构必须存在（DL 至少 B——结构规模足够）
-        dl_g, _dl_r = self._grade_dl(df)
+        if dl_g is None:
+            dl_g, _dl_r = self._grade_dl(df)
         if dl_g in ("C",):
             return None
         # 一脉：筹码集中区（POC 集中度 ≥15% 或 筹码区集中）
@@ -727,7 +749,7 @@ class ZuanQianStrategy(BaseStrategy):
         # 有利突破或依托（老师：意图模式必须看懂行情，禁止当标准模式卡条件）
         # 收紧：依托必须真实（支撑反弹），反应必须质量 good（不取宽松 has_reaction）
         bounce = support_bounce(df)
-        react = reaction_quality(df)
+        react = react if react is not None else reaction_quality(df)
         support_ok = bounce.get("has_support", False) or react.get("quality") == "good"
         if not support_ok:
             return None
@@ -801,11 +823,14 @@ class ZuanQianStrategy(BaseStrategy):
                     "ty_high": 0, "ty_low": 0, "match": False}
 
         # Tier 0 一票否决（预突破模式——不卡回踩）
-        reject = self._tier0_reject(df, check_retracement=False)
+        ch = channel_detect(df)  # B 提速（2026-08-08）：tier0 与公共检测复用
+        reject = self._tier0_reject(df, check_retracement=False, ch=ch)
         if reject:
             return {"grade": "C", "scores": {"Tier0": ("C", reject)},
                     "trigger_price": 0, "stop_loss": 0, "risk_per_share": 0,
                     "ty_high": 0, "ty_low": 0, "match": False}
+
+        overshoot = overshoot_detect(df)
 
         # TY 边界检测（核心——条件单需要）
         ty_info = self._detect_ty_boundaries(df)
@@ -821,7 +846,7 @@ class ZuanQianStrategy(BaseStrategy):
         scores["TY统一区间"] = (ty_g, ty_r)
 
         # DL 独立结构
-        dl_g, dl_r = self._grade_dl(df)
+        dl_g, dl_r = self._grade_dl(df, overshoot=overshoot)
         scores["DL独立结构"] = (dl_g, dl_r)
 
         # LK 轮廓质量
@@ -831,7 +856,7 @@ class ZuanQianStrategy(BaseStrategy):
         # SF 释放级别
         sf_g, sf_r = 'C', "无法判断"
         try:
-            dl_start = self._detect_consolidation_phase_v2(df)
+            dl_start = self._detect_consolidation_phase_v2(df, overshoot=overshoot)
             if dl_start is not None:
                 sf_g, sf_r = self._grade_sf(df, dl_start)
             else:

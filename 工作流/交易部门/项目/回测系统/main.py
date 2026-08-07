@@ -8,7 +8,7 @@
 import argparse
 import os
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 # 确保交易部根目录在路径中（2026-08-04 修复：重组后需加交易部根层级）
 _HERE = os.path.dirname(os.path.abspath(__file__))   # 项目/回测系统
@@ -30,6 +30,22 @@ def _out_dir(params: BacktestParams) -> Path:
     root = Path(__file__).resolve().parent.parent
     seg = f"{params.start or 'full'}_{params.end or 'full'}"
     return root / "扫描输出" / "backtest" / seg
+
+
+# 信号缓存指纹字段（2026-08-08 提速方案 D：只参与信号的参数；输出/并发/验证类字段不入指纹）
+CACHE_FINGERPRINT_KEYS = [
+    "start", "end", "strategy", "mode", "interval", "holds", "grades", "dl_cands",
+    "c23", "phase_in", "dn_confirm", "moving_stop",
+    "env_gate", "env_drop_pct", "env_mode", "env_index",
+    "volume_filter", "min_amount", "vol_window",
+    "prbook_gate", "sentiment_gate", "sent_threshold", "missing_sentiment",
+]
+
+
+def params_fingerprint(params) -> dict:
+    """参数指纹（缓存命中判定：指纹一致 + signals.csv 存在 → 复用）"""
+    d = asdict(params)
+    return {k: d.get(k) for k in CACHE_FINGERPRINT_KEYS}
 
 
 def cmd_run(args) -> int:
@@ -54,6 +70,7 @@ def cmd_run(args) -> int:
         dn_confirm=args.dn_confirm,
         c23=args.c23,
         phase_in=args.phase_in,
+        enable_cost=not args.skip_d2,
     )
     try:
         params.validate()
@@ -68,15 +85,38 @@ def cmd_run(args) -> int:
           + (" | 严格逐窗重算（对照）" if params.recompute_each_window else "")
           + (" | C1 财报日避让" if params.prbook_gate else " | 无 C1 财报日避让（对照）"))
 
-    engine = BacktestEngine(params)
-    if params.dl_cands:
-        cands = tuple(int(x) for x in params.dl_cands.split(","))
-        engine.strategy.strategy.DL_CANDS = cands
-        print(f"  DL 候选根数覆盖: S={cands[0]} A={cands[1]} B={cands[2]}（策略默认 90/70/60）")
-    result = engine.run()
+    out_dir = _out_dir(params)
+    # 信号缓存（2026-08-08 提速方案 D）：参数指纹一致 + signals.csv 存在 → 复用，跳过引擎
+    cache_hit = False
+    if not args.no_cache and out_dir.exists() and (out_dir / "signals.csv").exists():
+        try:
+            import json as _json
+            old = _json.load(open(out_dir / "params.json", encoding="utf-8"))
+            fp_new = params_fingerprint(params)
+            if all(old.get(k) == v for k, v in fp_new.items()):
+                cache_hit = True
+        except Exception as e:  # noqa: BLE001 - 缓存不可用回退全量重跑
+            print(f"  ⚠ 缓存检查异常（回退重跑）: {e}")
 
-    # 策略信息（params.json 快照用）
-    strategy_info = {"name": engine.strategy.name, "params": engine.strategy.strategy.get_params()}
+    engine = None
+    if cache_hit:
+        from 回测系统.engine import read_signals_records
+        print(f"  [CACHE] 参数指纹一致 → 复用信号缓存（跳过引擎）: {out_dir}")
+        result = EngineResult(records=read_signals_records(out_dir / "signals.csv", params))
+        result.processed = len({r.signal.code for r in result.records})
+        strategy_info = {"name": params.strategy,
+                         "params": old.get("strategy_info", {}).get("params", {})}
+    else:
+        engine = BacktestEngine(params)
+        if params.dl_cands:
+            cands = tuple(int(x) for x in params.dl_cands.split(","))
+            engine.strategy.strategy.DL_CANDS = cands
+            print(f"  DL 候选根数覆盖: S={cands[0]} A={cands[1]} B={cands[2]}（策略默认 90/70/60）")
+        result = engine.run()
+
+        # 策略信息（params.json 快照用）
+        strategy_info = {"name": engine.strategy.name,
+                         "params": engine.strategy.strategy.get_params()}
 
     out_dir = _out_dir(params)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -86,15 +126,14 @@ def cmd_run(args) -> int:
 
     write_signals_csv(signals_path, result.records, params.holds)
 
-    # D2 2倍成本压力测试：同源重跑（佣金+印花税+滑点全 ×2，方案 D 类 2026-08-05 老板拍板）
+    # D2 2倍成本压力测试（佣金+印花税+滑点全 ×2，方案 D 类 2026-08-05 老板拍板）
+    # 2026-08-08 提速方案 A：跟踪层复用——信号/评级/闸门与成本无关，仅重算跟踪，
+    # 不再整引擎重跑（时间从 ~45% 引擎耗时 → 秒级）；--skip-d2 可跳过
     stress_records = None
     if params.enable_cost:
-        stress_params = replace(params, cost_multiplier=2.0)
-        stress_engine = BacktestEngine(stress_params, provider=engine.provider,
-                                       strategy=engine.strategy, risk=engine.risk)
-        print("  [D2] 2倍成本压力重跑（佣金万2.6+印花税万10+滑点翻倍万2）…")
-        stress_result = stress_engine.run()
-        stress_records = stress_result.records
+        from 回测系统.engine import rerun_track_with_cost
+        print("  [D2] 2倍成本压力（跟踪层复用：基线信号集仅重算成本，秒级）…")
+        stress_records = rerun_track_with_cost(signals_path, params)
         print(f"  [D2] 完成 | 信号 {len(stress_records)} 笔")
 
     # 市场状态分段用指数（T-021 2026-08-06）：缓存优先复用，失败不阻断报告
@@ -228,6 +267,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--dn-confirm", type=float, default=0.0,
                        help="prebreak 突破日量能确认阈值（0=关默认；>0 时触发日量比>阈值才计入，"
                             "2026-08-06 实验参数：突破日成交量/前20日均量；对照组 0=纯价格触发）")
+    run_p.add_argument("--skip-d2", action="store_true",
+                       help="跳过 D2 两倍成本压力测试（2026-08-08 提速：日常快测跳过；"
+                            "全面测试请保留——D2 是成本敏感性体检）")
+    run_p.add_argument("--no-cache", action="store_true",
+                       help="禁用信号缓存（2026-08-08 提速方案 D：参数指纹一致时复用 signals.csv）")
     run_p.add_argument("--c23", action="store_true",
                        help="C23 收紧（T-027 2026-08-06 老板拍板）：信号层过滤 动量≤10% + 止损距离 0.5~3 元"
                             "（无前视版；阈值单一来源 tighten_compare）。默认关=V1 基线，显式开=V2 现行策略")

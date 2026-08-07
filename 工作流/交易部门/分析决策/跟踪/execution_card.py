@@ -124,9 +124,13 @@ def order_card(candidates: list[dict], capital: float | None = None,
         out.append(f"  [{grade}] {code} {name} | 触发 {trigger:.2f} | 止损 {stop:.2f}"
                    f" | 每股风险 {risk_ps:.2f} | {label}: {note_s}")
         if shares >= 100:
-            # 条件单参数（2026-08-07 老板确认：券商条件单自动化执行）
-            out.append(f"      📋 条件单：买入条件（价格≥{trigger:.2f} → 买 {shares} 股）"
-                       f" ｜ 止损条件（价格≤{stop:.2f} → 卖出）")
+            # 云条件单录入参数（2026-08-08 老板提供券商可用单型：股价条件-突破/回落）
+            # 买入 =「股价条件-突破」（≥触发价买入）；止损 =「股价条件-回落」（≤止损价卖出）
+            # 有效期与模拟线条件单同语义（SIM_PENDING_EXPIRE_DAYS=5 交易日，未触发重挂）
+            out.append(f"      📋 云条件单（到价自动执行，直接录入券商）：")
+            out.append(f"         买入「股价条件-突破」：价格 ≥ {trigger:.2f} → 买 {shares} 股")
+            out.append(f"         止损「股价条件-回落」：价格 ≤ {stop:.2f} → 卖出全部")
+            out.append(f"         有效期建议：3 个交易日（未触发请重挂）")
     if scale != 1.0:
         out.append(f"  ※ {label}：挂单量按 0.5R 半额风险预算（{risk_amt:.0f} 元）计算；"
                    "次日确认后补仓等额。")
@@ -200,13 +204,13 @@ def position_card(rows: list[dict] | None = None) -> str:
         else:  # wait
             out.append(f"  ⏳ {code} {name}: {step['reason']}（进场 {entry:.2f} / "
                        f"止损 {stop:.2f}），持有 0.5R 等待确认")
-        # 止盈条件单（2026-08-07 老板确认：G5 TTP 回落卖出自动化）
-        # 目标价 = 进场 + 5R（G7 三区间 5R 界），回落 36%（G5 check_36pct_trail 缓冲）
+        # 止盈云条件单（2026-08-08 升级：对应券商「回落卖出」单型——上涨中回落卖出，
+        # G5 TTP 回落 36% 自动化；目标价 = 进场 + 5R（G7 三区间 5R 界））
         risk_ps = entry - stop
         if risk_ps > 0 and act in ("add", "hold", "wait"):
             ttp_target = entry + 5.0 * risk_ps
-            out.append(f"      📋 止盈条件单：价格达 {ttp_target:.2f} 后回落 36% → 卖出"
-                       f"（5R 目标，G7 界）")
+            out.append(f"      📋 止盈云条件单「回落卖出」：价格达 {ttp_target:.2f} 后"
+                       f"回落 36% → 卖出（5R 目标，G7 界）")
     out.append(line)
     return "\n".join(out)
 
@@ -216,7 +220,7 @@ def system_status(rows: list[dict] | None = None) -> str:
 
     警报项（触发仅提醒，不停止交易——实盘三纪律：连亏期别慌）：
       ① 连败预警：sim_journal 已平仓连续止损 ≥5 笔（蒙卡最大连败 18-22，5 为提醒线）
-      ② 在持仓位 + 板块分散提示（3 仓同板块 ≥2 时人工目检，G15 人工纪律保留）
+      ② 在持仓位 + 板块分散提示（5 仓同板块 ≥2 时人工目检，G15 人工纪律保留）
       ③ 账户校验：journal 无任何记录 → 提示（数据缺失时执行卡结论不可信）
 
     Args:

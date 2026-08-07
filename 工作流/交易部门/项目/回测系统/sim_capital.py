@@ -2,7 +2,9 @@
 """R-009 模块2·资金约束回测（2026-08-06 老板拍板升级：多持仓参数化 + 完整报告指标）
 
 对回测 signals 逐笔模拟真实资金执行（A股·仅做多）：
-  - 多持仓并发：最多同时持仓 max_positions 只（默认 3，实盘线定稿 2.0%×3仓 2026-08-06 拍板；
+  - 多持仓并发：最多同时持仓 max_positions 只（默认 5——2026-08-08 老板确认
+    「8401 资金 + 108 元风险额 + 5 仓」：完整周期回测 B2_5 +280.4%/回撤27.3%/
+    avgR 0.986/连败 7，跨周期坐实；替代 2026-08-06 旧定稿 2.0%×3仓；
     传 1 = 旧版单持仓顺序行为）
   - 可买检查：买入金额 ≤ 可用现金；整手 100 股向下取整；
     每股风险 = entry - stop ≤ 单笔风险额/100（单笔风险额 = 初始资金 × 风险比例，恒定）
@@ -113,7 +115,7 @@ def _final_pnl(p: dict, fee_out: float) -> float:
 
 
 def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
-                     max_positions: int = 3, mode: str = "prebreak",
+                     max_positions: int = 5, mode: str = "prebreak",
                      hold: str = "20d", grades: list[str] | None = None,
                      c23: bool = False,
                      monthly_inject: float = 0.0,

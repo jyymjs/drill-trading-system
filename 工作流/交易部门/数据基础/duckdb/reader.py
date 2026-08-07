@@ -97,8 +97,23 @@ def _to_cn_kline(k: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# 共享只读连接（2026-08-08 提速方案 C：回测引擎每 worker 进程内单连接复用，
+# 替代每股开/关连接 ×5000；进程隔离安全，引擎 worker 串行读）
+_SHARED_CONN = None
+
+
+def _get_shared_conn(db_path=None):
+    global _SHARED_CONN
+    if _SHARED_CONN is None or db_path is not None:
+        con = open_db(db_path, read_only=True)
+        if db_path is None:
+            _SHARED_CONN = con
+        return con
+    return _SHARED_CONN
+
+
 def read_kline(symbol: str, start: str | None = None, end: str | None = None,
-               db_path=None, adjust: str = "qfq") -> pd.DataFrame | None:
+               db_path=None, adjust: str = "qfq", shared: bool = True) -> pd.DataFrame | None:
     """读单只 K 线（duckdb 权威源，默认 qfq 四价自算）
 
     Args:
@@ -106,12 +121,14 @@ def read_kline(symbol: str, start: str | None = None, end: str | None = None,
         start/end: 日期 "YYYYMMDD"；None=库内全量（回测时光机用全量历史）
         db_path: 库路径（默认配置 DB_PATH；测试可注入临时库）
         adjust: "qfq"=前复权自算（默认）；其他=原始价
+        shared: True=进程内共享连接（提速方案 C；db_path 显式传入时自动独立连接）
 
     Returns:
         中文列 DataFrame（日期/开盘/收盘/最高/最低/成交量/成交额/涨跌幅/涨跌额/振幅/换手率），
         无该 symbol 或窗口覆盖不足 → None（调用方回退下一层）
     """
-    con = open_db(db_path, read_only=True)
+    use_shared = shared and db_path is None
+    con = _get_shared_conn(db_path) if use_shared else open_db(db_path, read_only=True)
     try:
         daily = read_daily_raw(con, symbol)
         if daily is None or daily.empty:
@@ -129,4 +146,5 @@ def read_kline(symbol: str, start: str | None = None, end: str | None = None,
         mask = (k["date"] >= start_dt) & (k["date"] <= end_dt)
         return _to_cn_kline(k[mask].reset_index(drop=True))
     finally:
-        con.close()
+        if not use_shared:
+            con.close()

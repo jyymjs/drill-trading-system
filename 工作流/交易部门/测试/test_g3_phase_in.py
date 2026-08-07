@@ -132,7 +132,9 @@ class TestHalfPositionConfirm:
 
 @pytest.fixture
 def sim_env(monkeypatch, tmp_path):
-    """隔离 journal + 固定时钟 + 固定资金（G9：5600 × 2% = 112）"""
+    """隔离 journal + 固定时钟（2026-08-08 起：模拟线资金 = SIM_CAPITAL 10 万，
+    check_affordability 参数化后不再读实盘 capital.json；get_capital monkeypatch
+    保留仅为兼容其他引用方）"""
     monkeypatch.setattr(sim_trading, "datetime", _FakeNow)
     monkeypatch.setattr(sim_trading, "JOURNAL_DIR", tmp_path)
     monkeypatch.setattr(sim_trading, "SIM_FILE", tmp_path / "sim_journal.csv")
@@ -145,11 +147,11 @@ def sim_env(monkeypatch, tmp_path):
 
 
 def _open_half(monkeypatch, kline: pd.DataFrame, price: float = 10.1, stop: float = 9.9,
-               vol0: int = 200):
+               vol0: int = 5000):
     """开一笔 0.5R 分步起步仓（手动 risk_scale=0.5，绕过环境判定链）
 
-    股数基线（G9 2%）：0.5R 风险额 = 5600×2%×0.5 = 56 元；每股风险 0.2 元
-    → 56//0.2 = 280 → 整手 200 股。
+    股数基线（模拟线 10 万 × 2%，2026-08-08 老板拍板）：0.5R 风险额
+    = 100000×2%×0.5 = 1000 元；每股风险 0.2 元 → 1000//0.2 = 5000 股。
     """
     monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                         lambda c, use_cache=True: kline)
@@ -194,10 +196,10 @@ class TestSimTradingPhaseIn:
         rows = sim_trading._read_all()
         r = rows[0]
         assert r["status"] == "open" and r["phase"] == "confirmed"
-        # 起步 200 股（0.5R：56 元风险额 ÷ 每股风险 0.2 = 280 → 整手 200）；
-        # 补仓等额 200 股 → 总 400 股（= 1R 风险预算 112 元）
-        assert int(r["volume"]) == 400
-        # 补仓价 10.4：加权平均 = (10.1×200 + 10.4×200)/400 = 10.25
+        # 起步 5000 股（0.5R：1000 元风险额 ÷ 每股风险 0.2）；
+        # 补仓等额 5000 股 → 总 10000 股（= 1R 风险预算 2000 元，10 万口径）
+        assert int(r["volume"]) == 10000
+        # 补仓价 10.4：加权平均 = (10.1×5000 + 10.4×5000)/10000 = 10.25
         assert float(r["entry_price"]) == pytest.approx(10.25)
 
     def test_reject_delay2_waits_no_t2(self, sim_env, monkeypatch, tmp_path):
@@ -260,8 +262,9 @@ class TestSimTradingPhaseIn:
         rows = sim_trading._read_all()
         r = rows[0]
         assert r["status"] == "open" and r["phase"] == "confirmed"
-        # 起步 200 股 + 补仓 200 股 → 400 股；补仓价 10.4 → 加权 = (10.1×200+10.4×200)/400
-        assert int(r["volume"]) == 400
+        # 起步 5000 股 + 补仓 5000 股 → 10000 股；补仓价 10.4
+        # → 加权 = (10.1×5000+10.4×5000)/10000 = 10.25
+        assert int(r["volume"]) == 10000
         assert float(r["entry_price"]) == pytest.approx(10.25)
 
     def test_stop_exits_half(self, sim_env, monkeypatch, tmp_path):

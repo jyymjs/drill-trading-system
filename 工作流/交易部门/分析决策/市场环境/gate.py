@@ -74,12 +74,34 @@ class MarketGateConfig:
 # ── 环境闸门判定（纯函数，可单测） ──
 
 
+# 闸门日期→值预建映射（2026-08-08 提速方案 C：替代每信号全列扫描 O(N)）
+# 引擎 worker 初始化时 build_gate_maps 建一次；独立调用未建映射 → 回退旧逻辑
+_INDEX_DATE_MAP = None
+_BREADTH_DATE_MAP = None
+
+
+def build_gate_maps(index_df: pd.DataFrame | None, breadth_df: pd.DataFrame | None) -> None:
+    """预建日期→值映射（worker 进程初始化恰一次，见 engine._mp_init）"""
+    global _INDEX_DATE_MAP, _BREADTH_DATE_MAP
+    _INDEX_DATE_MAP = None
+    if index_df is not None and not index_df.empty and "涨跌幅" in index_df.columns:
+        _INDEX_DATE_MAP = dict(zip(index_df["日期"].astype(str).str[:10],
+                                   index_df["涨跌幅"].astype(float)))
+    _BREADTH_DATE_MAP = None
+    if breadth_df is not None and not breadth_df.empty and "下跌占比" in breadth_df.columns:
+        _BREADTH_DATE_MAP = dict(zip(breadth_df["日期"].astype(str).str[:10],
+                                     breadth_df["下跌占比"].astype(float)))
+
+
 def index_pct_on(index_df: pd.DataFrame, date: pd.Timestamp) -> float | None:
     """指数在指定交易日的涨跌幅（%）
 
     Returns:
         涨跌幅数值；该日无数据（非交易日/数据缺口）→ None
     """
+    if _INDEX_DATE_MAP is not None:
+        v = _INDEX_DATE_MAP.get(str(date)[:10])
+        return float(v) if v is not None and pd.notna(v) else None
     if index_df is None or index_df.empty:
         return None
     hit = index_df[index_df["日期"] == date]
@@ -137,6 +159,9 @@ def breadth_ratio_on(breadth_df: pd.DataFrame, date: pd.Timestamp) -> float | No
     Returns:
         下跌占比数值（0~100）；该日无数据（非交易日/数据缺口）→ None
     """
+    if _BREADTH_DATE_MAP is not None:
+        v = _BREADTH_DATE_MAP.get(str(date)[:10])
+        return float(v) if v is not None and pd.notna(v) else None
     if breadth_df is None or breadth_df.empty:
         return None
     hit = breadth_df[breadth_df["日期"] == date]

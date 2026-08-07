@@ -6,6 +6,7 @@
 记录文件：journal/sim_journal.csv（独立于实盘 trade_journal.csv）
 """
 import csv
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from 分析决策.风控 import exit_manager as em
-from 分析决策.风控.capital import calc_trade_fee, get_capital, max_risk_per_trade
+from 分析决策.风控.capital import RISK_RATIO, calc_trade_fee, get_capital, max_risk_per_trade
 from 分析决策.风控.position import Position
 
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
@@ -24,8 +25,18 @@ SIM_COLUMNS = [
     "entry_price", "stop_loss", "volume", "grade_at_entry",
     "ty_high", "ty_low", "status",
     "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
-    "env_scale", "phase",
+    "env_scale", "phase", "created_date",
 ]
+
+# 模拟线名义资金（2026-08-08 老板拍板「无资金限制对照线」）：10 万 × 2% 规则，
+# 与实盘线（capital.json 5600 元）分离——模拟线测试策略在正常资金下的应有表现，
+# 实盘受 5600 约束，双线对比 = 资金约束影响的量化参考（改策略前先看模拟线）。
+SIM_CAPITAL = 100_000.0
+# 模拟条件单挂单有效期（交易日）：超期未触发 → 撤销留痕（2026-08-08 老板拍板
+# 3 日——回测延迟分布背书：prebreak 触发 69% 在 3 交易日内发生，3~5 天档质量
+# 最差（+0.14R 胜率 38.5%），继续埋伏边际收益转负；当天突破档质量最高 +1.10R）。
+# 与实盘云条件单同语义：到价才成交，未到价不假买入
+SIM_PENDING_EXPIRE_DAYS = 3
 
 # G3 当日头寸统一（补完计划第二批 · 2026-08-06 定案）：
 # 当日档进程内缓存（date -> scale）——同日多次开仓档位一致；
@@ -91,7 +102,8 @@ def _sync_r_curve(rows: list[dict]) -> int:
 
 
 def check_affordability(price: float, risk_per_share: float,
-                        risk_scale: float = 1.0) -> tuple[int, str]:
+                        risk_scale: float = 1.0,
+                        capital: float | None = None) -> tuple[int, str]:
     """可买性检查：资金上限与风险上限取 min，整手向下取整
 
     G3 0.5R 环境仓位（补完计划 · 2026-08-06）：risk_scale 按个股环境质量
@@ -99,10 +111,18 @@ def check_affordability(price: float, risk_per_share: float,
     indicators.environment_quality），缩放单笔风险额后倒推手数。
     分步建仓（G3 2026-08-06 定案）补仓同用 risk_scale=0.5（等额 0.5R）。
 
+    Args:
+        capital: 资金（缺省 = 实盘 capital.json；模拟线传 SIM_CAPITAL，
+            2026-08-08 老板拍板：模拟线 = 10 万名义资金无资金限制对照线）
+
     Returns: (股数, 拒绝原因) — 股数 <100 表示不可买
     """
-    balance = get_capital()
-    risk_amt = max_risk_per_trade(scale=risk_scale)
+    from 分析决策.风控.capital import get_risk_ratio
+    balance = capital if capital is not None else get_capital()
+    # 实盘路径读 capital.json 的风险比例（2026-08-08：支持注入后维持原风险额）；
+    # 模拟线路径（capital 显式传 SIM_CAPITAL）用策略定稿 RISK_RATIO=2% 不变
+    ratio = RISK_RATIO if capital is not None else get_risk_ratio()
+    risk_amt = balance * ratio * risk_scale
     if price <= 0 or risk_per_share <= 0:
         return 0, "参数无效"
     shares = int(min(balance // price, risk_amt // risk_per_share) / 100) * 100
@@ -249,9 +269,12 @@ def _check_half_position(df, r: dict) -> dict:
                 "reason": f"分步建仓收线未确认({verdict['reason']})→0.5R平仓",
                 "add_shares": 0, "add_price": 0.0}
     # 确认 → 补仓 0.5R（等额；可买性检查防止资金/整手不足时盲目翻倍）
+    # 2026-08-08 模拟线 10 万口径：补仓同用 SIM_CAPITAL（与起步 sim_open 一致，
+    # 避免起步 10 万/补仓 5600 的仓位断层）
     add_price = verdict["close"]
     risk_ps = entry_price - stop
-    add_shares, reason = check_affordability(add_price, risk_ps, risk_scale=0.5)
+    add_shares, reason = check_affordability(add_price, risk_ps, risk_scale=0.5,
+                                             capital=SIM_CAPITAL)
     if add_shares < 100:
         return {"action": "hold", "close": add_price, "exit_date": "",
                 "reason": f"确认但补仓不可买({reason})，保持 0.5R",
@@ -288,7 +311,8 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
             risk_scale, env_note = _env_risk_scale(code)
     else:
         env_note = f"手动缩放{risk_scale:g}R"
-    shares, reason = check_affordability(price, risk_ps, risk_scale=risk_scale)
+    shares, reason = check_affordability(price, risk_ps, risk_scale=risk_scale,
+                                         capital=SIM_CAPITAL)
     if shares < 100:
         return f"❌ {code} 不可买：{reason}"
 
@@ -308,20 +332,200 @@ def sim_open(code: str, price: float, stop: float, grade: str = "",
                   if phase == "half" else "")
     return (f"✅ 模拟开仓 {code}({name or '无名'}) 评级{grade or '—'}\n"
             f"  进场 {price} | 止损 {stop} | 风险 {risk_ps:.2f}元/股 | {shares}股\n"
-            f"  单笔风险 {risk_ps * shares:.0f}元（上限{max_risk_per_trade(scale=risk_scale):.0f}元）"
+            f"  单笔风险 {risk_ps * shares:.0f}元（模拟线上限"
+            f"{SIM_CAPITAL * RISK_RATIO * risk_scale:.0f}元，10万名义）"
             f" | {env_note}{phase_note} | ID {tid}")
 
 
-def sim_check() -> str:
-    """每日检查：拉最新K线，四层面出场判断，出场则记录"""
-    rows = _read_all()
-    open_rows = [r for r in rows if r["status"] == "open"]
-    if not open_rows:
-        return "无持仓中的模拟交易"
+def _observe_update(r: dict, status: str, exit_reason: str = "",
+                    note: str = "") -> None:
+    """观察池状态流转（R-037①）：sim_check 状态变更时挂钩，失败不阻断"""
+    try:
+        from 分析决策.跟踪.observe_pool import update as observe_update
+        rv = None
+        if r.get("status") == "closed":
+            try:
+                rv = float(r.get("r_multiple") or 0)
+            except (TypeError, ValueError):
+                rv = None
+            st = "兑现" if (rv or 0) > 0 else "出池"
+            observe_update(r.get("trade_id", ""), st,
+                           exit_reason or r.get("exit_reason", ""), rv, note)
+        else:
+            observe_update(r.get("trade_id", ""), status,
+                           exit_reason or "", None, note)
+    except Exception:  # noqa: BLE001 - 观察池失败不阻断模拟主流程
+        pass
 
-    from 数据基础.数据.fetcher import get_daily_kline
+
+def sim_auto_open(csv_path: str | None = None) -> str:
+    """模拟线自动挂单（2026-08-08 老板确认方案①③：无资金限制对照线）
+
+    读取最新扫描结果（prebreak 候选 CSV）→ 全部生成**模拟条件单**
+    （status="pending"，到价才成交——与实盘云条件单同规则：未到价不假买入，
+    超 SIM_PENDING_EXPIRE_DAYS 交易日未触发自动撤销留痕）。
+    名义资金 SIM_CAPITAL × 2% 规则倒推股数（不受 5600 实盘资金约束）。
+
+    Args:
+        csv_path: 扫描结果 CSV（缺省取 数据基础/扫描输出 最新 scan_result*.csv）
+
+    Returns:
+        摘要文本
+    """
+    from 数据基础.配置.stock_pool import get_stock_codes
+
+    scan_dir = Path("数据基础") / "扫描输出"
+    if csv_path is None:
+        # 只认标准主文件名 scan_result_YYYYMMDD_HHMMSS.csv（正则精确匹配，文件名
+        # 含 scan_result 自身的下划线共 3 个）；排除同秒生成的实验变体
+        # （_broken/_vol/_c23，2026-08-08 冒烟踩坑：错取 _broken 52 只实验票
+        # → 条件单污染；执行卡同源用主文件）
+        files = sorted((p for p in scan_dir.glob("scan_result_*.csv")
+                        if re.match(r"scan_result_\d{8}_\d{6}$", p.stem)),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        if not files:
+            return "未找到扫描结果（数据基础/扫描输出/scan_result_*.csv），跳过模拟挂单"
+        csv_path = str(files[0])
+    # 股票池校验（2026-08-07 600001 污染修复同源：池外票/参数无效不挂单）
+    try:
+        known_codes = set(get_stock_codes())
+    except (ImportError, TypeError):
+        known_codes = None
+    # 当日头寸统一档位（G3：同日不混合 1R/0.5R）
+    day_scale = _day_open_scale()
+    if day_scale is None:
+        day_scale, env_note = _env_risk_scale("000001")
+    else:
+        env_note = f"当日统一沿用{'0.5R' if day_scale == 0.5 else '1R'}"
+    today = datetime.now().strftime("%Y-%m-%d")
+    rows = _read_all()
+    existing = {(r.get("symbol"), r.get("status")) for r in rows
+                if r.get("status") in ("pending", "open")}
+    made = skipped = 0
+    with open(csv_path, encoding="utf-8-sig") as f:
+        for rec in csv.DictReader(f):
+            code = str(rec.get("code", "")).strip()
+            if not code:
+                continue
+            try:
+                trigger = float(rec.get("触发价", 0) or 0)
+                stop = float(rec.get("止损价", 0) or 0)
+                risk_ps = float(rec.get("每股风险", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if trigger <= 0 or stop <= 0 or risk_ps <= 0:
+                continue  # 参数无效（600001 同形污染防护）
+            if known_codes is not None and code not in known_codes:
+                continue  # 池外票
+            if (code, "pending") in existing or (code, "open") in existing:
+                skipped += 1
+                continue
+            shares, reason = check_affordability(trigger, risk_ps,
+                                                 risk_scale=day_scale,
+                                                 capital=SIM_CAPITAL)
+            if shares < 100:
+                skipped += 1
+                continue
+            tid = f"SIM{datetime.now():%Y%m%d%H%M%S}{made:02d}"
+            rows.append({
+                "trade_id": tid, "date": today, "symbol": code,
+                "name": rec.get("name", ""), "direction": "long",
+                "market": "stock",
+                "entry_price": str(trigger), "stop_loss": str(stop),
+                "volume": str(shares),
+                "grade_at_entry": rec.get("评级", ""),
+                "ty_high": str(rec.get("TY高", 0) or 0),
+                "ty_low": str(rec.get("TY低", 0) or 0),
+                "status": "pending", "exit_price": "", "exit_date": "",
+                "exit_reason": "", "r_multiple": "", "pnl": "",
+                "env_scale": str(day_scale),
+                "phase": "half" if day_scale == 0.5 else "",
+                "created_date": today,
+            })
+            existing.add((code, "pending"))
+            made += 1
+    if made:
+        _write_all(rows)
+    # 观察池登记（R-037① 2026-08-08：四层漏斗落地——模拟线自动喂观察池）
+    try:
+        from 分析决策.跟踪.observe_pool import register as observe_register
+        for r in rows:
+            if r.get("created_date") == today and r.get("status") == "pending" \
+                    and r.get("trade_id", "").startswith("SIM") \
+                    and r.get("_observe_done") != "1":
+                observe_register(r["trade_id"], today, r["symbol"],
+                                 r.get("name", ""), r.get("grade_at_entry", ""),
+                                 float(r["entry_price"]), float(r["stop_loss"]))
+                r["_observe_done"] = "1"
+    except Exception:  # noqa: BLE001 - 观察池登记失败不阻断模拟主流程
+        pass
+    head = (f"模拟线自动挂单（{Path(csv_path).name}）：新建 {made} 笔条件单，"
+            f"跳过 {skipped} 笔（已有单/参数无效/池外/预算不足）")
+    if not made:
+        return f"{head}（{env_note}）"
+    return (f"{head}（{env_note}，单笔风险预算 "
+            f"{SIM_CAPITAL * RISK_RATIO * day_scale:.0f} 元，10 万名义资金）")
+
+
+def sim_check() -> str:
+    """每日检查：模拟条件单到价成交/超期撤销 + 持仓四层面出场判断"""
+    rows = _read_all()
     out = []
     changed = 0
+
+    from 数据基础.数据.fetcher import get_daily_kline
+
+    # ① 模拟条件单跟进（2026-08-08 老板确认方案①：到价才成交，未到价不假买入；
+    #    超 SIM_PENDING_EXPIRE_DAYS 交易日未触发 → 撤销留痕，真实反映策略机会成本）
+    pending_rows = [r for r in rows if r.get("status") == "pending"]
+    for r in pending_rows:
+        code = r.get("symbol", "?")
+        try:
+            trigger = float(r.get("entry_price", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            df = get_daily_kline(code, use_cache=True)
+        except Exception as e:  # noqa: BLE001 - 数据获取失败不阻断其他票跟进
+            out.append(f"  ⏳ {code}: 条件单数据获取失败 {e}")
+            continue
+        if df is None or len(df) < 2:
+            out.append(f"  ⏳ {code}: 条件单数据不足（明日再查）")
+            continue
+        created = str(r.get("created_date") or r.get("date") or "")[:10]
+        dates = df["日期"].astype(str).str[:10].values
+        highs = df["最高"].astype(float).values
+        # 挂单日之后的 K 线逐日判定（挂单日扫描已收盘，从次日开始可触发）
+        fill_idx, fill_date = None, ""
+        for i, d in enumerate(dates):
+            if d > created and highs[i] >= trigger:
+                fill_idx, fill_date = i, d
+                break
+        if fill_idx is not None:
+            r["status"] = "open"
+            r["date"] = fill_date  # 成交日 = 触发日（0.5R 分步确认以成交日为开仓日）
+            r["entry_price"] = str(trigger)
+            out.append(f"  ✅ {code}: 模拟条件单到价成交（{fill_date} 最高"
+                       f"{highs[fill_idx]:.2f} ≥ 触发 {trigger:.2f}）→ 持仓")
+            _observe_update(r, "成交", note="到价成交")
+            changed += 1
+            continue
+        fill_days = sum(1 for d in dates if d > created)
+        if fill_days >= SIM_PENDING_EXPIRE_DAYS:
+            r["status"] = "cancelled"
+            r["exit_date"] = str(dates[-1])[:10]
+            r["exit_reason"] = (f"模拟条件单超期未触发"
+                                f"（{SIM_PENDING_EXPIRE_DAYS} 个交易日）")
+            out.append(f"  ⌛ {code}: 条件单未触发超 {SIM_PENDING_EXPIRE_DAYS} 日"
+                       f" → 撤销留痕")
+            _observe_update(r, "撤销", exit_reason=r["exit_reason"])
+            changed += 1
+            continue
+        out.append(f"  ⏳ {code}: 条件单挂单中（{fill_days}/"
+                   f"{SIM_PENDING_EXPIRE_DAYS} 日未触发，触发价 {trigger:.2f}）")
+
+    # ② 持仓出场（原逻辑）
+    open_rows = [r for r in rows if r["status"] == "open"]
     for r in open_rows:
         code = r["symbol"]
         try:
@@ -374,6 +578,7 @@ def sim_check() -> str:
             r["r_multiple"] = f"{r_mult:.2f}"
             r["pnl"] = f"{pnl:.2f}"
             out.append(f"  {code}: 🎯 {step['reason']} R={r_mult:+.2f} 盈亏{pnl:+,.0f}元")
+            _observe_update(r, "closed", note="分步建仓平仓")
             changed += 1
             continue
         pos = Position(symbol=code, direction="long", market="stock",
@@ -401,6 +606,7 @@ def sim_check() -> str:
             r["r_multiple"] = f"{r_mult:.2f}"
             r["pnl"] = f"{pnl:.2f}"
             out.append(f"  {code}: 🎯 出场 [{verdict['reason'][:40]}] R={r_mult:+.2f} 盈亏{pnl:+,.0f}元")
+            _observe_update(r, "closed", note="四层出场")
             changed += 1
         else:
             updates = f"止损移至{verdict['stop_update']}" if verdict.get("stop_update") else "持有中"
@@ -410,6 +616,8 @@ def sim_check() -> str:
         n_synced = _sync_r_curve(rows)   # 双线自动同步（2026-08-07）
         if n_synced:
             out.append(f"  📈 R 值曲线已自动同步 {n_synced} 笔（虚拟盘线，note=sim）")
+    if not out:
+        return "无挂单中/持仓中的模拟交易"
     return "\n".join(out)
 
 
@@ -418,8 +626,10 @@ def sim_stats() -> str:
     rows = _read_all()
     closed = [r for r in rows if r["status"] == "closed"]
     open_n = len([r for r in rows if r["status"] == "open"])
+    pending_n = len([r for r in rows if r.get("status") == "pending"])
     if not closed:
-        return f"模拟交易共 {len(rows)} 笔（未平仓 {open_n}），暂无已平仓记录"
+        return (f"模拟交易共 {len(rows)} 笔（条件单挂单中 {pending_n}，"
+                f"未平仓 {open_n}），暂无已平仓记录")
 
     rs = [float(r["r_multiple"]) for r in closed]
     wins = [r for r in closed if float(r["r_multiple"]) > 0]

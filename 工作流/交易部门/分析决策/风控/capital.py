@@ -6,12 +6,13 @@ from pathlib import Path
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 CAPITAL_FILE = CONFIG_DIR / "capital.json"
 
-# G9 资金配置定稿（2026-08-06 老板拍板）：单笔风险 = 总资金 × 2.0% × 3 仓
-# （实盘线定稿参数；与网格实验 T-023「2.0% × 3 仓 = 总风险 6%」同口径；
-# 与 calc_risk_by_drawdown 推导吻合：可承受 20% 回撤 ÷ 10 次连亏（分母留余量）= 2%，
-# 内训第26节老师口径）。
-# 注意：这是"实盘线定稿参数"——回测/模拟对照实验如需其他比例（如旧 1.5%），
-# 显式传参即可（sim_capital --risk-ratio / monte_carlo_c23 --risk-pct 均参数化）。
+# G9 资金配置（2026-08-06 旧定稿：2.0% × 3 仓 → 2026-08-08 老板确认更新）：
+# 「8401 资金 + 单笔风险 108 元（capital.json risk_ratio 覆盖，1.29%×8401）+ 5 仓」
+# ——完整周期回测（7.5 年）B2_5 最优（+280.4%/回撤27.3%/avgR 0.986），且 108 元
+# 风险额质量全面优于 168 元（avgR 0.99~1.03 vs 0.75，连败冲击 9% vs 22% 击穿心态线）。
+# 推导口径仍与 calc_risk_by_drawdown 吻合（可承受 20% 回撤 ÷ 10 次连亏）；
+# RISK_RATIO=0.02 保留为策略默认（模拟线 10 万名义用），实盘经 capital.json 覆盖。
+# 注意：回测/模拟对照实验如需其他比例（如旧 1.5%），显式传参即可（均参数化）。
 RISK_RATIO = 0.02  # 单笔风险 = 总资金 × 2%
 
 
@@ -32,10 +33,26 @@ def get_capital() -> float:
         return 5600
 
 
-def set_capital(amount: float) -> None:
-    """更新资金"""
+def get_risk_ratio() -> float:
+    """读取当前风险比例（capital.json 可覆盖；缺省 RISK_RATIO=2%）
+
+    2026-08-08 资金升级回测结论支持"注入不抬风险额"纪律：8/10 资金 8401
+    后维持 108 元单笔风险（比例 8401→0.012855），通过本函数落地——
+    max_risk_per_trade 与执行卡/模拟线实盘路径统一读此值。
+    """
     _ensure()
-    data = {"capital": amount, "risk_ratio": RISK_RATIO}
+    try:
+        with open(CAPITAL_FILE, "r") as f:
+            return float(json.load(f).get("risk_ratio", RISK_RATIO))
+    except (json.JSONDecodeError, FileNotFoundError, TypeError, ValueError):
+        return RISK_RATIO
+
+
+def set_capital(amount: float, risk_ratio: float | None = None) -> None:
+    """更新资金（risk_ratio 缺省保持现值不变——注入不机械抬风险额纪律）"""
+    _ensure()
+    rr = risk_ratio if risk_ratio is not None else get_risk_ratio()
+    data = {"capital": amount, "risk_ratio": rr}
     with open(CAPITAL_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -57,7 +74,7 @@ def max_risk_per_trade(scale: float = 1.0) -> float:
     Returns:
         单笔最大允许风险金额（元）
     """
-    return round(get_capital() * RISK_RATIO * scale, 2)
+    return round(get_capital() * get_risk_ratio() * scale, 2)
 
 
 def calc_lots(risk_per_share: float) -> int:
