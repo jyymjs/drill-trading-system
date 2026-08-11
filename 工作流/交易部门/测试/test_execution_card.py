@@ -255,3 +255,28 @@ def test_cloud_order_reminder_calibration_states(monkeypatch, tmp_path):
     assert "触发价过时" in text and "600002" in text and "建议撤单" in text
     assert "已不在最新扫描" in text and "600003" in text and "建议撤单" in text
     assert "13.45" in text and "12.78" in text  # 最新口径展示
+
+
+def test_scan_s_overview_lists_all_s_with_reasons(monkeypatch, tmp_path):
+    """R-067：S 级全览列出全部 S 级（含被过滤的）+ 买/不买原因标注"""
+    from 分析决策.跟踪.execution_card import scan_s_overview
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    # 主文件（合格候选）
+    (scan_dir / "scan_result_20260811_182400.csv").write_text(
+        "code,name,评级,触发价,止损价\n600001,甲,S,10.5,9.8\n", encoding="utf-8-sig")
+    # C23 不达标变体
+    (scan_dir / "scan_result_20260811_182400_c23.csv").write_text(
+        "code,name,评级,触发价,止损价,C23原因\n600002,乙,S,8.2,7.9,止损0.4元<0.5\n",
+        encoding="utf-8-sig")
+    # 放量不达标变体
+    (scan_dir / "scan_result_20260811_182400_vol.csv").write_text(
+        "code,name,评级,触发价,止损价\n600003,丙,S,9.1,8.5\n", encoding="utf-8-sig")
+    # 已突破变体
+    (scan_dir / "scan_result_20260811_182400_broken.csv").write_text(
+        "code,name,评级,触发价,止损价\n600004,丁,S,7.5,7.0\n", encoding="utf-8-sig")
+    text = scan_s_overview(scan_dir=scan_dir)
+    assert "600001" in text and "合格候选" in text
+    assert "600002" in text and "C23 不达标" in text and "止损0.4元<0.5" in text
+    assert "600003" in text and "放量不达标" in text
+    assert "600004" in text and "已突破" in text

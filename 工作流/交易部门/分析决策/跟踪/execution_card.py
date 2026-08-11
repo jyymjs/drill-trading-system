@@ -190,6 +190,88 @@ def _open_pending_add() -> float:
                for r in rows if r.get("status") == "open" and r.get("phase") == "half")
 
 
+def _latest_scan_files(scan_dir: Path) -> tuple[list[Path], str]:
+    """最新扫描批次的全部文件（主文件 + 变体）——R-067 校准/全览共用。
+
+    返回 (files, batch)：files 按 主文件 → _broken → _c23 → _vol → _grade 顺序
+    （S 级全览原因标注的优先级）；batch = 批次时间戳（如 20260811_182407）。
+    """
+    import re
+    all_files = sorted((p for p in scan_dir.glob("scan_result_*.csv")
+                        if re.match(r"scan_result_\d{8}_\d{6}", p.stem)),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+    if not all_files:
+        return [], ""
+    # 取最新时间戳批次（stem 前 15 字符 scan_result_YYYYMMDD_HHMMSS）
+    batch = all_files[0].stem.replace("scan_result_", "")[:15]
+    same_batch = [p for p in all_files
+                  if p.stem.replace("scan_result_", "")[:15] == batch]
+    order = {"": 0, "_broken": 1, "_c23": 2, "_vol": 3, "_grade": 4}
+    same_batch.sort(key=lambda p: order.get(
+        p.stem.replace("scan_result_", "")[15:], 9))
+    return same_batch, batch
+
+
+def scan_s_overview(scan_dir: str | Path | None = None) -> str:
+    """扫描 S 级全览（R-067 2026-08-12 老板拍板：当天全部 S 级列出 + 买/不买原因，
+    不静默过滤——000429 曾被误判"不在候选"，实为放量不达标仍在 S 级池）
+
+    读取最新批次全部文件（主文件 + _broken/_c23/_vol/_grade 变体）→ 汇总 S 级
+    （按 code 去重，原因取优先级最高者：主文件合格 → 已突破 → C23 → 放量）→
+    每只标注买/不买 + 原因。
+
+    Returns:
+        板块文本（无 S 级 → 一行说明）
+    """
+    import csv
+    W = 76
+    line = "-" * W
+    today = datetime.now().strftime("%Y-%m-%d")
+    sdir = (Path(scan_dir) if scan_dir
+            else Path(__file__).resolve().parent.parent.parent / "数据基础" / "扫描输出")
+    files, batch = _latest_scan_files(sdir)
+    out = [line, f"〔扫描 S 级全览〕{today}（批次 {batch or '无'}）".center(W), line]
+    if not files:
+        out.append("  未找到扫描结果（数据基础/扫描输出），无法列出 S 级")
+        out.append(line)
+        return "\n".join(out)
+    # 按文件优先级聚合 S 级（code → {触发, 止损, 原因, 名称}）
+    s_level: dict[str, dict] = {}
+    tag_map = {"": "✅ 合格候选（可挂单）",
+               "_broken": "❌ 已突破（现价≥触发价，追高不买）",
+               "_c23": "❌ C23 不达标",
+               "_vol": "❌ 放量不达标（量比≤1.5，暂不挂单；突破日确认量能）"}
+    for f in files:
+        suffix = f.stem.replace("scan_result_", "")[15:]
+        try:
+            with open(f, encoding="utf-8-sig") as fh:
+                for rec in csv.DictReader(fh):
+                    code = str(rec.get("code", "")).strip()
+                    if not code or rec.get("评级", "").strip() != "S":
+                        continue
+                    if code in s_level:
+                        continue   # 优先级已定（更高优先级文件先读）
+                    trig = rec.get("触发价", "")
+                    stop = rec.get("止损价", "")
+                    reason = tag_map.get(suffix, "")
+                    if suffix == "_c23":
+                        reason += f"（{rec.get('C23原因', '') or '不达标'}）"
+                    s_level[code] = {"trigger": trig, "stop": stop,
+                                     "reason": reason, "name": rec.get("name", "")}
+        except (OSError, ValueError):
+            continue
+    if not s_level:
+        out.append("  当日无 S 级候选（全部不达标或未扫描到）")
+        out.append(line)
+        return "\n".join(out)
+    for code, info in s_level.items():
+        out.append(f"  {info['reason']}  {code} {info['name']} | "
+                   f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
+                   if info['trigger'] else f"  {info['reason']}  {code} {info['name']}")
+    out.append(line)
+    return "\n".join(out)
+
+
 def cloud_order_reminder(track_file: str | Path | None = None,
                          scan_dir: str | Path | None = None) -> str:
     """云条件单持续埋伏 + 每日校准（R-065 2026-08-12 老板拍板，替代 3 日到期提醒）
@@ -233,36 +315,40 @@ def cloud_order_reminder(track_file: str | Path | None = None,
         out.append("  无挂单中的买入条件单（持续埋伏池为空）")
         out.append(line)
         return "\n".join(out)
-    # 最新扫描结果（主 scan_result，同 sim_auto_open 文件选取规则）——校准基准
-    # R-065 修复：标注批次日期防误用旧数据（08-12 实测 08-11 主文件缺失时静默读
-    # 08-10 旧批次——校准基准过时一天）
+    # 校准基准 = 最新批次全部文件并集（主文件 + _broken/_c23/_vol 变体）——
+    # R-067（2026-08-12）：000429 在主文件缺失/被放量过滤时仍在变体 S 级池
+    # （触发价一致 → 应"已校准持续埋伏"而非误判"不在候选"）；批次过时仍告警
     scan_map: dict[str, dict] | None = {}
     scan_batch = ""
     try:
-        files = sorted((p for p in sdir.glob("scan_result_*.csv")
-                        if re.match(r"scan_result_\d{8}_\d{6}$", p.stem)),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
+        files, scan_batch = _latest_scan_files(sdir)
         if not files:
             scan_map = None
         else:
-            scan_batch = files[0].stem.replace("scan_result_", "")
-            with open(files[0], encoding="utf-8-sig") as fh:
-                for rec in csv.DictReader(fh):
-                    code = str(rec.get("code", "")).strip()
-                    trig = rec.get("触发价", "")
-                    stop = rec.get("止损价", "")
-                    if code and trig:
-                        scan_map[code] = {"trigger": float(trig) or 0.0,
-                                          "stop": float(stop) or 0.0}
+            for f in files:
+                with open(f, encoding="utf-8-sig") as fh:
+                    for rec in csv.DictReader(fh):
+                        code = str(rec.get("code", "")).strip()
+                        if code in scan_map:
+                            continue
+                        trig = rec.get("触发价", "")
+                        stop = rec.get("止损价", "")
+                        if code and trig:
+                            scan_map[code] = {"trigger": float(trig) or 0.0,
+                                              "stop": float(stop) or 0.0}
     except (OSError, ValueError):
         scan_map = None
     if scan_map is not None:
         # R-065 防再犯（08-12 实测 08-11 主文件缺失静默读 08-10 旧批次）：
-        # 批次日期 < 今日-1 交易日 → 明确警告数据过时，校准不可靠
+        # 批次日期 < 今日 且 已过 19:00（扫描 18:00 后应已产出）→ 过时告警；
+        # 19:00 前（扫描未到点/周末）仅提示批次，不算异常
+        from datetime import datetime as _dt
         _batch_date = scan_batch[:8] if len(scan_batch) >= 8 else ""
-        _stale = bool(_batch_date and _batch_date < today.replace("-", ""))
+        _now = _dt.now()
+        _stale = bool(_batch_date and _batch_date < today.replace("-", "")
+                      and _now.weekday() < 5 and _now.hour >= 19)
         if _stale:
-            out.append(f"  ⚠️ **扫描数据过时**：最新主文件批次 {scan_batch}（{_batch_date}）"
+            out.append(f"  ⚠️ **扫描数据过时**：最新批次 {scan_batch}（{_batch_date}）"
                        f"——今日未生成主扫描文件，校准基准不可靠，请检查扫描链路")
         else:
             out.append(f"  ℹ️ 校准基准：扫描批次 {scan_batch}")
@@ -506,7 +592,7 @@ def full_card(candidates: list[dict], rows: list[dict] | None = None,
     """
     card = "〔系统状态〕\n" + system_status(rows) + "\n" \
         + order_card(candidates, sort_by=sort_by) + "\n" + position_card(rows) \
-        + "\n" + protect_card(rows) + "\n" + cloud_order_reminder()
+        + "\n" + protect_card(rows) + "\n" + scan_s_overview() + "\n" + cloud_order_reminder()
     if write_file:
         _CARD_DIR.mkdir(parents=True, exist_ok=True)
         fname = _CARD_DIR / f"执行卡_{datetime.now().strftime('%Y%m%d')}.md"
