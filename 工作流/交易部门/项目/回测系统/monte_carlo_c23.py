@@ -84,17 +84,23 @@ def capital_trade_r(trades: list[dict]) -> list[float]:
     return rs
 
 
-def run_cap_c23(df, risk_ratio: float, max_positions: int) -> tuple[list[float], float, dict]:
+def run_cap_c23(df, risk_ratio: float, max_positions: int,
+                capital: float = CAPITAL) -> tuple[list[float], float, dict]:
     """C23 资金约束层成交 R 序列（simulate_capital 核心零改动）
+
+    R-048 扩展（2026-08-11 交易部审核通过，默认零变化）：capital 参数化——
+    默认 CAPITAL=5600 保既有报告口径；R-048 候选档蒙卡经 r48 mc 子命令走
+    half_phase 成交集，本函数仅供独立运行候选档使用。
 
     Args:
         risk_ratio: 单笔风险比例（0.02 = 2.0%，G9 实盘线定稿 2026-08-06）
         max_positions: 最多同时持仓数
+        capital: 初始资金（默认 5600 = 既有报告口径）
 
     Returns:
         (成交 R 序列, 单笔风险均值（元）, simulate_capital 原始结果)
     """
-    res = simulate_capital(df, CAPITAL, risk_ratio, max_positions=max_positions,
+    res = simulate_capital(df, capital, risk_ratio, max_positions=max_positions,
                            mode=MODE, hold=HOLD, grades=GRADES, c23=True)
     trades = res["trades"]
     rs = capital_trade_r(trades)
@@ -141,6 +147,8 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="报告输出路径（默认单配置=蒙特卡洛-C23版；--compare=配置对照）")
     ap.add_argument("--risk-pct", type=float, default=None, help="单笔风险%（默认 1.5 = 既有报告口径）")
     ap.add_argument("--max-positions", type=int, default=None, help="最多同时持仓数（默认 3 = 既有报告口径）")
+    ap.add_argument("--capital", type=float, default=None,
+                    help="初始资金（R-048 扩展 2026-08-11：默认 5600 = 既有报告口径；候选档蒙卡请用 r48 mc 子命令）")
     ap.add_argument("--compare", action="store_true",
                     help="三档配置对照模式：C23 资金层 1.5/2.0/3.0% × 3 仓各 10000 次"
                          "（2026-08-06 老板拍板 A 档最终确认）")
@@ -156,11 +164,14 @@ def main() -> int:
 
     # ── 配置对照模式（三档 C23 资金层，2026-08-06 老板拍板）──
     if args.compare:
+        if args.capital is not None and args.capital != CAPITAL:
+            print(f"⚠️ --compare 模式忽略 --capital（{args.capital:.0f}），按既有常量 {CAPITAL:.0f} 运行")
         return _compare_main(df, args)
 
     # ── 单配置模式（默认 1.5%×3 仓 = 既有报告口径）──
     risk_ratio = (args.risk_pct if args.risk_pct is not None else RISK_RATIO * 100) / 100.0
     max_positions = args.max_positions if args.max_positions is not None else MAX_POSITIONS
+    capital = args.capital if args.capital is not None else CAPITAL
     out = Path(args.out) if args.out else DEFAULT_REPORT
 
     # ── 信号层两组 R 序列 ──
@@ -169,9 +180,9 @@ def main() -> int:
     print(f"[信号层] V1 基线 {len(sig_base)} 笔 | C23 掩码后 {len(sig_c23)} 笔")
 
     # ── 资金约束层两组成交（sim_capital 核心，零改动）──
-    tr_base = simulate_capital(df, CAPITAL, risk_ratio, max_positions=max_positions,
+    tr_base = simulate_capital(df, capital, risk_ratio, max_positions=max_positions,
                                mode=MODE, hold=HOLD, grades=GRADES, c23=False)["trades"]
-    cap_c23, avg_risk_c23, _ = run_cap_c23(df, risk_ratio, max_positions)
+    cap_c23, avg_risk_c23, _ = run_cap_c23(df, risk_ratio, max_positions, capital)
     cap_base = capital_trade_r(tr_base)
     avg_risk_base = float(np.mean([t["risk_actual"] for t in tr_base])) if tr_base else 0.0
     print(f"[资金层] V1 基线成交 {len(cap_base)} 笔（单笔风险均值 {avg_risk_base:.2f} 元）| "
@@ -203,7 +214,7 @@ def main() -> int:
         ("> 目的：把当前策略（C23 收紧）安排进蒙特卡洛模拟，评估运气边界；与 V1（未收紧基线）"
          "并排对比，给老板\"最惨能亏多少\"的心理预案数字。"),
         (f"> 口径：信号层 = 引擎 20d R 序列（r_20d，成本已计入）；资金约束层 = sim_capital "
-         f"模拟实盘成交（{CAPITAL:,.0f} 元 / 单笔风险 {risk_ratio:.1%} / 持仓上限 {max_positions} 只 / "
+         f"模拟实盘成交（{capital:,.0f} 元 / 单笔风险 {risk_ratio:.1%} / 持仓上限 {max_positions} 只 / "
          f"S 级 / prebreak / 20d），成交 R = pnl / risk_actual（含费）。"),
         (f"> 模拟：每组 {N_SIMULATIONS:,} 次有放回重抽样（numpy RNG seed=2024，与 V1 同源）；"
          f"费用口径与 V1 一致 fee=0.0（R 序列已含费，不重复扣）——仅模拟次数由 V1 的 2000 提升到 "
@@ -326,7 +337,7 @@ def main() -> int:
     ]
 
     # ── 白话结论草稿（数据驱动）──
-    lines += _verdict(s, avg_risk_base, avg_risk_c23, n_trig, CAPITAL * risk_ratio)
+    lines += _verdict(s, avg_risk_base, avg_risk_c23, n_trig, capital * risk_ratio, capital)
     lines += [
         "",
         "---",
@@ -345,13 +356,13 @@ def main() -> int:
 
 
 def _verdict(s: dict, avg_risk_base: float, avg_risk_c23: float, n_trig: int,
-             risk_amt: float) -> list[str]:
-    """白话结论草稿（最终由老板/助理复核）"""
+             risk_amt: float, capital: float = CAPITAL) -> list[str]:
+    """白话结论草稿（最终由老板/助理复核；capital 供 --capital 非默认档渲染）"""
     o = ["## 四、白话结论草稿", ""]
     b, c = s["cap_base"], s["cap_c23"]  # 资金层为主口径（实盘体验）
     # 1) 收紧是否让运气边界更好
     o.append("**1) C23 收紧 vs V1：运气边界整体右移，但代价是信号量减半以上**")
-    o.append(f"- 资金层（5,600 元实盘体验）：盈利概率 {b['prob_profit']:.1%} → {c['prob_profit']:.1%}；"
+    o.append(f"- 资金层（{capital:,.0f} 元实盘体验）：盈利概率 {b['prob_profit']:.1%} → {c['prob_profit']:.1%}；"
              f"中位终值 {b['fin_p50']:+.1f}R → {c['fin_p50']:+.1f}R；最差 5% 情景 "
              f"{b['fin_p05']:+.1f}R → {c['fin_p05']:+.1f}R（V1 亏钱、C23 仍赚）；"
              f"回撤最差 5% {b['dd_p95']:.1f}R → {c['dd_p95']:.1f}R（回撤也收窄）。")
@@ -366,15 +377,15 @@ def _verdict(s: dict, avg_risk_base: float, avg_risk_c23: float, n_trig: int,
     b_worst = b["fin_p05"] * avg_risk_base
     if c["fin_p05"] >= 0:
         c_desc = (f"最差 5% 运气也仍是赚的：累计 +{c['fin_p05']:.1f}R × "
-                  f"{avg_risk_c23:.2f} 元 ≈ **+{c_worst:,.0f} 元**（{CAPITAL:,.0f} 元本金之上）")
+                  f"{avg_risk_c23:.2f} 元 ≈ **+{c_worst:,.0f} 元**（{capital:,.0f} 元本金之上）")
     else:
         c_desc = (f"最差 5% 情景最多亏 {c['fin_p05']:.1f}R × {avg_risk_c23:.2f} 元 ≈ "
-                  f"**-{abs(c_worst):,.0f} 元**（占 {CAPITAL:,.0f} 元本金 "
-                  f"{abs(c_worst / CAPITAL):.0%}）")
+                  f"**-{abs(c_worst):,.0f} 元**（占 {capital:,.0f} 元本金 "
+                  f"{abs(c_worst / capital):.0%}）")
     if b["fin_p05"] >= 0:
         b_desc = f"V1 同口径 +{b_worst:,.0f} 元"
     else:
-        b_desc = f"V1 同口径亏 {abs(b_worst):,.0f} 元（{abs(b_worst / CAPITAL):.0%}）"
+        b_desc = f"V1 同口径亏 {abs(b_worst):,.0f} 元（{abs(b_worst / capital):.0%}）"
     o.append(f"- 资金层 {c_desc}；{b_desc}。"
              f"——历史 3 年信号模拟下，坏运气 5% 概率内的亏损面 C23 已彻底右移"
              f"（最差也不亏钱），V1 则要亏本金两成以上。")

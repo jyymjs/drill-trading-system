@@ -17,14 +17,14 @@ import 分析决策.跟踪.sim_trading as st
 
 
 def mk_kline(days: list[tuple]) -> pd.DataFrame:
-    """days = [(日期, 开盘, 最高, 最低, 收盘), ...]"""
+    """days = [(日期, 开盘, 最高, 最低, 收盘[, 成交量]), ...]（R-053 支持自定义量）"""
     return pd.DataFrame({
         "日期": [d[0] for d in days],
         "开盘": [d[1] for d in days],
         "最高": [d[2] for d in days],
         "最低": [d[3] for d in days],
         "收盘": [d[4] for d in days],
-        "成交量": [1_000_000] * len(days),
+        "成交量": [d[5] if len(d) > 5 else 1_000_000 for d in days],
     })
 
 
@@ -55,7 +55,7 @@ def use_tmp_journal(monkeypatch, tmp_path):
 
 
 def test_auto_open_creates_pending_orders(monkeypatch, tmp_path):
-    """扫描候选 → 全部生成 pending 条件单（10 万名义资金 2% 规则）"""
+    """扫描候选 → 全部生成 pending 条件单（10 万名义资金 0.025 比例（R-050））"""
     use_tmp_journal(monkeypatch, tmp_path)
     monkeypatch.setattr(st, "_market_env_scale", lambda: 1.0)
     monkeypatch.setattr("数据基础.配置.stock_pool.get_stock_codes",
@@ -71,8 +71,8 @@ def test_auto_open_creates_pending_orders(monkeypatch, tmp_path):
     assert "10 万名义资金" in text
     rows = st._read_all()
     assert [r["status"] for r in rows] == ["pending", "pending"]
-    # 10 万 × 2% × 1R = 2000 元风险预算 → 每股风险 0.7 → 2000//0.7//100*100 = 2800 股
-    assert int(rows[0]["volume"]) == 2800
+    # 10 万 × 0.025 × 1R = 2500 元 → 每股风险 0.7 → 2500//0.7//100*100 = 3500 股（R-050）
+    assert int(rows[0]["volume"]) == 3500
     assert rows[0]["entry_price"] == "10.5"  # 条件单记录触发价
 
 
@@ -148,11 +148,12 @@ def test_pending_cancelled_after_expire_days(monkeypatch, tmp_path):
 
 def test_sim_10w_affordable_where_live_5600_rejects(monkeypatch):
     """无资金限制语义：实盘 5600 买不起（每股风险 1.5 → 112//1.5 <100）的票，
-    模拟线 10 万按 2% 规则买得起（2000//1.5 = 1300 股）"""
+    模拟线 10 万按 0.025 规则买得起（2500//1.5 = 1600 股）（R-050）"""
+    monkeypatch.setattr(st, "get_capital", lambda: 5600)  # 实盘对照：5600×0.025=140 → 140//1.5=93 <100
     sim_shares, _ = st.check_affordability(30.0, 1.5, risk_scale=1.0,
                                            capital=st.SIM_CAPITAL)
     live_shares, live_reason = st.check_affordability(30.0, 1.5, risk_scale=1.0)
-    assert sim_shares == 1300, sim_shares
+    assert sim_shares == 1600, sim_shares
     assert live_shares < 100 and "买不起" in live_reason
 
 
@@ -193,3 +194,82 @@ def test_sim_check_with_only_pending_no_open(monkeypatch, tmp_path):
     text = st.sim_check()
     assert "挂单中" in text
     assert st._read_all()[0]["status"] == "pending"
+
+
+# ============ R-053 突破质量双条件（2026-08-11 老板拍板 · 交易部审核后 v2）============
+# A 收盘站稳：触发日收盘 ≥ 触发价；B 放量：触发日量比 > 1.5（前20日均量分母）
+# 恒绑定触发日 entry_idx，不随 delay2 二判漂移（审核 A-2）
+
+
+def _mk_row(trigger: float = 10.0, stop: float = 9.5, created: str = "2025-01-21") -> dict:
+    """持仓行（phase=half/open），date = 触发日"""
+    r = pend_row(code="600419", trigger=trigger, stop=stop, created=created)
+    r["status"] = "open"
+    r["phase"] = "half"
+    return r
+
+
+def _mk_series(vol_base: float, trig_vol: float, trig_close: float,
+               conf_close: float, t2_close: float | None = None,
+               trig_open: float = 10.0, trig_high: float = 10.5) -> pd.DataFrame:
+    """构造 R-053 测试 K 线：前 20 根均量 vol_base → 触发日（第21根）→ 确认日（第22根）→ 可选 T+2"""
+    days = [(f"2025-01-{i:02d}", 9.8, 9.9, 9.7, 9.85, vol_base) for i in range(1, 21)]
+    days.append(("2025-01-21", trig_open, trig_high, trig_open - 0.2, trig_close, trig_vol))
+    days.append(("2025-01-22", conf_close - 0.1, conf_close + 0.2, conf_close - 0.2, conf_close, 1_000_000))
+    if t2_close is not None:
+        days.append(("2025-01-23", t2_close - 0.1, t2_close + 0.2, t2_close - 0.2, t2_close, 1_000_000))
+    return mk_kline(days)
+
+
+class TestR053BreakQuality:
+    """_check_half_position 突破质量双条件（A 收盘站稳 + B 放量）"""
+
+    def test_quality_ok_confirms_add(self):
+        """A/B 双达标（600833 型：开仓日收 11.01≥10.18、量比 2.75）→ 正常确认补仓"""
+        # 触发日收 10.4 ≥ 触发价 10.0 ✓；量比 250万/100万 = 2.5 >1.5 ✓；确认日收 10.6 三条件过
+        df = _mk_series(vol_base=1_000_000, trig_vol=2_500_000, trig_close=10.4, conf_close=10.6)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "add", step
+        assert step["open_close_ok"] is True and step["vol_ok"] is True
+
+    def test_shrink_volume_rejects(self):
+        """缩量突破（600315 型：量比 1.2 ≤1.5）→ 三条件过也平仓"""
+        df = _mk_series(vol_base=1_000_000, trig_vol=1_200_000, trig_close=10.4, conf_close=10.6)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "exit_reject", step
+        assert "缩量突破" in step["reason"]
+        assert step["vol_ok"] is False
+
+    def test_close_below_trigger_rejects(self):
+        """触发日收盘 < 触发价（盘中假突破，600315 型 A 不达标）→ 平仓"""
+        # 触发日盘中最高 10.5 ≥ 10.0（触发）但收盘 9.9 < 10.0；量比 2.5 达标 → A 拦
+        df = _mk_series(vol_base=1_000_000, trig_vol=2_500_000, trig_close=9.9, conf_close=10.6)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "exit_reject", step
+        assert "开仓日收盘" in step["reason"]
+        assert step["open_close_ok"] is False
+
+    def test_vol_ratio_boundary_exact_15(self):
+        """量比恰 = 1.5 → 不达标（严格 >1.5，tracking.py:318 同语义）"""
+        df = _mk_series(vol_base=1_000_000, trig_vol=1_500_000, trig_close=10.4, conf_close=10.6)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "exit_reject", step
+        assert step["vol_ok"] is False
+
+    def test_zero_ref_volume_not_ok(self):
+        """前 20 日均量为 0（数据不足）→ 量比 0 不达标（tracking.py:316 同语义）"""
+        df = _mk_series(vol_base=0, trig_vol=1_000_000, trig_close=10.4, conf_close=10.6)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "exit_reject", step
+        assert step["vol_ratio"] == 0.0 and step["vol_ok"] is False
+
+    def test_delay2_uses_trigger_day_not_slice(self):
+        """603970 型：首判 c1 失败（确认日收 10.48 < 10.58）→ 二判 confirm 时 A/B 仍用
+        触发日数据（收 10.4≥10.0 ✓ 量比 1.87 ✓）→ 正常补仓，不被二判日漂移误杀（审核 A-2）"""
+        # 触发日收 10.4 ≥ 10.0 ✓、量比 187万/100万 = 1.87 ✓
+        # 确认日收 9.8 < 10.0 → c1 失败 → 首判 reject → T+2 收 10.7 ≥ 10.0 → 二判 confirm
+        df = _mk_series(vol_base=1_000_000, trig_vol=1_870_000, trig_close=10.4,
+                        conf_close=9.8, t2_close=10.7)
+        step = st._check_half_position(df, _mk_row())
+        assert step["action"] == "add", step
+        assert step["open_close_ok"] is True and step["vol_ok"] is True

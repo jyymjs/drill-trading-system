@@ -263,3 +263,88 @@ def test_regression_short_take_profit():
                    volume=10000)
     tp = em.calc_take_profit(pos)
     assert tp == round(1.1000 - (1.1100 - 1.1000) * 5, 2) == 1.0500
+
+
+# ============ R-054 审核回归（2026-08-11 交易部审核 P0-2/P0-3）============
+
+def test_breakeven_never_downgrades_stop():
+    """P0-2 回归：移动获利上移后（current_stop > entry），R≥1 且无新拐点时
+    stop_update 不得回落成本位（原 `bv != current_stop` 缺 `>` 保护——落库后
+    会把止损从 10.5 降回 10.0，A1 持久化即成真实回退）"""
+    pos = make_pos(entry=10.0, stop=9.0)
+    pos.highest_price = 11.0          # 已到 11（R=1.0+，触发平保条件）
+    pos.current_stop = 10.5           # 移动获利已上移（> entry）
+    df = make_df([10.6, 10.4, 10.3],  # 无新拐点（持续小回调）
+                 highs=[10.7, 10.5, 10.4], lows=[10.5, 10.3, 10.2])
+    res = em.evaluate_exit(pos, df)
+    # 层面2 平保 bv=entry=10.0 < current_stop=10.5 → 不得更新
+    assert res["stop_update"] is None or res["stop_update"] >= 10.5, \
+        f"止损不得回落: {res}"
+
+
+def test_trailing_pivot_ignores_pre_entry_bars():
+    """P0-3 回归：进场前 K 线（深回调低点）不得充当拐点——全量 df 会被污染到
+    成本位+1分（10.01），df 从进场日切片后 len<20 → check_trailing_stop 门槛免疫。
+    契约：A1/A2/B 三处调用必须传进场日切片 df。"""
+    # 全量 20 根：前 9 根横盘（高 9.4）→ 5 根回调到 8.8（5 根确认拐点）→
+    # 破前高 9.5 → 进场（entry=10.0）→ 5 根上涨到 10.9
+    closes = [9.2] * 9 + [9.2, 9.2, 9.2, 9.2, 9.2] + [9.5] + [10.0, 10.3, 10.5, 10.7, 10.8]
+    highs = [9.4] * 9 + [9.3] * 5 + [9.5] + [10.1, 10.4, 10.6, 10.8, 10.9]
+    lows = [9.0] * 9 + [9.1, 9.0, 8.8, 8.9, 9.0] + [9.4] + [9.9, 10.2, 10.4, 10.6, 10.7]
+    full = make_df(closes, highs, lows)
+    entry_idx = 15                     # 进场日（第 16 根，破前高后）
+    df_pos = full.iloc[entry_idx:]     # 切片（A1/A2 契约）
+    # 对照组：全量 df → 进场前拐点（low=8.8）→ new_stop 兜底 entry+0.01 污染
+    pos_full = make_pos(entry=10.0, stop=9.0)
+    pos_full.highest_price = 10.9
+    res_full = em.check_trailing_stop(pos_full, full)
+    assert res_full is not None and abs(res_full - 10.01) < 0.001, \
+        f"对照组应演示进场前拐点污染(10.01)，实际 {res_full}"
+    # 切片组：len=5 < 20 → check_trailing_stop 门槛免疫 → None
+    pos_slice = make_pos(entry=10.0, stop=9.0)
+    pos_slice.highest_price = 10.9
+    assert em.check_trailing_stop(pos_slice, df_pos) is None, \
+        "切片后不得触发移动获利（len<20 门槛）"
+
+
+# ============ R-055 P1 回归（2026-08-11）：len<20 硬门槛删除 ============
+
+def test_trailing_works_on_short_df():
+    """P1 回归：len<20 硬门槛删除后，短数据（n=15）有拐点结构时移动获利可触发
+    （lookback 自适应 min(20, n-5)=10 已覆盖；此前 80 行直接 None——345/704 笔被卡）"""
+    # 17 根：前 6 横盘 → 回调 5 根（低点 8.8 在 pivot 窗口内）→ 破前高 → 涨到 10.6
+    closes = [9.2] * 6 + [9.2, 9.2, 8.9, 9.2, 9.2] + [9.5] + [10.0, 10.3, 10.5, 10.4, 10.6]
+    highs = [9.4] * 6 + [9.3] * 5 + [9.5] + [10.1, 10.4, 10.6, 10.5, 10.7]
+    lows = [9.0] * 6 + [9.1, 9.0, 8.8, 8.9, 9.0] + [9.5] + [9.9, 10.2, 10.4, 10.3, 10.5]
+    df = make_df(closes, highs, lows)
+    pos = make_pos(entry=10.0, stop=9.0)
+    pos.highest_price = 10.7
+    ts = em.check_trailing_stop(pos, df)
+    assert ts is not None, "短数据（n=15）有拐点应触发（P1 修复后）"
+    assert ts > 9.0, "止损应上移"
+
+
+# ============ R-057/V4 四开关（2026-08-12 V4 定案：E 组合全开）============
+
+def test_switches_default_all_true_unchanged():
+    """V4 定案：evaluate_exit 四开关默认全 True = 现状行为（生产调用不传参零变化）"""
+    closes = [10.0] * 10 + [10.5, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 16.2]
+    df = make_df(closes)
+    pos = make_pos(entry=10.0, stop=9.0, highest=16.2)
+    # 默认参数 vs 显式全 True
+    res_default = em.evaluate_exit(pos, df)
+    pos2 = make_pos(entry=10.0, stop=9.0, highest=16.2)
+    res_full = em.evaluate_exit(pos2, df, enable_breakeven=True, enable_trailing=True,
+                                enable_active=True, enable_ttp=True)
+    assert res_default == res_full, "默认参数必须 = 显式全 True（现状零变化）"
+
+
+def test_switches_all_false_is_pure_stop_loss():
+    """A 基线（全 False）= 纯止损 + 无锁利（层面2/3/4/主动全关）"""
+    closes = [10.0] * 10 + [10.5, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 16.2]
+    df = make_df(closes)
+    pos = make_pos(entry=10.0, stop=9.0, highest=16.2)
+    res = em.evaluate_exit(pos, df, enable_breakeven=False, enable_trailing=False,
+                           enable_active=False, enable_ttp=False)
+    assert res["stop_update"] is None, "全关时不得有任何止损上移"
+    assert res["should_exit"] is False, "全关时不得主动离场（R=6.2 无止损触发）"

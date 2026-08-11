@@ -49,7 +49,9 @@ def check_breakeven(position: Position, current_price: float) -> float | None:
     return None
 
 
-def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float = 5.0) -> float | None:
+def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float = 5.0,
+                        trail_retreat: float = 0.10,
+                        angle_or_shadow: bool = False) -> float | None:
     """层面3：移动获利 — 基于拐点
 
     在回调后再次破前高时，将止损上移到拐点下方。
@@ -69,17 +71,24 @@ def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float 
     （<5R 优势两个、>5R 一个）——原 2023 周会波段 3R 界已统一弃用，
     r_boundary 参数保留供对照实验（G7）。
 
+    R-055（2026-08-11 老板拍板 + 核实）：
+      - 删除 len<20 硬门槛（与 lookback 自适应自相矛盾——n=15 本可工作被拦截，
+        345/704 笔 49% 被卡；lookback=min(20, n-5) 已覆盖短数据，pivot 窗口空则自然 None）
+      - trail_retreat 参数化：新止损 = 拐点低点 − (最高−拐点低点)×trail_retreat
+        （默认 0.10 = 教学 10%；A 股波动大，48 笔触发 100% 被跌破——参数实验校准）
+      - angle_or_shadow：2024 周会口径"明显夹角 OR 明显影线任一即可进入三条件"
+        （默认 False = 内训 19 节正式版夹角硬门槛；True = 放宽）
+
     Args:
         position: 持仓对象
         df: 包含完整K线的DataFrame
         r_boundary: 两档优势条件的 R 界（默认 5.0，内训 19·4 正式版）
+        trail_retreat: 拐点下方回撤比例（新止损 = 拐点低点 − 回撤段×比例，默认 0.10）
+        angle_or_shadow: 夹角 OR 影线两前提（2024 周会口径，默认 False）
 
     Returns:
         新止损价，或 None
     """
-    if len(df) < 20:
-        return None
-
     close = df["收盘"].values
     high = df["最高"].values
     low = df["最低"].values
@@ -122,20 +131,34 @@ def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float 
 
     # 基本条件（内训 19·4）：夹角较小 = 下来后快速上涨（右侧反弹比左侧下跌更陡 = V型尖底）
     # 夹角大 = 缓慢调整，不是好拐点 → 不设移动获利。数值口径：反弹斜率 ≥ 下跌斜率（工程定案）。
+    # R-055 P3：angle_or_shadow=True 时（2024 周会口径"明显夹角 OR 明显影线任一即可"），
+    # 夹角不满足但拐点影线明显（影线≥实体2倍）→ 放行进入优势判断
     if position.direction == "long":
         left_win = max(0, pivot_idx - 5)
         left_high_idx = left_win + int(np.argmax(high[left_win:pivot_idx]))
         left_slope = (high[left_high_idx] - low[pivot_idx]) / max(pivot_idx - left_high_idx, 1)
         right_slope = (post_high - low[pivot_idx]) / max(post_idx - pivot_idx, 1)
-        if right_slope < left_slope:
+        if right_slope < left_slope and not angle_or_shadow:
             return None
+        if right_slope < left_slope:
+            opens_v = df["开盘"].values
+            body_v = abs(close[pivot_idx] - opens_v[pivot_idx])
+            shadow_v = (high[pivot_idx] - low[pivot_idx]) - body_v
+            if not (shadow_v > body_v * 2):
+                return None
     else:
         left_win = max(0, pivot_idx - 5)
         left_low_idx = left_win + int(np.argmin(low[left_win:pivot_idx]))
         left_slope = (low[pivot_idx] - low[left_low_idx]) / max(pivot_idx - left_low_idx, 1)
         right_slope = (low[pivot_idx] - post_low) / max(post_idx - pivot_idx, 1)
-        if right_slope < left_slope:
+        if right_slope < left_slope and not angle_or_shadow:
             return None
+        if right_slope < left_slope:
+            opens_v = df["开盘"].values
+            body_v = abs(close[pivot_idx] - opens_v[pivot_idx])
+            shadow_v = (high[pivot_idx] - low[pivot_idx]) - body_v
+            if not (shadow_v > body_v * 2):
+                return None
 
     # 评估优势因素
     advantages = 0
@@ -171,11 +194,11 @@ def check_trailing_stop(position: Position, df: pd.DataFrame, r_boundary: float 
         if advantages < 1:
             return None
 
-    # 计算新止损价
+    # 计算新止损价（R-055：回撤比例参数化 trail_retreat，默认 0.10 教学值）
     if position.direction == "long":
-        new_stop = low[pivot_idx] - (position.highest_price - low[pivot_idx]) * 0.1
+        new_stop = low[pivot_idx] - (position.highest_price - low[pivot_idx]) * trail_retreat
     else:
-        new_stop = high[pivot_idx] + (high[pivot_idx] - position.lowest_price) * 0.1
+        new_stop = high[pivot_idx] + (high[pivot_idx] - position.lowest_price) * trail_retreat
 
     # 老师硬规则：移动获利点必须在进场位正向（做多止损高于进场价，做空低于）
     if position.direction == "long":
@@ -336,13 +359,27 @@ def position_zone(position: Position) -> str:
     return "亏损区"
 
 
-def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
+def evaluate_exit(position: Position, df: pd.DataFrame,
+                  enable_breakeven: bool = True, enable_trailing: bool = True,
+                  enable_active: bool = True, enable_ttp: bool = True) -> dict:
     """综合离场评估
 
     按优先级检查所有离场条件。2026-08-04 增强：
     - 止盈价（方向/市场类别区分）
     - 分批平仓建议（>5R 全出 / <5R 平一半）
     - 持仓区间标注（波段三区间）
+
+    R-057（2026-08-11 老板拍板）：4 开关参数化分离各规则边际贡献——
+    默认全 True = 现状行为零变化（生产调用 sim_check/protect_card 不传参）；
+    实验组显式传 False 关闭对应规则（A 基线 = 全 False）。
+
+    Args:
+        position: 持仓对象
+        df: K线DataFrame
+        enable_breakeven: 层面2 1R 平保（R≥1 止损移成本价）
+        enable_trailing: 层面3 移动获利（拐点三要素）
+        enable_active: 主动出场（斜率骤变/波幅/放量）
+        enable_ttp: 层面4 36% 追踪获利（≥5R 且无移动获利点）
 
     Returns:
         {"should_exit": bool, "reason": str, "exit_price": float, "stop_update": float|None,
@@ -372,32 +409,38 @@ def evaluate_exit(position: Position, df: pd.DataFrame) -> dict:
                   "take_profit": result["take_profit"], "action": "full_exit", "zone": result["zone"]}
         return result
 
-    # 检查层面2：平价保护
-    bv = check_breakeven(position, close)
-    if bv is not None and bv != position.current_stop:
-        result["stop_update"] = bv
-        result["reason"] = f"平价保护触发(层面2), 止损移至{bv}"
+    # 检查层面2：平价保护（R-054 修复 2026-08-11：须 bv > current_stop 只升不降——
+    # 原 `!=` 在移动获利上移后会把止损降回成本位，A1 落库后即成真实回退）
+    ts = None
+    if enable_breakeven:
+        bv = check_breakeven(position, close)
+        if bv is not None and bv > position.current_stop:
+            result["stop_update"] = bv
+            result["reason"] = f"平价保护触发(层面2), 止损移至{bv}"
 
     # 检查层面3：移动获利
-    ts = check_trailing_stop(position, df)
-    if ts is not None and ts > position.current_stop:
-        result["stop_update"] = ts
-        result["reason"] = f"移动获利触发(层面3), 止损移至{ts}"
+    if enable_trailing:
+        ts = check_trailing_stop(position, df)
+        if ts is not None and ts > position.current_stop:
+            result["stop_update"] = ts
+            result["reason"] = f"移动获利触发(层面3), 止损移至{ts}"
 
     # 检查层面4：追踪获利（内训 19·5：>5R 且无合适移动获利点才启用——互斥）
-    tr = check_36pct_trail(position, has_trailing_stop=ts is not None)
-    if tr is not None and tr > position.current_stop:
-        result["stop_update"] = tr
-        result["reason"] = f"追踪获利触发(层面4), 止损移至{tr}"
+    if enable_ttp:
+        tr = check_36pct_trail(position, has_trailing_stop=ts is not None)
+        if tr is not None and tr > position.current_stop:
+            result["stop_update"] = tr
+            result["reason"] = f"追踪获利触发(层面4), 止损移至{tr}"
 
     # 检查主动出场（内训 19·6：环境前提有利可图+累耗失衡 + 拐点三特征）
-    active = detect_active_exit(position, df)
-    if active["signal"]:
-        if result["reason"]:
-            result["reason"] += "; "
-        result["reason"] += f"主动出场({','.join(active['features'])})"
-        result["should_exit"] = True
-        result["exit_price"] = close
+    if enable_active:
+        active = detect_active_exit(position, df)
+        if active["signal"]:
+            if result["reason"]:
+                result["reason"] += "; "
+            result["reason"] += f"主动出场({','.join(active['features'])})"
+            result["should_exit"] = True
+            result["exit_price"] = close
 
     # 分批平仓建议（老师口径：>5R 全出 TAP / <5R 平一半 THP）
     if result["should_exit"]:

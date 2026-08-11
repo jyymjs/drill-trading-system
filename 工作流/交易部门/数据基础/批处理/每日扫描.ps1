@@ -8,6 +8,33 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 function Write-Log($msg) {
     [System.IO.File]::AppendAllText($log, "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg`n", [System.Text.Encoding]::UTF8)
 }
+# 扫描批次 + 执行卡留档（2026-08-11 老板拍板：关键时刻溯源——065342 批次删除后
+# 无法核对触发价差异，教训入库）。当日全部批次（主+变体）与执行卡版本按时间戳归档
+# 到 产出\输出\归档\，每日多次生成全部保留，不覆盖。
+function Invoke-Archive {
+    param([string]$date)
+    $scanArch = "产出\输出\归档\扫描"
+    New-Item -ItemType Directory -Force -Path $scanArch | Out-Null
+    $files = Get-ChildItem '数据基础\扫描输出' -Filter "scan_result_${date}_*.csv" -ErrorAction SilentlyContinue
+    foreach ($f in $files) {
+        $dest = Join-Path $scanArch $f.Name
+        if (-not (Test-Path $dest)) { Copy-Item $f.FullName $dest -Force }
+    }
+    $cardArch = "产出\输出\归档\执行卡"
+    New-Item -ItemType Directory -Force -Path $cardArch | Out-Null
+    $card = "产出\输出\执行卡_$date.md"
+    if (Test-Path $card) {
+        $ts = Get-Date -Format 'HHmmss'
+        Copy-Item $card "$cardArch\执行卡_${date}_$ts.md" -Force
+    }
+    Write-Log "archive: $($files.Count) scan files + 执行卡 → 产出\输出\归档\"
+    # 归档目录 git 留档（2026-08-11 老板拍板：溯源硬保障——每日自动入库，失败不阻断）
+    try {
+        git add "产出/输出/归档/扫描" "产出/输出/归档/执行卡" 2>$null
+        git commit -m "chore: 每日扫描/执行卡归档（${date}）" 2>$null | Out-Null
+        Write-Log "archive git: ok"
+    } catch { Write-Log "archive git: fail ($_)" }
+}
 # 健康检查（R-034C，2026-08-07）：执行卡缺失 / 数据不新鲜 / 计划任务状态，异常集中一行一条写日志
 function Invoke-HealthCheck {
     param([string]$date)
@@ -44,6 +71,7 @@ if ($todayScan) {
     Write-Log "today scan already done, skip ($($todayScan.Name))"
     $daily = "产出\输出\扫描_$date.csv"
     if (-not (Test-Path $daily)) { Copy-Item $todayScan.FullName $daily -Force; Write-Log "report: $daily" }
+    Invoke-Archive -date $date
     Invoke-HealthCheck -date $date
     Write-Log "scan done (skipped)"
     exit 0
@@ -77,6 +105,8 @@ if ($src) { Copy-Item $src.FullName "产出\输出\扫描_$date.csv" -Force; Wri
 #     到价才成交）→ 到价成交/超期撤销/持仓出场——模拟线从此每天自动留痕
 & 'C:\Program Files\Python312\python.exe' main.py track sim-auto-open *>> $log
 & 'C:\Program Files\Python312\python.exe' main.py track sim-check *>> $log
+# 4.45 扫描批次留档（2026-08-11 老板拍板）：当日批次 + 执行卡版本 → 归档目录（溯源用）
+Invoke-Archive -date $date
 # 4.5 健康检查（R-034C，2026-08-07）：执行卡/数据新鲜度/计划任务，异常集中写日志（曲线更新前，供开场流程/日报读取）
 Invoke-HealthCheck -date $date
 # 5. 曲线自动更新（2026-08-07 老板拍板"从今天起记录曲线"）：R 值曲线 + 净值/修正收益率 + 双线对照

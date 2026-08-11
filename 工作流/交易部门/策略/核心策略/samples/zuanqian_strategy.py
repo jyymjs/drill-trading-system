@@ -1,5 +1,5 @@
 """
-钻潜交易系统 - 统一评级策略（V2 课程标准版）
+钻潜交易系统 - 统一评级策略（V4 课程标准版 · 评级/触发价口径 V3 起未变）
 
 基于路肖南钻潜交易内训 30 节课程 + 23 份市场扫描录屏提炼。
 评级体系严格遵循课程标准：DL / PT / LK / TY / DN / SF
@@ -51,7 +51,7 @@ def _slide_stats(arr, bars, starts):
 
 
 class ZuanQianStrategy(BaseStrategy):
-    """钻潜交易系统 - 统一评级策略 V2（课程标准版）"""
+    """钻潜交易系统 - 统一评级策略 V4（课程标准版 · 评级/触发价口径 V3 起未变）"""
 
     name = "钻潜评级策略"
     description = "基于钻潜交易系统6条件 DL/PT/LK/TY/DN/SF，输出S/A/B/C评级"
@@ -548,7 +548,7 @@ class ZuanQianStrategy(BaseStrategy):
     # ── 综合评级 ──
 
     def grade(self, df: pd.DataFrame) -> dict:
-        """对股票进行完整评级（V2 课程标准版）
+        """对股票进行完整评级（V4 课程标准版）
 
         A1 降级（2026-08-05 老板拍板）：有回踩但无明显反应（"碰一下慢慢蹭上去"）
         → 综合评级降一档（S→A / A→B / B→C），见下方 Tier 3 注释。

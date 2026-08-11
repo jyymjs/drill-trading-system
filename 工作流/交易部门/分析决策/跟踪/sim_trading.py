@@ -14,7 +14,8 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from 分析决策.风控 import exit_manager as em
-from 分析决策.风控.capital import RISK_RATIO, calc_trade_fee, get_capital, max_risk_per_trade
+from 分析决策.风控.capital import (RISK_RATIO, calc_trade_fee, get_capital,
+                               get_risk_ratio, max_risk_per_trade)
 from 分析决策.风控.position import Position
 
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
@@ -22,13 +23,13 @@ SIM_FILE = JOURNAL_DIR / "sim_journal.csv"
 
 SIM_COLUMNS = [
     "trade_id", "date", "symbol", "name", "direction", "market",
-    "entry_price", "stop_loss", "volume", "grade_at_entry",
-    "ty_high", "ty_low", "status",
+    "entry_price", "stop_loss", "trail_stop", "volume", "grade_at_entry",
+    "ty_high", "ty_low", "highest", "lowest", "status",
     "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
     "env_scale", "phase", "created_date",
 ]
 
-# 模拟线名义资金（2026-08-08 老板拍板「无资金限制对照线」）：10 万 × 2% 规则，
+# 模拟线名义资金（2026-08-08 老板拍板「无资金限制对照线」）：10 万 × 0.025 比例规则（V4，R-050 定案），
 # 与实盘线（capital.json 5600 元）分离——模拟线测试策略在正常资金下的应有表现，
 # 实盘受 5600 约束，双线对比 = 资金约束影响的量化参考（改策略前先看模拟线）。
 SIM_CAPITAL = 100_000.0
@@ -117,10 +118,9 @@ def check_affordability(price: float, risk_per_share: float,
 
     Returns: (股数, 拒绝原因) — 股数 <100 表示不可买
     """
-    from 分析决策.风控.capital import get_risk_ratio
     balance = capital if capital is not None else get_capital()
-    # 实盘路径读 capital.json 的风险比例（2026-08-08：支持注入后维持原风险额）；
-    # 模拟线路径（capital 显式传 SIM_CAPITAL）用策略定稿 RISK_RATIO=2% 不变
+    # 实盘路径读 capital.json 风险比例；模拟线路径（capital 显式传 SIM_CAPITAL）
+    # 用策略定稿 RISK_RATIO=0.025（R-050 定案 2026-08-11，≥2 万降档暂不采纳）
     ratio = RISK_RATIO if capital is not None else get_risk_ratio()
     risk_amt = balance * ratio * risk_scale
     if price <= 0 or risk_per_share <= 0:
@@ -219,7 +219,8 @@ def _day_open_scale() -> float | None:
     return min(scales)
 
 
-def _check_half_position(df, r: dict) -> dict:
+def _check_half_position(df, r: dict,
+                         capital: float | None = SIM_CAPITAL) -> dict:
     """0.5R 分步建仓·下一根收线确认检查（G3 · 2024-06-29 周会原文）
 
     开仓日 = journal 记录日期；确认收线 = 开仓日下一根 K 线。
@@ -250,37 +251,65 @@ def _check_half_position(df, r: dict) -> dict:
             break
     if entry_idx is None or entry_idx + 1 >= len(df):
         return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
-                "add_shares": 0, "add_price": 0.0}
+                "add_shares": 0, "add_price": 0.0, "open_close_ok": None,
+                "vol_ratio": None, "vol_ok": None}
+    # R-053 突破质量双条件（2026-08-11 老板拍板 · 恒绑定触发日 entry_idx，
+    # 不随 delay2 二判切片漂移——交易部审核 A-2）：
+    #   A 收盘站稳：触发日收盘 ≥ 触发价（entry_price = 云单触发价成交）
+    #   B 放量：触发日量比 > 1.5（分母 = 触发日前 20 日均量，不含触发日，tracking.py:316 同口径）
+    vols = df["成交量"].astype(float).values
+    open_close = float(df.iloc[entry_idx]["收盘"])
+    ref_vol = vols[max(0, entry_idx - 20):entry_idx]
+    ref_mean = float(ref_vol.mean()) if len(ref_vol) > 0 else 0.0
+    open_vol = float(df.iloc[entry_idx]["成交量"])
+    vol_ratio = round(open_vol / ref_mean, 2) if ref_mean > 0 else 0.0
+    open_close_ok = open_close >= entry_price
+    vol_ok = vol_ratio > 1.5
     verdict = half_position_confirm_delay2(df, entry_price, stop, entry_idx + 1)
     exit_date = str(dates[verdict["conf_idx_used"]])[:10]
+    _ab = {"open_close_ok": open_close_ok, "vol_ratio": vol_ratio, "vol_ok": vol_ok}
     if verdict["stopped"]:
         return {"action": "exit_stop", "close": stop, "exit_date": exit_date,
-                "reason": verdict["reason"], "add_shares": 0, "add_price": 0.0}
+                "reason": verdict["reason"], "add_shares": 0, "add_price": 0.0, **_ab}
     if verdict["wait"]:
         return {"action": "wait", "close": 0.0, "exit_date": "", "reason": "收线未出现",
-                "add_shares": 0, "add_price": 0.0}
+                "add_shares": 0, "add_price": 0.0, **_ab}
     if verdict["reject"]:
         if not verdict["second_checked"]:
             # 首根 reject 且 T+2 未到位（实时模拟逐日推进）→ 等待二次确认
             return {"action": "wait", "close": 0.0, "exit_date": "",
                     "reason": "首根未确认，等待延迟二次确认(T+2)",
-                    "add_shares": 0, "add_price": 0.0}
+                    "add_shares": 0, "add_price": 0.0, **_ab}
         return {"action": "exit_reject", "close": verdict["close"], "exit_date": exit_date,
                 "reason": f"分步建仓收线未确认({verdict['reason']})→0.5R平仓",
-                "add_shares": 0, "add_price": 0.0}
+                "add_shares": 0, "add_price": 0.0, **_ab}
+    # R-053 突破质量拦截：三条件确认后仍须 A/B 达标（恒绑定触发日——600315 型
+    # 盘中假突破+缩量：触发日收盘 < 触发价 或 量比 ≤1.5 → 确认失败平仓）
+    if not (open_close_ok and vol_ok):
+        parts = []
+        if not open_close_ok:
+            parts.append(f"开仓日收盘{open_close:.2f}<触发价{entry_price:.2f}")
+        if not vol_ok:
+            parts.append(f"缩量突破(量比{vol_ratio:.2f}≤1.5)")
+        return {"action": "exit_reject", "close": verdict["close"], "exit_date": exit_date,
+                "reason": f"突破质量不达标({'/'.join(parts)})→0.5R平仓",
+                "add_shares": 0, "add_price": 0.0, **_ab}
     # 确认 → 补仓 0.5R（等额；可买性检查防止资金/整手不足时盲目翻倍）
     # 2026-08-08 模拟线 10 万口径：补仓同用 SIM_CAPITAL（与起步 sim_open 一致，
     # 避免起步 10 万/补仓 5600 的仓位断层）
+    # 2026-08-11 修复：capital=None（实盘行，execution_card 显式传）→ 走实盘
+    # capital.json 口径（8401×0.025），此前实盘 0.5R 仓补仓量错用模拟线 10 万口径
     add_price = verdict["close"]
     risk_ps = entry_price - stop
     add_shares, reason = check_affordability(add_price, risk_ps, risk_scale=0.5,
-                                             capital=SIM_CAPITAL)
+                                             capital=capital)
     if add_shares < 100:
         return {"action": "hold", "close": add_price, "exit_date": "",
                 "reason": f"确认但补仓不可买({reason})，保持 0.5R",
-                "add_shares": 0, "add_price": 0.0}
+                "add_shares": 0, "add_price": 0.0, **_ab}
     return {"action": "add", "close": add_price, "exit_date": "",
-            "reason": "收线确认，补仓 0.5R", "add_shares": add_shares, "add_price": add_price}
+            "reason": "收线确认，补仓 0.5R", "add_shares": add_shares, "add_price": add_price,
+            **_ab}
 
 
 def sim_open(code: str, price: float, stop: float, grade: str = "",
@@ -581,15 +610,33 @@ def sim_check() -> str:
             _observe_update(r, "closed", note="分步建仓平仓")
             changed += 1
             continue
+        # R-054 动态止损（2026-08-11 老板拍板）：止损上移写 trail_stop 独立字段
+        # （stop_loss 保持原始结构止损 = R 基准不变）；旧行无 trail_stop → 用原始止损
+        # R-054 审核 P0-3：df 从进场日切片——check_trailing_stop 拐点窗口只认进场后
+        # 数据，防进场前 K 线污染（止损被错误拉到成本位+1分）
+        entry_idx = next((i for i, d in enumerate(
+            df["日期"].astype(str).str[:10].values) if d == r["date"]), None)
+        df_pos = df.iloc[entry_idx:] if entry_idx is not None else df
         pos = Position(symbol=code, direction="long", market="stock",
                        entry_price=float(r["entry_price"]),
                        initial_stop=float(r["stop_loss"]),
-                       current_stop=float(r["stop_loss"]),
+                       current_stop=float(r.get("trail_stop") or r["stop_loss"]),
                        volume=int(r["volume"]),
                        ty_high=float(r["ty_high"] or 0),
                        ty_low=float(r["ty_low"] or 0),
                        grade_at_entry=r["grade_at_entry"])
-        verdict = em.evaluate_exit(pos, df)
+        # V4 审核 P0-2：注入持有期极值（journal highest/lowest 持久化——
+        # 层面3/4 需正确极值才不失真；旧行缺列 → 进场价初始化）
+        pos.highest_price = float(r.get("highest") or float(r["entry_price"]))
+        pos.lowest_price = float(r.get("lowest") or float(r["entry_price"]))
+        # V4 审核 P0-2：极值逐日维护落库（持有期最高/最低——层面3/4 依赖）
+        h_now = float(df["最高"].iloc[-1])
+        l_now = float(df["最低"].iloc[-1])
+        r["highest"] = f"{max(pos.highest_price, h_now):.2f}"
+        r["lowest"] = f"{min(pos.lowest_price, l_now):.2f}"
+        pos.highest_price = max(pos.highest_price, h_now)
+        pos.lowest_price = min(pos.lowest_price, l_now)
+        verdict = em.evaluate_exit(pos, df_pos)
         latest = df.iloc[-1]
         if verdict["should_exit"]:
             exit_price = verdict["exit_price"] or float(latest["收盘"])
@@ -609,7 +656,18 @@ def sim_check() -> str:
             _observe_update(r, "closed", note="四层出场")
             changed += 1
         else:
-            updates = f"止损移至{verdict['stop_update']}" if verdict.get("stop_update") else "持有中"
+            # V4 止损全量落库（2026-08-12 老板拍板：E 组合全开——无限期实验数据支持：
+            # B 纯平保无限期资金层 -57%/-77% 回撤灾难，必须有锁利规则；E 全开无限期
+            # 近7年 +997.7%/-15.6% 最优）。R-054 曾收窄为仅层面2（审核 P1-8 待 B 判定），
+            # B 判定完成（R-057 + 无限期实验）→ 全规则 stop_update 落库 trail_stop
+            # （层面2 平保/层面3 移动获利/层面4 TTP 只升不降）；主动出场 should_exit
+            # 由 evaluate_exit 自动执行（现状已生效）
+            if verdict.get("stop_update"):
+                r["trail_stop"] = f"{verdict['stop_update']:.2f}"
+                changed += 1
+                updates = f"止损移至{verdict['stop_update']}"
+            else:
+                updates = "持有中"
             out.append(f"  {code}: {updates}（现{float(latest['收盘']):.2f}，R={pos.current_r_multiple(float(latest['收盘'])):+.2f}）")
     if changed:
         _write_all(rows)

@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from 分析决策.跟踪 import sim_trading
-from 分析决策.风控.capital import get_capital
+from 分析决策.风控.capital import get_capital, get_risk_ratio
 
 _CARD_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出"
 
@@ -50,14 +50,15 @@ def env_day_scale() -> tuple[float, str]:
 
 
 def order_card(candidates: list[dict], capital: float | None = None,
-               risk_ratio: float = 0.02, sort_by: str = "risk_mid") -> str:
+               risk_ratio: float | None = None, sort_by: str = "risk_mid") -> str:
     """挂单指引卡：当日环境档 → 新候选 1R/0.5R 挂单指引
 
     Args:
         candidates: prebreak 候选（需含 code/name/触发价/止损价/每股风险/评级，
             与 scanner prebreak 输出结构一致）
-        capital: 当日资金（缺省读取 capital.json；5600 → 1R 风险额 112 元）
-        risk_ratio: 单笔风险比例（实盘线定稿 2%，G9 2026-08-06 老板拍板）
+        capital: 当日资金（缺省读取 capital.json）
+        risk_ratio: 单笔风险比例（缺省 None = get_risk_ratio() 资金阶梯动态值，
+            V4 定案 2026-08-12：风险额 0.025×当前资金，无限制上限（≥2 万降档未采纳）
         sort_by: 候选排序（2026-08-06 老板拍板质量优先，T-032 定案）：
             "risk_mid"=每股风险居中优先（|每股风险-1.5| 升序，默认）；
             "none"=扫描原序
@@ -67,6 +68,7 @@ def order_card(candidates: list[dict], capital: float | None = None,
     """
     scale, note = env_day_scale()
     cap = capital if capital is not None else get_capital()
+    risk_ratio = risk_ratio if risk_ratio is not None else get_risk_ratio()
     risk_amt = round(cap * risk_ratio * scale, 2)
     today = datetime.now().strftime("%Y-%m-%d")
     W = 76
@@ -76,9 +78,27 @@ def order_card(candidates: list[dict], capital: float | None = None,
         candidates = sorted(candidates,
                             key=lambda r: abs((r.get("每股风险", 0) or 0) - 1.5))
     out = [line, f"〔挂单指引卡〕{today} 当日环境档 = {label}（{note}）".center(W), line]
-    out.append(f"  新候选挂单路径：{'1R 正常挂单' if scale == 1.0 else '0.5R 试探挂单'}"
-               f" | 单笔风险额 {risk_amt:.0f} 元（{cap:.0f}×{risk_ratio:.0%}"
-               f"{'×0.5' if scale != 1.0 else ''}）")
+    # R-046 配置行（2026-08-11 老板拍板：风险额 = 0.025×资金，上限无限制）
+    out.append(f"  💰 当前配置：资金 {cap:.0f} 元 | 单笔风险额 {risk_amt:.0f} 元"
+               f"（{cap:.0f}×{risk_ratio:.4%}{'×0.5' if scale != 1.0 else ''}）"
+               f" | 持仓上限：无限制（有 S 级候选就买）")
+    # R-051 挂单资金占用校验（2026-08-11 老板拍板采纳）：已持占用 + 潜在补仓 +
+    # 新候选触发占用 vs 余额——防多笔试探仓触发后资金链断裂（补仓日余额不足
+    # 按 R-051 规则维持 0.5R 不补，但挂单前先给提示）
+    _held = _open_hold_cost()
+    _pend = _open_pending_add()
+    # 新挂单触发占用只算有效候选（触发/止损/每股风险 >0——排除 600001 类池外/参数无效票
+    # 混入占用计算，2026-08-11 实测发现：600001 触发 10.00/止损 0.00 曾污染占用数字）
+    _trig = sum(float(r.get("触发价", 0) or 0) * 100 for r in candidates
+                if (r.get("触发价", 0) or 0) > 0 and (r.get("止损价", 0) or 0) > 0
+                and (r.get("每股风险", 0) or 0) > 0)
+    _total = _held + _pend + _trig
+    _left = cap - _total
+    _flag = " ⚠️ 超支风险" if _left < 0 else ""
+    out.append(f"  💰 资金占用校验：已持 {_held:.0f} + 待补仓 {_pend:.0f}"
+               f" + 新挂单触发 {_trig:.0f} = {_total:.0f} 元 / 资金 {cap:.0f} 元"
+               f"（剩余 {_left:.0f} 元）{_flag}")
+    out.append(f"  新候选挂单路径：{'1R 正常挂单' if scale == 1.0 else '0.5R 试探挂单'}")
     if scale != 1.0:
         out.append("  流程（0.5R 试探 → 次日收线确认，2024-06-29 周会原文）：")
         out.append("    次日收盘 ①≥进场价（收下去）②≥开仓日收盘（动能延续）"
@@ -123,6 +143,15 @@ def order_card(candidates: list[dict], capital: float | None = None,
             note_s = f"挂单 {shares} 股（风险 {risk_ps * shares:.0f} 元 ≤ {risk_amt:.0f} 元）"
         out.append(f"  [{grade}] {code} {name} | 触发 {trigger:.2f} | 止损 {stop:.2f}"
                    f" | 每股风险 {risk_ps:.2f} | {label}: {note_s}")
+        # R-053 量能状态标注（2026-08-11 老板拍板）：挂单时可见——当前量比 <1.5
+        # 表示量能不足（突破日需量比>1.5 才确认，dn_confirm 口径）；仅参考，
+        # 最终以触发日收盘后确认判定（突破日量比挂单时不可知，无前视）
+        cur_ratio = r.get("当前量比", 0) or 0
+        vol_th = r.get("放量阈值", 0) or 0
+        if cur_ratio > 0:
+            flag = "✅" if cur_ratio > 1.5 else "⚠️"
+            out.append(f"      📋 量能状态：当前量比 {cur_ratio} {flag}"
+                       f"（放量阈值 {vol_th:.0f} 手 = 前20日均量×1.5；突破日量比>1.5 才确认）")
         if shares >= 100:
             # 云条件单录入参数（2026-08-08 老板提供券商可用单型：股价条件-突破/回落）
             # 买入 =「股价条件-突破」（≥触发价买入）；止损 =「股价条件-回落」（≤止损价卖出）
@@ -138,16 +167,103 @@ def order_card(candidates: list[dict], capital: float | None = None,
     return "\n".join(out)
 
 
+def _open_hold_cost() -> float:
+    """实盘已持 open 持仓的资金占用（Σ 进场价×股数，只读 trade_journal）
+
+    R-051 挂单资金占用校验用（2026-08-11 老板拍板采纳）。
+    只读实盘账本——模拟盘 10 万名义资金与实盘 8,401 无关，不得混入校验。
+    """
+    from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
+    rows = _get_live()
+    return sum(float(r.get("entry_price", 0) or 0) * int(r.get("volume", 0) or 0)
+               for r in rows if r.get("status") == "open")
+
+
+def _open_pending_add() -> float:
+    """实盘待补仓资金（未确认 0.5R 试探仓的等额补仓款，Σ 进场价×股数）
+
+    R-051 挂单资金占用校验用（2026-08-11 老板拍板采纳）。只读实盘账本。
+    """
+    from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
+    rows = _get_live()
+    return sum(float(r.get("entry_price", 0) or 0) * int(r.get("volume", 0) or 0)
+               for r in rows if r.get("status") == "open" and r.get("phase") == "half")
+
+
+def cloud_order_reminder() -> str:
+    """云条件单到期提醒板块（2026-08-11 老板拍板：每日执行卡提醒未触发到期单）
+
+    读 交易日志/云条件单跟踪.md 的「挂单中」行 → 挂单日 + 3 个交易日（策略有效期，
+    突破 69% 发生在 3 日内）判定 → ⚠️ 到期撤单重挂 / 剩余交易日提示。
+    已成交行的止损单（保护仓）不提醒——长期有效；只有「挂单中」的买入单提醒。
+    老板未设券商有效期（长期挂）→ 按策略 3 交易日提醒，防价格过时后旧单失效。
+
+    Returns:
+        提醒板块文本（无挂单中单 → 一行说明）
+    """
+    import re
+    import numpy as np
+    W = 76
+    line = "-" * W
+    today = datetime.now().strftime("%Y-%m-%d")
+    f = Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md"
+    out = [line, f"〔云条件单到期提醒〕{today}".center(W), line]
+    pending = []
+    if f.exists():
+        for ln in f.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"\| (\d{6}) (.+?) \| (\d{4}-\d{2}-\d{2}) \| ≥ ([\d.]+) \| ≤ ([\d.]+) \| (\d+) \| (.+?) \|", ln)
+            if m:
+                code, name, gd, trig, stop, vol, status = m.groups()
+                if "挂单中" in status:
+                    pending.append({"code": code, "name": name, "date": gd,
+                                    "trigger": float(trig), "stop": float(stop),
+                                    "vol": int(vol)})
+    if not pending:
+        out.append("  无挂单中的买入条件单（今日无到期提醒）")
+        out.append(line)
+        return "\n".join(out)
+    for p in pending:
+        try:
+            days = int(np.busday_count(np.datetime64(p["date"]), np.datetime64(today)))
+        except (TypeError, ValueError):
+            days = 0
+        remain = 3 - days  # 有效期 3 个交易日
+        if remain <= 0:
+            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"挂单 {p['date'][5:]} 起已 {days} 个交易日未触发 → "
+                       f"**到期撤单重挂**（价格可能已过时，请核对最新执行卡参数）")
+        else:
+            out.append(f"  ⏳ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"挂单 {p['date'][5:]}，剩 {remain} 个交易日有效"
+                       f"（{p['vol']} 股 0.5R 试探）")
+    out.append(line)
+    return "\n".join(out)
+
+
 def _iter_half_positions(rows: list[dict] | None = None) -> list[dict]:
     """在持 0.5R 试探仓（phase=="half" 且 status=="open"）
 
-    数据源：sim_journal（模拟层，G3 定案后由 sim_open 写入 phase 列）；
-    兼容 trade_journal 带 phase 列的行（实盘录入 0.5R 时手动标注 phase=half，
-    见 README 说明——判定逻辑一致，不复制）。
+    数据源：sim_journal（模拟层，G3 定案后由 sim_open 写入 phase 列）+
+    trade_journal（实盘层，2026-08-10 补漏：注释声称的"兼容 trade_journal
+    带 phase 列的行"此前未实现——实盘 0.5R 仓进不了分步确认卡，本次补上；
+    trade_journal 已扩为同构 21 列，判定逻辑一致）。
+
+    每行附 `_source` 来源标记（"live"/"sim"，2026-08-11 新增）：
+    position_card 据此选择补仓资金口径——实盘行走 capital.json
+    （8401×0.025），模拟行走 SIM_CAPITAL（10 万名义）；此前实盘行补仓量
+    错用模拟线口径（600833 100 股实盘仓提示补 2300 股，已修）。
     """
     if rows is None:
         rows = sim_trading._read_all()
-    return [r for r in rows if r.get("phase") == "half" and r.get("status") == "open"]
+        from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
+        rows = rows + _get_live()
+    out = []
+    for r in rows:
+        if r.get("phase") == "half" and r.get("status") == "open":
+            r = dict(r)
+            r["_source"] = "live" if str(r.get("trade_id", "")).startswith("LIVE") else "sim"
+            out.append(r)
+    return out
 
 
 def position_card(rows: list[dict] | None = None) -> str:
@@ -185,15 +301,20 @@ def position_card(rows: list[dict] | None = None) -> str:
         if df is None or len(df) < 2:
             out.append(f"  {code} {name}: 数据不足，无法判定（明日重试）")
             continue
-        step = sim_trading._check_half_position(df, r)
+        # 补仓资金口径（2026-08-11）：实盘行 → capital.json（None）；模拟行 → SIM_CAPITAL
+        capital = None if r.get("_source") == "live" else sim_trading.SIM_CAPITAL
+        step = sim_trading._check_half_position(df, r, capital=capital)
         act = step["action"]
         entry = float(r["entry_price"])
         stop = float(r["stop_loss"])
         held = int(r.get("volume", 0))
         if act == "add":
+            # R-051 规则（2026-08-11 老板拍板采纳）：确认补仓时余额不足 → 维持 0.5R 不补
+            add_cost = float(step.get("add_price", 0) or 0) * int(step.get("add_shares", 0) or 0)
             out.append(f"  ✅ {code} {name}: 收线确认（{step['reason']}）→ "
                        f"补 0.5R 挂单 {step['add_shares']} 股 @ {step['add_price']:.2f}"
-                       f"（等额，总 {held + step['add_shares']} 股 = 1R）")
+                       f"（等额，总 {held + step['add_shares']} 股 = 1R，约需 {add_cost:.0f} 元）")
+            out.append(f"      📋 R-051 规则：补仓日余额不足 → 维持 0.5R 不补（半仓持有到出场）")
         elif act == "exit_stop":
             out.append(f"  🛑 {code} {name}: 确认日触止损（{step['reason']}）→ 按止损 {stop:.2f} 平仓")
         elif act == "exit_reject":
@@ -211,6 +332,80 @@ def position_card(rows: list[dict] | None = None) -> str:
             ttp_target = entry + 5.0 * risk_ps
             out.append(f"      📋 止盈云条件单「回落卖出」：价格达 {ttp_target:.2f} 后"
                        f"回落 36% → 卖出（5R 目标，G7 界）")
+        # R-053 突破质量判定显示（2026-08-11 老板拍板：开仓日收盘站稳 + 放量双条件；
+        # 数据来自 _check_half_position 返回值，此处只展示不复制——单一来源约定）
+        if step.get("open_close_ok") is not None:
+            ab = (f"      📋 突破质量：收盘站稳{'✅' if step['open_close_ok'] else '❌'}"
+                  f"（开仓日收 ≥ 触发价）| 放量 {step.get('vol_ratio')} "
+                  f"{'✅' if step.get('vol_ok') else '❌'}（量比>1.5 达标）")
+            out.append(ab)
+    out.append(line)
+    return "\n".join(out)
+
+
+def protect_card(rows: list[dict] | None = None) -> str:
+    """持仓保护卡（R-054 2026-08-11 老板拍板）：全部 open 持仓的动态止损状态
+    ——现止损 → 建议止损（1R 平保/移动获利/TTP 依据，exit_manager.evaluate_exit
+    唯一来源不复制）+ 当前 R。老板每日照卡改券商云单止损价（实盘只能手动）。
+
+    Args:
+        rows: 持仓行（缺省读 sim_journal + trade_journal 全部 open）
+    """
+    from 分析决策.风控.exit_manager import Position, evaluate_exit
+    from 数据基础.数据.fetcher import get_daily_kline
+
+    if rows is None:
+        rows = sim_trading._read_all()
+        from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
+        rows = rows + _get_live()
+    opens = [r for r in rows if r.get("status") == "open"]
+    W = 76
+    line = "-" * W
+    today = datetime.now().strftime("%Y-%m-%d")
+    out = [line, f"〔持仓保护卡〕{today} 动态止损（R-054 老板拍板）".center(W), line]
+    if not opens:
+        out.append("  无在持仓（动态止损不适用）")
+        out.append(line)
+        return "\n".join(out)
+    for r in opens:
+        code = r.get("symbol", "?")
+        name = r.get("name", "") or ""
+        live = str(r.get("trade_id", "")).startswith("LIVE")
+        try:
+            df = get_daily_kline(code, use_cache=True)
+        except Exception:  # noqa: BLE001 - 数据失败不阻断其他持仓
+            continue
+        if df is None or len(df) < 2:
+            continue
+        entry = float(r["entry_price"])
+        stop = float(r.get("trail_stop") or r["stop_loss"])
+        # R-054 审核 P0-3：df 从进场日切片（防进场前 K 线污染拐点判定）
+        entry_idx = next((i for i, d in enumerate(
+            df["日期"].astype(str).str[:10].values) if d == r["date"]), None)
+        df_pos = df.iloc[entry_idx:] if entry_idx is not None else df
+        pos = Position(symbol=code, direction="long", market="stock",
+                       entry_price=entry, initial_stop=float(r["stop_loss"]),
+                       current_stop=stop, volume=int(r.get("volume", 0)),
+                       ty_high=float(r.get("ty_high") or 0),
+                       ty_low=float(r.get("ty_low") or 0),
+                       grade_at_entry=r.get("grade_at_entry", ""))
+        # V4 审核 P0-2：注入持有期极值（journal highest/lowest 持久化列；
+        # 旧行缺列 → 以进场价初始化——层面3/4 需正确极值才不失真）
+        pos.highest_price = float(r.get("highest") or entry)
+        pos.lowest_price = float(r.get("lowest") or entry)
+        v = evaluate_exit(pos, df_pos)   # V4 审核 P1-6 修复：传 df_pos（此前算而未用）
+        latest = df.iloc[-1]
+        r_now = pos.current_r_multiple(float(latest["收盘"]))
+        src = "实盘" if live else "模拟"
+        head = f"  {code} {name}（{src} {r.get('volume')} 股 @{entry:.2f}）| R={r_now:+.2f}"
+        if v.get("should_exit"):
+            # V4 审核 P1-5：主动出场卖出建议（实盘人工执行入口）
+            out.append(f"{head}\n      ⚠️ 主动出场信号 → 建议卖出（{v['reason']}）")
+        elif v.get("stop_update"):
+            out.append(f"{head}\n      止损 {stop:.2f} → 建议 {v['stop_update']:.2f}"
+                       f"（{v['reason']}）——照此改云单止损价")
+        else:
+            out.append(f"{head}\n      止损维持 {stop:.2f}（未达上移条件）")
     out.append(line)
     return "\n".join(out)
 
@@ -220,7 +415,7 @@ def system_status(rows: list[dict] | None = None) -> str:
 
     警报项（触发仅提醒，不停止交易——实盘三纪律：连亏期别慌）：
       ① 连败预警：sim_journal 已平仓连续止损 ≥5 笔（蒙卡最大连败 18-22，5 为提醒线）
-      ② 在持仓位 + 板块分散提示（5 仓同板块 ≥2 时人工目检，G15 人工纪律保留）
+      ② 在持仓位 + 板块分散提示（同板块持仓 ≥3 只时人工目检——R-046 无限制上限下板块集中风险更大，G15 人工纪律保留）
       ③ 账户校验：journal 无任何记录 → 提示（数据缺失时执行卡结论不可信）
 
     Args:
@@ -261,7 +456,8 @@ def full_card(candidates: list[dict], rows: list[dict] | None = None,
     （T-022 同日覆盖；计划任务与手动调用同款）——扫描输出即挂单依据，不审核。
     """
     card = "〔系统状态〕\n" + system_status(rows) + "\n" \
-        + order_card(candidates, sort_by=sort_by) + "\n" + position_card(rows)
+        + order_card(candidates, sort_by=sort_by) + "\n" + position_card(rows) \
+        + "\n" + protect_card(rows) + "\n" + cloud_order_reminder()
     if write_file:
         _CARD_DIR.mkdir(parents=True, exist_ok=True)
         fname = _CARD_DIR / f"执行卡_{datetime.now().strftime('%Y%m%d')}.md"

@@ -107,7 +107,9 @@ def _final_pnl(p: dict, fee_out: float) -> float:
     half_phase 确认补仓的持仓：买入费用 = 两笔半仓佣金 + 补仓费（shares 已在
     补款时翻倍）；未确认/直开持仓：单笔买入费用。出场费 = 平仓实算。
     """
-    if p.get("half") and p.get("half_ok"):
+    if p.get("half") and p.get("half_ok") and not p.get("half_shortfall"):
+        # R-051 修复（交易部审核意见 2）：补仓失败笔（确认但没钱补，half_shortfall）
+        # 只付过一次买入佣金 → 不计双费（旧逻辑 half_ok 分支会多扣 1 次佣金+add_fee=0）
         fee_in = 2 * p.get("fee_in", 0) + p.get("add_fee", 0)
     else:
         fee_in = p.get("fee_in", 0)
@@ -123,14 +125,30 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                      half_phase: bool = False,
                      confirm_fn=None,
                      same_day_order: str = "time",
-                     cap_per_day: int = 0) -> dict:
+                     cap_per_day: int = 0,
+                     max_date: str | None = None,
+                     debug_rejects: bool = False,
+                     confirm_shortfall_skip: bool = False) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
+
+    R-049 扩展（2026-08-11 交易部审核通过，默认行为零变化）：max_date=传值 →
+    覆盖"数据末"判定（默认 None = sub 内最后信号日）——R-049 B2 滚动窗跑时传
+    真实数据末，窗内持仓可跨窗出场不截断（不引入未来信号，仅出场完整性）。
 
     Args:
         df: signals.csv 全量（需 mode/code/date/grade/close/stop/risk/entry_/exit_ 列）
         capital: 初始资金（元）
         risk_ratio: 单笔风险比例（初始资金 × 比例 = 单笔风险额；risk_growth=False 时恒定）
         max_positions: 最多同时持仓数（≥1；1 = 单持仓顺序）
+        max_date: 数据末覆盖（YYYY-MM-DD；None=现状）
+        debug_rejects: 被拒候选明细记录（R-050 审核修订，默认 False 零行为变化）：
+            True 时逐笔记录被拒候选 {code,date,risk_ps,reason,risk_amt_at} → res["rejects"]，
+            供选择偏差分析（资金不足错过集/超限集精确捕获——巨资对照法被证不可行，
+            风险额随资金同步放大使资金约束结构性不可消除）。
+        confirm_shortfall_skip: 补仓资金不足跳过（R-051 老板提议规则，默认 False 零行为
+            变化）：True 时模拟实盘无预留——开仓不冻结待补款（pending=0），确认日余额
+            不足 add_cost+fee 时跳过补仓（维持 0.5R 到出场，half_shortfall 标记、
+            reasons["补仓资金不足"] 计数）——评估"钱不够 0.5R 不补"对最终收益的影响。
         mode: normal / prebreak
         hold: 观察窗（'20d'）
         grades: 只做哪些评级（None=全部；默认由 CLI 传，老板约束=只做 S）
@@ -204,7 +222,8 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             raise ValueError(f"未知 same_day_order={same_day_order}")
         sub = sub.drop(columns=["_key"], errors="ignore")
     sub = sub.copy()
-    max_date = str(sub["date"].max())[:10] if len(sub) else ""  # 数据末交易日（持仓未完成判定）
+    if not max_date:
+        max_date = str(sub["date"].max())[:10] if len(sub) else ""  # 数据末交易日（持仓未完成判定）
 
     risk_amt = capital * risk_ratio                     # 单笔风险额（元；risk_growth 时随注入更新）
     max_risk_per_share = risk_amt / 100                  # 每股风险上限（整手 100 股）
@@ -218,6 +237,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
     trades: list[dict] = []     # 已平仓成交
     equity: list[dict] = []     # 资金曲线（起点快照 + 每笔平仓后快照 + 注入快照）
     reasons: dict[str, int] = {}
+    rejects: list[dict] = []   # debug_rejects=True 时逐笔被拒候选明细（R-050）
     peak, max_dd = capital, 0.0
 
     # half_phase（G3 0.5R 分步资金占用，2026-08-06 老板确认②）：
@@ -272,20 +292,39 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         #     补 0.5R（扣补仓款 + 手续费，资金占用补全）；不确认/触止损 → 无补款
         #     （该笔以半仓结束，平仓由下方"先平到期"处理——signals 的 phase_in
         #     引擎口径中 reject 日 = exit_date）。
+        # R-051 B 变体（审核意见 6）：确认日缺钱判定计入同日到期持仓回款——
+        # 实盘同日先回款后补款（平仓循环稍后入账），A 模式预留制顺序无关
+        if confirm_shortfall_skip:
+            _incoming = sum(p["exit_price"] * p["shares"]
+                            - calc_trade_fee(p["exit_price"] * p["shares"])
+                            for p in positions if p["exit_date"] <= date)
+            balance_eff = balance + _incoming
+        else:
+            balance_eff = balance
         for p in [p for p in positions if p.get("half") and not p.get("half_settled")]:
             if p["confirm_date"] and date >= p["confirm_date"]:
                 if p["half_ok"]:
                     # 确认补仓：扣补款 + 手续费；持仓翻倍至 1R（平仓回款口径随之
                     # 翻倍）。pnl 不在此算——统一在平仓循环按最终股数重算（单一口径）
                     fee_add = calc_trade_fee(p["add_cost"])
-                    balance -= p["add_cost"] + fee_add
-                    p["add_fee"] = fee_add
-                    p["shares"] *= 2
-                    p["risk_actual"] = round(p["risk_actual"] * 2, 2)
+                    if confirm_shortfall_skip and balance_eff < p["add_cost"] + fee_add:
+                        # R-051 B 变体（模拟实盘无预留）：确认日余额不足 → 不补，
+                        # 维持 0.5R 到出场（half_shortfall 标记供归因；R 不变金额减半）
+                        reasons["补仓资金不足"] = reasons.get("补仓资金不足", 0) + 1
+                        p["half_shortfall"] = True
+                    else:
+                        balance -= p["add_cost"] + fee_add
+                        balance_eff -= p["add_cost"] + fee_add  # 逐笔同步递减（同日多笔补款连续判定）
+                        p["add_fee"] = fee_add
+                        p["shares"] *= 2
+                        p["risk_actual"] = round(p["risk_actual"] * 2, 2)
                 p["half_settled"] = True
         # 1.5) 每日候选上限（2026-08-06 老板拍板挂单策略 A 模拟：同日只挂排序前 N）
         if cap_per_day and _day_cnt >= cap_per_day:
             reasons["每日候选上限(挂单前N)"] = reasons.get("每日候选上限(挂单前N)", 0) + 1
+            if debug_rejects:
+                rejects.append({"code": row["code"], "date": date, "risk_ps": risk_ps,
+                                "reason": "每日候选上限(挂单前N)", "risk_amt_at": round(risk_amt, 2)})
             continue
         _day_cnt += 1
         # 1) 先平到期持仓（exit_date ≤ 当前信号日 → 以该日成交价出场）
@@ -317,10 +356,15 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         # 3) 可买股数：资金上限与风险上限取 min，整手（100股）向下取整
         # half_phase 待补预留：确认未决（half 且 half_ok 且未 settle）的补仓款
         # 在确认日前不可用于其他开仓——半仓释放的资金只有"非待补部分"可用，
-        # 保证确认日补款余额恒充足（0.5R 分步资金占用的真实语义）
-        pending = sum(p.get("add_cost", 0) for p in positions
-                      if p.get("half") and p.get("half_ok")
-                      and not p.get("half_settled"))
+        # 保证确认日补款余额恒充足（0.5R 分步资金占用的真实语义）。
+        # R-051 B 变体（confirm_shortfall_skip=True）：不预留——模拟实盘无预留
+        # 机制（挂单多 → 触发多 → 确认日可能没钱补，缺钱按"补仓资金不足"跳过）
+        if confirm_shortfall_skip:
+            pending = 0
+        else:
+            pending = sum(p.get("add_cost", 0) for p in positions
+                          if p.get("half") and p.get("half_ok")
+                          and not p.get("half_settled"))
         avail = balance - pending
         half = False
         if risk_ps <= 0:
@@ -333,10 +377,14 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             shares = int(min(avail // price, risk_amt // risk_ps) / 100) * 100
         if shares < 100:
             if risk_ps > 0 and risk_amt // risk_ps < 100:
-                reasons[f"每股风险{risk_ps:.2f}超限(>{max_risk_per_share:.2f})"] = \
-                    reasons.get(f"每股风险{risk_ps:.2f}超限(>{max_risk_per_share:.2f})", 0) + 1
+                _reason = f"每股风险{risk_ps:.2f}超限(>{max_risk_per_share:.2f})"
+                reasons[_reason] = reasons.get(_reason, 0) + 1
             else:
-                reasons["资金不足"] = reasons.get("资金不足", 0) + 1
+                _reason = "资金不足"
+                reasons[_reason] = reasons.get(_reason, 0) + 1
+            if debug_rejects:
+                rejects.append({"code": row["code"], "date": date, "risk_ps": round(risk_ps, 3),
+                                "reason": _reason, "risk_amt_at": round(risk_amt, 2)})
             continue
         cost = price * shares
 
@@ -344,9 +392,15 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         ex_d = str(row[exit_date_col])
         if not ex_d or len(ex_d) < 8 or not ex_d[:4].isdigit():
             reasons["出场日期异常(坏数据行)"] = reasons.get("出场日期异常(坏数据行)", 0) + 1
+            if debug_rejects:
+                rejects.append({"code": row["code"], "date": date, "risk_ps": round(risk_ps, 3),
+                                "reason": "出场日期异常(坏数据行)", "risk_amt_at": round(risk_amt, 2)})
             continue
         if ex_d[:10] >= max_date:
             reasons["持仓未完成(数据末尾)"] = reasons.get("持仓未完成(数据末尾)", 0) + 1
+            if debug_rejects:
+                rejects.append({"code": row["code"], "date": date, "risk_ps": round(risk_ps, 3),
+                                "reason": "持仓未完成(数据末尾)", "risk_amt_at": round(risk_amt, 2)})
             continue
 
         # 5) 成交（整手，费用已含）
@@ -448,6 +502,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
         "max_positions": max_positions, "mode": mode, "hold": h, "grades": grades,
         "n_all": n_all, "n_exec": n_exec, "exec_rate": exec_rate,
         "reasons": reasons,
+        "rejects": rejects,   # debug_rejects=True 时被拒候选明细（R-050；默认空列表）
         "end_balance": balance, "total_pnl": total_pnl, "total_ret": total_ret,
         "total_invested": total_invested, "injected_total": injected_total,
         "n_inject_months": inject_plan_done,
@@ -472,6 +527,8 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
             "n_confirm": sum(1 for t in trades if t.get("half") and t.get("half_ok")),
             "n_reject": sum(1 for t in trades if t.get("half") and not t.get("half_ok")),
         },
+        # R-051：补仓资金不足笔数（confirm_shortfall_skip=True 时 reasons["补仓资金不足"]）
+        "n_confirm_shortfall": sum(1 for t in trades if t.get("half_shortfall")),
     }
 
 
@@ -559,6 +616,9 @@ def main() -> int:
           + "）")
     print(f"  最大回撤        {r['max_dd']:>10,.2f} 元（{r['max_dd_pct']:.1f}%），最长回撤时长 {r['dd_days']} 天"
           + ("（注入掩盖口径，扣除注入后真实回撤见注入对比脚本）" if args.monthly_inject > 0 else ""))
+    print("  ⚠️ 回撤口径警告（2026-08-10 R-041 补标）：本行与资金曲线均为【现金余额口径】"
+          "——买入占用现金不算持仓市值，回撤被系统性放大（实测 19.9% 真实回撤误报 99.8%）；"
+          "08-06 铁律已禁现金口径，真实回撤请跑 capital_dd_recalc.py（总资产口径）")
     print(f"  交易笔数        {r['n_exec']:>10,} 笔 | 年化 {r['per_year']:.1f} 笔 | 平均持有 {r['avg_hold_days']:.1f} 交易日")
     print(f"  胜率 / 平均R    {r['win_rate']:.1%} / {r['avg_r']:.3f}")
     if r["profit_factor"] == float("inf"):
@@ -569,7 +629,8 @@ def main() -> int:
     print(f"  单笔风险执行    min {r['risk_exec']['min']:.2f} / mean {r['risk_exec']['mean']:.2f} / "
           f"max {r['risk_exec']['max']:.2f} 元 | 超风险额违规 {r['risk_exec']['over_risk_amt']} 笔")
     print(line)
-    print("  说明：整手100股；费用已含（佣金万1.3最低1元+印花税万5卖出）；资金曲线=每笔平仓后已实现净值")
+    print("  说明：整手100股；费用已含（佣金万1.3最低1元+印花税万5卖出）；资金曲线=每笔平仓后已实现净值"
+          "（现金口径，见上方回撤口径警告）")
     print("  说明：单笔风险额 = 初始资金 × 风险比例（恒定，不随净值浮动；注入档可用 --risk-growth 随投入增长）")
     print(line)
     return 0

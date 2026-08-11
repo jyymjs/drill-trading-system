@@ -79,7 +79,7 @@ def _scan_report_already_today() -> str | None:
     """当日是否已产出扫描报告（T-022 当日去重，2026-08-06）
 
     幂等依据：OUTPUT_DIR（数据基础/扫描输出）下存在当日 scan_result_*.csv。
-    白天手动跑过 → 19:05 计划任务再跑时跳过，避免白跑 5 分钟 + 多份报告混淆。
+    白天手动跑过 → 18:05 计划任务再跑时跳过，避免白跑 5 分钟 + 多份报告混淆。
 
     Returns:
         已产出的报告文件名（str），当日无报告返回 None
@@ -93,11 +93,31 @@ def _scan_report_already_today() -> str | None:
 
 def cmd_scan(args):
     """全市场扫描"""
-    # T-022 当日去重：已产出当日扫描报告 → 跳过重复扫描（Windows 计划任务 19:05 重复触发场景）
+    # T-022 当日去重：已产出当日扫描报告 → 跳过重复扫描（Windows 计划任务 18:05 重复触发场景）
     existing = _scan_report_already_today()
     if existing:
         print(f"当日扫描报告已产出（{existing}），跳过重复扫描（T-022 当日去重）")
-        print("如需强制重扫：删除当日 scan_result 文件后再运行")
+        # 2026-08-11 改进（R-052 踩坑）：跳过重复扫描但**重新生成执行卡**——
+        # 老板手动要执行卡时无需删文件重扫。只认主 scan_result 文件（排除
+        # _vol/_c23/_grade/_broken 变体诊断文件——08-11 曾误读 _vol 导致候选
+        # 混入 A/B 级）。候选 = C23 达标行（挂单口径与完整扫描路径一致）。
+        try:
+            import pandas as pd
+            from 数据基础.配置.settings import OUTPUT_DIR
+            from datetime import datetime as _dt
+            today = _dt.now().strftime("%Y%m%d")
+            mains = [p for p in sorted(OUTPUT_DIR.glob(f"scan_result_{today}_*.csv"))
+                     if not any(x in p.name for x in ("_broken", "_c23", "_grade", "_vol"))]
+            if mains:
+                from 分析决策.跟踪.execution_card import full_card
+                d = pd.read_csv(mains[-1], encoding="utf-8-sig", dtype={"code": str})
+                cands = d[d["C23"] == "达标"].to_dict("records")
+                print(f"（重新生成执行卡：{mains[-1].name}，{len(cands)} 只候选）")
+                print(full_card(cands, sort_by="risk_mid"))
+            else:
+                print("⚠️ 未找到主 scan_result 文件——执行卡未更新，请核对扫描输出目录")
+        except Exception as exc:  # noqa: BLE001 - 执行卡重生成失败不阻断（可删文件重扫）
+            print(f"⚠️ 执行卡重新生成失败（{exc}）——如需完整扫描请删除当日 scan_result 后重跑")
         return
     # 旧数据标注（2026-08-06 容错）：增量更新失败重试后仍失败 → 扫描用旧数据继续，
     # 输出显著标注数据日期（每日扫描.ps1 设置 SCAN_STALE_DATA）
@@ -157,6 +177,16 @@ def cmd_scan(args):
                   f"{len(vol_rejected)} 只 ===")
             print_results(vol_rejected, mode=mode)
             save_results(vol_rejected, suffix="_vol")
+
+        # 2026-08-10 评级过滤（老板拍板：对齐 V2 文档口径——仅做 S 级）：
+        # A/B 级不参与挂单候选（保留供研究）；执行卡/模拟盘吃过滤后主表自动同步
+        from 分析决策.分析.scanner import apply_grade_filter
+        results, grade_rejected = apply_grade_filter(results)
+        if grade_rejected:
+            print(f"\n=== 评级过滤（非 S 级，不参与挂单候选，供研究）: "
+                  f"{len(grade_rejected)} 只 ===")
+            print_results(grade_rejected, mode=mode)
+            save_results(grade_rejected, suffix="_grade")
 
 
     if results:

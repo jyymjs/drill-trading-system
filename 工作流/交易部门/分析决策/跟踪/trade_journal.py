@@ -1,6 +1,7 @@
 """交易记录系统 — 记录每笔真实交易，计算统计指标"""
 import csv
 import os
+from datetime import datetime
 from pathlib import Path
 
 from 分析决策.风控.position import TradeRecord
@@ -8,11 +9,14 @@ from 分析决策.风控.position import TradeRecord
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 TRADES_FILE = JOURNAL_DIR / "trade_journal.csv"
 
+# 21 列，与 sim_journal.csv 同构（2026-08-10 扩列）：执行卡分步确认/双线对照/
+# 净值曲线共享读取口径；status 区分 open（在持）/closed（已平仓）。
 TRADE_COLUMNS = [
-    "trade_id", "date", "symbol", "name", "direction",
-    "entry_price", "exit_price", "volume",
-    "stop_loss", "r_multiple", "pnl",
-    "grade_at_entry", "exit_reason",
+    "trade_id", "date", "symbol", "name", "direction", "market",
+    "entry_price", "stop_loss", "trail_stop", "highest", "lowest",
+    "volume", "grade_at_entry", "ty_high", "ty_low", "status",
+    "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
+    "env_scale", "phase", "created_date",
 ]
 
 
@@ -25,15 +29,42 @@ def _ensure_file():
 
 
 def add_trade(trade: TradeRecord) -> None:
-    """添加一笔交易记录"""
+    """添加一笔已平仓交易记录（status=closed；完整账本口径）"""
     _ensure_file()
+    today = datetime.now().strftime("%Y-%m-%d")
     with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow([
             trade.trade_id, trade.entry_date, trade.symbol, trade.name,
-            trade.direction, trade.entry_price, trade.exit_price,
-            trade.volume, trade.stop_loss, trade.r_multiple,
-            trade.pnl, trade.grade_at_entry, trade.exit_reason,
+            trade.direction, "stock", trade.entry_price,
+            trade.stop_loss, trade.volume, trade.grade_at_entry,
+            "", "", "closed", trade.exit_price, trade.exit_date,
+            trade.exit_reason, trade.r_multiple, trade.pnl, "", "",
+            today,
+        ])
+
+
+def add_open_trade(trade_id: str, symbol: str, name: str,
+                   entry_price: float, stop_loss: float, volume: int,
+                   grade: str, ty_high: float = 0.0, ty_low: float = 0.0,
+                   env_scale: float = 1.0, phase: str = "",
+                   market: str = "stock", direction: str = "long",
+                   date: str | None = None) -> None:
+    """实盘开仓录入（status=open；0.5R 试探仓带 phase=half 可进执行卡分步确认）
+
+    2026-08-10 补：执行卡分步建仓持仓卡此前只认 sim_journal，实盘 0.5R 仓
+    录不进次日三条件确认——trade_journal 扩为同构 21 列后由
+    execution_card._iter_half_positions 合并读取。
+    """
+    _ensure_file()
+    today = date or datetime.now().strftime("%Y-%m-%d")
+    with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            trade_id, today, symbol, name, direction, market,
+            entry_price, stop_loss, volume, grade,
+            ty_high, ty_low, "open", "", "", "",
+            "", "", env_scale, phase, today,
         ])
 
 

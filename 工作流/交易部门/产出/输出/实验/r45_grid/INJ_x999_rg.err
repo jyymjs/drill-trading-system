@@ -1,0 +1,2 @@
+C:\Users\32032\Desktop\deepseek\工作流\交易部门\项目\回测系统\r44_position_grid.py:89: FutureWarning: Series.fillna with 'method' is deprecated and will raise in a future version. Use obj.ffill() or obj.bfill() instead.
+  curve["date"].astype(str).str[:10].map(inj_map).fillna(method="ffill").fillna(0.0)

@@ -39,45 +39,45 @@ class TestOrderCard:
     def test_1r_day_gives_full_risk_amount(self, monkeypatch):
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale",
                             lambda: 1.0)
-        text = execution_card.order_card([cand()], capital=5600, risk_ratio=0.02)
+        text = execution_card.order_card([cand()], capital=5600, risk_ratio=0.025)
         assert "1R 日" in text
-        assert "112 元" in text  # 5600×2%
-        assert "5600×2%" in text
+        assert "140 元" in text  # 5600×2.5%（R-050 配置行风险额断言）
+        assert "5600×" in text
 
     def test_05r_day_gives_half_risk_and_confirm_flow(self, monkeypatch):
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale",
                             lambda: 0.5)
-        text = execution_card.order_card([cand()], capital=5600, risk_ratio=0.02)
+        text = execution_card.order_card([cand()], capital=5600, risk_ratio=0.025)
         assert "0.5R 日" in text
-        assert "56 元" in text  # 5600×2%×0.5
+        assert "70 元" in text  # 5600×2.5%×0.5
         # 次日收线确认流程说明（三条件 + 补仓/平仓）
         assert "收线确认" in text
         assert "补 0.5R 至总 1R" in text
         assert "止损" in text
 
     def test_1r_day_shares_full_lot(self, monkeypatch):
-        """1R 日：风险额 112 → 每股风险 0.7 → 160 股 → 整手 100 股"""
+        """1R 日：每股风险 0.7 → 实盘资金 8401.26×0.025=210 → 210//0.7=300 股"""
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale",
                             lambda: 1.0)
         text = execution_card.order_card([cand(risk=0.7)], capital=5600,
-                                         risk_ratio=0.02)
-        assert "挂单 100 股" in text
+                                         risk_ratio=0.025)
+        assert "挂单 300 股" in text
 
     def test_05r_day_shares_half_budget(self, monkeypatch):
-        """0.5R 日：风险额 56 → 每股风险 0.5 → 112 股 → 100 股（半额预算手数）"""
+        """0.5R 日：每股风险 0.5 → 实盘资金 8401.26×0.025×0.5=105 → 105//0.5=210 → 200 股"""
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale",
                             lambda: 0.5)
         text = execution_card.order_card([cand(risk=0.5)], capital=5600,
-                                         risk_ratio=0.02)
-        assert "挂单 100 股" in text
-        assert "0.5R 半额风险预算（56 元）" in text
+                                         risk_ratio=0.025)
+        assert "挂单 200 股" in text
+        assert "0.5R 半额风险预算（70 元）" in text
 
     def test_unaffordable_marked(self, monkeypatch):
-        """0.5R 日：每股风险 0.7 → 半额预算 56/0.7=80 股 <100 → 不可买"""
+        """0.5R 日：每股风险 1.1 → 实盘半额预算 105/1.1=95 股 <100 → 不可买"""
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale",
                             lambda: 0.5)
-        text = execution_card.order_card([cand(risk=0.7)], capital=5600,
-                                         risk_ratio=0.02)
+        text = execution_card.order_card([cand(risk=1.1)], capital=5600,
+                                         risk_ratio=0.025)
         assert "不可买" in text
 
     def test_no_candidates(self, monkeypatch):
@@ -100,10 +100,10 @@ class TestPositionCard:
 
     def test_confirm_add_action(self, monkeypatch):
         """确认收线 → 补仓指令（开仓日 2025-01-06，确认日 2025-01-07 收阳走高）"""
-        # K线：01-03 阴 / 01-04 开仓（收盘 10.2）/ 01-05 确认（收盘 10.5 > 进场 10.2 且 > 开仓日收盘）
+        # K线：01-03 阴 / 01-04 开仓（收盘 10.2，放量 3M 量比 3.0 满足 R-053 B）/ 01-05 确认
         k = mk_kline([
             (10.0, 10.4, 9.9, 10.1, 1000000),
-            (10.1, 10.5, 10.0, 10.2, 1000000),   # 2025-01-04 开仓日
+            (10.1, 10.5, 10.0, 10.2, 3000000),   # 2025-01-04 开仓日（R-053 放量达标）
             (10.3, 10.7, 10.2, 10.5, 1000000),   # 2025-01-05 确认日
         ])
         monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
@@ -115,6 +115,37 @@ class TestPositionCard:
                "phase": "half", "status": "open"}
         text = execution_card.position_card(rows=[row])
         assert "补 0.5R 挂单 100 股 @ 10.50" in text
+
+    def test_live_row_add_uses_live_capital(self, monkeypatch):
+        """2026-08-11 修复：实盘行（LIVE trade_id）补仓走实盘口径 capital=None；
+        模拟行（SIM trade_id）走 SIM_CAPITAL——此前实盘 0.5R 仓补仓量错用
+        模拟线 10 万口径（600833 实盘 100 股提示补 2300 股）"""
+        k = mk_kline([
+            (10.0, 10.4, 9.9, 10.1, 1000000),
+            (10.1, 10.5, 10.0, 10.2, 3000000),   # 2025-01-04 开仓日（R-053 放量达标）
+            (10.3, 10.7, 10.2, 10.5, 1000000),   # 2025-01-05 确认日
+        ])
+        monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
+                            lambda code, use_cache=True: k)
+        captured = {}
+
+        def fake_afford(price, risk_ps, risk_scale=1.0, capital=None):
+            captured["capital"] = capital
+            return (100, "")
+
+        monkeypatch.setattr(execution_card.sim_trading, "check_affordability", fake_afford)
+        base = {"symbol": "600419", "name": "测试股", "date": "2025-01-04",
+                "entry_price": "10.20", "stop_loss": "9.80", "volume": "100",
+                "phase": "half", "status": "open"}
+        # 实盘行
+        captured.clear()
+        execution_card.position_card(rows=[dict(base, trade_id="LIVE20250104193001")])
+        assert captured.get("capital") is None, "实盘行补仓必须走实盘 capital.json 口径"
+        # 模拟行
+        captured.clear()
+        execution_card.position_card(rows=[dict(base, trade_id="SIM2025010402074601")])
+        assert captured.get("capital") == execution_card.sim_trading.SIM_CAPITAL, \
+            "模拟行补仓保持 SIM_CAPITAL（10 万名义）"
 
     def test_reject_exit_action(self, monkeypatch):
         """首根收盘跌破进场价 + T+2 仍未确认 → delay2 以 T+2 收盘平仓指令"""
@@ -188,3 +219,14 @@ class TestPositionCard:
                  "phase": "", "status": "open"}]
         text = execution_card.position_card(rows=rows)
         assert "无在持 0.5R 试探仓" in text
+
+
+class TestR051FundCheck:
+    def test_051_fund_occupancy_check(self, monkeypatch):
+        """R-051 挂单资金占用校验行（2026-08-11 老板拍板采纳）"""
+        monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale", lambda: 1.0)
+        monkeypatch.setattr(execution_card, "_open_hold_cost", lambda: 2000.0)
+        monkeypatch.setattr(execution_card, "_open_pending_add", lambda: 2000.0)
+        text = execution_card.order_card([cand(price=18.0)], capital=8401, risk_ratio=0.025)
+        assert "资金占用校验" in text
+        assert "已持 2000" in text and "待补仓 2000" in text and "新挂单触发 1800" in text

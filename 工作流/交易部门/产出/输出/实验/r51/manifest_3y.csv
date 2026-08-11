@@ -1,0 +1,3 @@
+﻿id,signals,capital,risk_ratio,max_positions,monthly_inject,min_date,window_min,window_max,risk_growth,note,skip,max_date,confirm_shortfall_skip
+A3y,产出/输出/backtest_r43_t2/signals.csv,8401.0,0.025,999,0.0,2023-01-01,,,False,A3y,False,,False
+B3y,产出/输出/backtest_r43_t2/signals.csv,8401.0,0.025,999,0.0,2023-01-01,,,False,B3y,False,,True

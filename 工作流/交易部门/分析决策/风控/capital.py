@@ -6,14 +6,18 @@ from pathlib import Path
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 CAPITAL_FILE = CONFIG_DIR / "capital.json"
 
-# G9 资金配置（2026-08-06 旧定稿：2.0% × 3 仓 → 2026-08-08 老板确认更新）：
-# 「8401 资金 + 单笔风险 108 元（capital.json risk_ratio 覆盖，1.29%×8401）+ 5 仓」
-# ——完整周期回测（7.5 年）B2_5 最优（+280.4%/回撤27.3%/avgR 0.986），且 108 元
-# 风险额质量全面优于 168 元（avgR 0.99~1.03 vs 0.75，连败冲击 9% vs 22% 击穿心态线）。
-# 推导口径仍与 calc_risk_by_drawdown 吻合（可承受 20% 回撤 ÷ 10 次连亏）；
-# RISK_RATIO=0.02 保留为策略默认（模拟线 10 万名义用），实盘经 capital.json 覆盖。
-# 注意：回测/模拟对照实验如需其他比例（如旧 1.5%），显式传参即可（均参数化）。
-RISK_RATIO = 0.02  # 单笔风险 = 总资金 × 2%
+# 资金配置（R-050 定案 2026-08-11 老板拍板，替代 R-046 单一比例口径）：
+# 「风险比例 = 0.025（2.5%）× 当前资金 + 仓位上限 = 无限制（只要有 S 级候选就买）」
+# ——依据 R-050 档位扩展与归因（交易部审核通过）：8401 档 0.025 近 7 年回撤 -16.3%
+# 安全（收益 +1534%/盈亏比 4.24，蒙卡 1 万次 100% 盈利 0% 破产）；26 年口径无顶
+# （0.03~0.04 平台 DDR 110~158）但近 7 年 0.030 起失控。
+# ⚠️ 资金 ≥2 万降档 0.012855 的建议（R-050 实测 30k 档 0.016 即破 -20% 线）
+# 老板 2026-08-11 暂不采纳、存疑待复议——当前统一只用 0.025，资金涨大后重新评估。
+# 注入机制（R-046 保留）：不定额不定时，每次注入老板同步金额 → apply_inject() 登记
+# → 风险额按 0.025×新资金自动重算；资金回落不自动降风险额。
+# 旧口径（R-039：8401/108 元/5 仓/月注入 3000；R-046：单一 0.012855）已废弃，
+# 文档级联见策略版本存档。
+RISK_RATIO = 0.025           # 单笔风险比例（R-050 定案：2.5%，老板拍板）
 
 
 def _ensure():
@@ -34,11 +38,11 @@ def get_capital() -> float:
 
 
 def get_risk_ratio() -> float:
-    """读取当前风险比例（capital.json 可覆盖；缺省 RISK_RATIO=2%）
+    """当前风险比例（R-050 定案 2026-08-11：统一 0.025；老板暂不采纳 ≥2 万降档）
 
-    2026-08-08 资金升级回测结论支持"注入不抬风险额"纪律：8/10 资金 8401
-    后维持 108 元单笔风险（比例 8401→0.012855），通过本函数落地——
-    max_risk_per_trade 与执行卡/模拟线实盘路径统一读此值。
+    capital.json 的 risk_ratio 字段可覆盖（apply_inject 同步）；缺省 0.025。
+    资金 ≥2 万降档 0.012855 的建议存疑待复议（R-050 实测 30k 档 0.016 破线）。
+    max_risk_per_trade 与执行卡/模拟线统一读此值。
     """
     _ensure()
     try:
@@ -49,12 +53,34 @@ def get_risk_ratio() -> float:
 
 
 def set_capital(amount: float, risk_ratio: float | None = None) -> None:
-    """更新资金（risk_ratio 缺省保持现值不变——注入不机械抬风险额纪律）"""
+    """更新资金（通用；risk_ratio 缺省保持现值）"""
     _ensure()
     rr = risk_ratio if risk_ratio is not None else get_risk_ratio()
     data = {"capital": amount, "risk_ratio": rr}
     with open(CAPITAL_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+def apply_inject(inject_amount: float) -> dict:
+    """注入登记（R-046 不定额注入机制 · 老板每次注入后同步调用）
+
+    新资金 = 现值 + 注入额；风险额按 0.025 × 新资金自动重算（R-050 定案统一比例，
+    ≥2 万降档暂不采纳）。资金回落（亏损致净值下跌）不自动降风险额——避免频繁
+    波动；净值大幅回落 >20% 时由总助提醒、老板拍板。
+
+    Args:
+        inject_amount: 本次注入金额（元，>0）
+
+    Returns:
+        {"capital": 新资金, "risk_ratio": 新比例, "risk_amt": 新单笔风险额}
+    """
+    if inject_amount <= 0:
+        raise ValueError(f"注入金额必须 >0，收到 {inject_amount}")
+    new_capital = round(get_capital() + inject_amount, 2)
+    new_ratio = RISK_RATIO  # R-050 统一比例（连续，不因注入次数变化）
+    set_capital(new_capital, new_ratio)
+    return {"capital": new_capital, "risk_ratio": new_ratio,
+            "risk_amt": round(new_capital * new_ratio, 2)}
 
 
 def max_risk_per_trade(scale: float = 1.0) -> float:

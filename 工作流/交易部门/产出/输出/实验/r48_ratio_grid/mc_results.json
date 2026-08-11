@@ -1,0 +1,6 @@
+[
+ {"capital": 8401.0, "risk_ratio": 0.025, "n_exec": 946, "avg_r": 0.876, "prob_profit": 1.0, "ruin_rate": 0.0, "fin_p05": 699.9, "fin_p50": 827.3, "fin_p95": 960.0, "dd_p05": 6.1, "dd_p50": 8.3, "dd_p95": 12.4, "streak_max": 23},
+ {"capital": 8401.0, "risk_ratio": 0.012855, "n_exec": 784, "avg_r": 0.852, "prob_profit": 1.0, "ruin_rate": 0.0, "fin_p05": 556.4, "fin_p50": 666.7, "fin_p95": 783.1, "dd_p05": 6.1, "dd_p50": 8.4, "dd_p95": 12.5, "streak_max": 24},
+ {"capital": 100000.0, "risk_ratio": 0.025, "n_exec": 938, "avg_r": 0.91, "prob_profit": 1.0, "ruin_rate": 0.0, "fin_p05": 723.3, "fin_p50": 851.8, "fin_p95": 987.6, "dd_p05": 5.8, "dd_p50": 7.8, "dd_p95": 11.4, "streak_max": 22},
+ {"capital": 100000.0, "risk_ratio": 0.012855, "n_exec": 1026, "avg_r": 0.906, "prob_profit": 1.0, "ruin_rate": 0.0, "fin_p05": 795.5, "fin_p50": 927.5, "fin_p95": 1067.5, "dd_p05": 6.1, "dd_p50": 8.1, "dd_p95": 12.0, "streak_max": 21}
+]

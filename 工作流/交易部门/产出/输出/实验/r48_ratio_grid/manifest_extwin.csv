@@ -1,0 +1,9 @@
+﻿id,signals,capital,risk_ratio,max_positions,monthly_inject,min_date,window_min,window_max,risk_growth,note,skip,max_date
+W01,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,8401.0,0.03,999,0.0,2019-01-01,,,False,扩展档近7年 0.0300×8401,False,
+W02,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,8401.0,0.04,999,0.0,2019-01-01,,,False,扩展档近7年 0.0400×8401,False,
+W03,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,30000.0,0.03,999,0.0,2019-01-01,,,False,扩展档近7年 0.0300×30000,False,
+W04,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,30000.0,0.04,999,0.0,2019-01-01,,,False,扩展档近7年 0.0400×30000,False,
+W05,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,50000.0,0.03,999,0.0,2019-01-01,,,False,扩展档近7年 0.0300×50000,False,
+W06,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,50000.0,0.04,999,0.0,2019-01-01,,,False,扩展档近7年 0.0400×50000,False,
+W07,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,100000.0,0.03,999,0.0,2019-01-01,,,False,扩展档近7年 0.0300×100000,False,
+W08,C:\Users\32032\Desktop\deepseek\工作流\交易部门\产出\输出\backtest_r43_t2\signals.csv,100000.0,0.04,999,0.0,2019-01-01,,,False,扩展档近7年 0.0400×100000,False,

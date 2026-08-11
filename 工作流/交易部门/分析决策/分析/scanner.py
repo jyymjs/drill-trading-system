@@ -160,6 +160,11 @@ def scan_single_stock(
                     ref_vol = df["成交量"].iloc[max(0, len(df) - 21):len(df) - 1]
                     ref_mean = float(ref_vol.mean()) if len(ref_vol) > 0 else 0.0
                     entry["放量阈值"] = round(ref_mean * 1.5, 0) if ref_mean > 0 else 0
+                    # R-053 当前量比（2026-08-11 老板拍板）：最新日量 / 前20日均量——
+                    # 执行卡挂单指引展示用（挂单时突破日量比不可知，仅参考标注）
+                    latest_vol = float(df["成交量"].iloc[-1])
+                    entry["当前量比"] = (round(latest_vol / ref_mean, 2)
+                                        if ref_mean > 0 else 0.0)
 
                     # 2026-08-06 C23 替换进策略（老板拍板：S 级 + dn_confirm 1.5 +
                     # 动量≤10% + 止损距离 0.5~3 元；现方案封存见 策略/核心策略/策略版本存档.md）。
@@ -344,6 +349,28 @@ def apply_c23_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
     passing = [r for r in results if r.get("C23") == "达标"]
     filtered = [r for r in results if r.get("C23") != "达标"]
     return passing, filtered
+
+
+def apply_grade_filter(results: list[dict],
+                       grades: tuple[str, ...] = ("S",)) -> tuple[list[dict], list[dict]]:
+    """评级过滤（2026-08-10 老板拍板：对齐 V2 文档口径——仅做 S 级）
+
+    背景：策略版本存档 V2 定稿"prebreak 仅做 S 级（老板实盘约束）"，
+    但扫描/执行卡/模拟盘链路此前未实现评级过滤（A/B 级混入挂单候选，
+    600833 即 A 级成交案例）——文档与实现不一致，本次对齐。
+    A/B 级返回 rejected（保留供研究，不参与挂单候选）；
+    执行卡吃过滤后主表，模拟盘读过滤后扫描 CSV——一处过滤全链路生效。
+
+    Args:
+        results: prebreak 扫描候选（含评级字段）
+        grades: 允许参与挂单的评级（默认仅 S）
+
+    Returns:
+        (passing, rejected): 挂单候选主表 / 非目标评级研究列表
+    """
+    passing = [r for r in results if str(r.get("评级", "")).strip() in grades]
+    rejected = [r for r in results if str(r.get("评级", "")).strip() not in grades]
+    return passing, rejected
 
 
 def apply_bear_vol_cap(results: list[dict], regime: str | None) -> tuple[list[dict], list[dict]]:

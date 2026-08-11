@@ -1,0 +1,4 @@
+﻿mode,code,date,grade,PT,TY,DN,DL,LK,SF,close,trigger,stop,risk,prbook_warn,triggered_5d,entry_5d,exit_5d,exit_date_5d,stopped_5d,r_5d,triggered_10d,entry_10d,exit_10d,exit_date_10d,stopped_10d,r_10d,triggered_20d,entry_20d,exit_20d,exit_date_20d,stopped_20d,r_20d
+prebreak,600062,2009-09-01,S,S,A,C,S,S,A,10.8453,11.2,10.62,0.58,,0,0.0,0.0,,0,0.0,0,0.0,0.0,,0,0.0,0,0.0,0.0,,0,0.0
+prebreak,600486,2009-11-19,S,S,A,C,S,S,A,10.7133,10.12,9.6,0.52,,0,0.0,0.0,,0,0.0,0,0.0,0.0,,0,0.0,0,0.0,0.0,,0,0.0
+prebreak,600600,2009-12-10,S,S,A,C,S,S,A,27.737,28.67,27.18,1.49,,0,0.0,0.0,,0,0.0,0,0.0,0.0,,0,0.0,1,28.67,28.0272,2010-01-08,0,-0.4458

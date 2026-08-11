@@ -64,11 +64,19 @@ DEFAULT_MOM = 0.10          # C23 动量阈值（与 c23_capital_compare 一致�
 _KLINE_CACHE: dict[str, pd.DataFrame] = {}
 
 
-def _kline(code: int, db_path: str) -> pd.DataFrame | None:
-    """qfq K线（read_kline 同口径；带缓存）"""
+def _kline(code: int, db_path: str | None = None) -> pd.DataFrame | None:
+    """qfq K线（read_kline 同口径；带缓存）
+
+    2026-08-11 提速优化：db_path 等于默认库（或 None）→ 走进程内共享连接
+    （read_kline shared=True），避免逐笔成交开新连接（r44 回测每格 500-1000 笔
+    曾每股开连接）。结果零变化——同库同口径，仅连接复用。
+    """
     sym = f"{code:06d}"
     if sym not in _KLINE_CACHE:
-        _KLINE_CACHE[sym] = read_kline(sym, db_path=db_path)   # 只读；None 也缓存（防空转）
+        if db_path is None or str(db_path) == str(DB_PATH):
+            _KLINE_CACHE[sym] = read_kline(sym)   # 默认库 → 共享连接；只读；None 也缓存
+        else:
+            _KLINE_CACHE[sym] = read_kline(sym, db_path=db_path)  # 测试注入库 → 独立连接
     return _KLINE_CACHE[sym]
 
 

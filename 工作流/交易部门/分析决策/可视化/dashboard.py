@@ -50,9 +50,9 @@ PURPLE = "#b07cff"
 
 CHART_DIR = _ROOT / "产出" / "输出" / "图表"
 DEFAULT_SIGNALS = _ROOT / "产出" / "输出" / "数据" / "backtest_final_20260806" / "signals.csv"
-CAPITAL = 5600.0
-RISK_RATIO = 0.02
-MAX_POS = 3
+CAPITAL = 8401.26  # R-046：与实盘 capital.json 同步
+RISK_RATIO = 0.025  # V4（R-050 定案 0.025；2026-08-12 V4 修订清除 0.012855 残留）
+MAX_POS = 999  # R-046：上限无限制（有候选就买）
 
 
 def _style_ax(ax, title: str, xlabel: str = "", ylabel: str = "") -> None:
@@ -130,7 +130,7 @@ def plot_equity_curve_backtest(sim) -> str:
     ax.set_xticks(x[:: max(1, len(x) // 12)])
     ax.set_xticklabels([dates[i] for i in range(0, len(x), max(1, len(x) // 12))],
                        rotation=45, fontsize=8)
-    _style_ax(ax, "回测资金曲线（5600×2.0%×3仓 · risk_mid 排序）", "时间", "余额（元）")
+    _style_ax(ax, "回测资金曲线（8401×2.5%×无限制 · V4）", "时间", "余额（元）")
     ax.legend(facecolor="#000000", labelcolor=TEXT, framealpha=0.6)
     return _save(fig, "回测资金曲线")
 
@@ -457,7 +457,7 @@ def render_overview(backtest_paths: list[str], live_paths: list[str]) -> str:
         "",
         "| 图 | 内容 | 数据源 |",
         "|---|---|---|",
-        "| 回测资金曲线 | 5600×2.0%×3仓 模拟账户余额（含注入标记） | sim_capital 生产链路 |",
+        "| 回测资金曲线 | 8401×2.5%×无限制 模拟账户余额（含注入标记，V4） | sim_capital 生产链路 |",
         "| 回撤时间序列 | 总资产口径回撤曲线（最深 31.2%） | equity 快照重算 |",
         "| 成交R分布 | 118 笔成交 R 直方图（avgR/偏度） | trades |",
         "| 月度收益 | 成交 pnl 按月柱状（盈利月绿/亏损月红） | trades |",

@@ -147,11 +147,11 @@ def sim_env(monkeypatch, tmp_path):
 
 
 def _open_half(monkeypatch, kline: pd.DataFrame, price: float = 10.1, stop: float = 9.9,
-               vol0: int = 5000):
+               vol0: int = 6200):
     """开一笔 0.5R 分步起步仓（手动 risk_scale=0.5，绕过环境判定链）
 
     股数基线（模拟线 10 万 × 2%，2026-08-08 老板拍板）：0.5R 风险额
-    = 100000×2%×0.5 = 1000 元；每股风险 0.2 元 → 1000//0.2 = 5000 股。
+    = 100000×0.025×0.5 = 1250 元；每股风险 0.2 元 → 1250//0.2 = 6250 股 → 整手 6200 股（R-050）。
     """
     monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                         lambda c, use_cache=True: kline)
@@ -185,7 +185,7 @@ class TestSimTradingPhaseIn:
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
-            (9.95, 10.15, 9.9, 10.1, 1e6),   # 开仓日 2025-01-06（收 10.1）
+            (9.95, 10.15, 9.9, 10.1, 3e6),   # 开仓日 2025-01-06（收 10.1，R-053 放量 3.0）
             (10.2, 10.5, 10.1, 10.4, 1e6),   # 确认日 2025-01-07：收 10.4 ≥ 10.1 且阳线
         ])
         _open_half(monkeypatch, kline)
@@ -196,10 +196,10 @@ class TestSimTradingPhaseIn:
         rows = sim_trading._read_all()
         r = rows[0]
         assert r["status"] == "open" and r["phase"] == "confirmed"
-        # 起步 5000 股（0.5R：1000 元风险额 ÷ 每股风险 0.2）；
-        # 补仓等额 5000 股 → 总 10000 股（= 1R 风险预算 2000 元，10 万口径）
-        assert int(r["volume"]) == 10000
-        # 补仓价 10.4：加权平均 = (10.1×5000 + 10.4×5000)/10000 = 10.25
+        # 起步 6200 股（0.5R：1250 元风险额 ÷ 每股风险 0.2，整手 R-050）；
+        # 补仓等额 6200 股 → 总 12400 股（= 1R 风险预算 2500 元，10 万口径 R-050）
+        assert int(r["volume"]) == 12400  # R-050：6200×2
+        # 补仓价 10.4：加权平均 = (10.1×6200 + 10.4×6200)/12400 = 10.25
         assert float(r["entry_price"]) == pytest.approx(10.25)
 
     def test_reject_delay2_waits_no_t2(self, sim_env, monkeypatch, tmp_path):
@@ -250,7 +250,7 @@ class TestSimTradingPhaseIn:
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
             (9.9, 10.1, 9.8, 10.0, 1e6),
-            (9.95, 10.15, 9.9, 10.1, 1e6),   # 开仓日
+            (9.95, 10.15, 9.9, 10.1, 3e6),   # 开仓日（R-053 放量 3.0）
             (10.0, 10.2, 9.92, 10.02, 1e6),   # 首根 2025-01-07：收 10.02 < 进 10.1 → 不确认
             (10.3, 10.6, 10.2, 10.4, 1e6),    # T+2 2025-01-08：收 10.4 ≥ 进 10.1 且 ≥ 首根收 10.02 → 确认
         ])
@@ -262,9 +262,9 @@ class TestSimTradingPhaseIn:
         rows = sim_trading._read_all()
         r = rows[0]
         assert r["status"] == "open" and r["phase"] == "confirmed"
-        # 起步 5000 股 + 补仓 5000 股 → 10000 股；补仓价 10.4
-        # → 加权 = (10.1×5000+10.4×5000)/10000 = 10.25
-        assert int(r["volume"]) == 10000
+        # 起步 6200 股 + 补仓 6200 股 → 12400 股；补仓价 10.4（R-050）
+        # → 加权 = (10.1×6200+10.4×6200)/12400 = 10.25
+        assert int(r["volume"]) == 12400  # R-050：6200×2
         assert float(r["entry_price"]) == pytest.approx(10.25)
 
     def test_stop_exits_half(self, sim_env, monkeypatch, tmp_path):

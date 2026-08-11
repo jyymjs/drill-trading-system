@@ -51,14 +51,14 @@ def _clean_day_cache():
 
 class TestMaxRiskScale:
     def test_default_1r(self, monkeypatch):
-        # G9 资金配置定稿（2026-08-06 老板拍板）：1.5% → 2.0%（5600 × 2% = 112）
+        # R-050（2026-08-11）：比例 0.025（5600 × 0.025 = 140）
         monkeypatch.setattr(capital, "get_capital", lambda: 5600)
-        assert capital.max_risk_per_trade() == pytest.approx(112.0)
-        assert capital.RISK_RATIO == 0.02
+        assert capital.max_risk_per_trade() == pytest.approx(140.0)
+        assert capital.RISK_RATIO == 0.025
 
     def test_half_risk(self, monkeypatch):
         monkeypatch.setattr(capital, "get_capital", lambda: 5600)
-        assert capital.max_risk_per_trade(scale=0.5) == pytest.approx(56.0)
+        assert capital.max_risk_per_trade(scale=0.5) == pytest.approx(70.0)
 
     def test_scale_default_compat(self, monkeypatch):
         """默认 1.0 与旧调用兼容"""
@@ -70,12 +70,12 @@ class TestCheckAffordabilityScale:
     def test_scale_halves_shares(self, monkeypatch):
         """0.5R 缩放 → 风险额减半 → 手数减半"""
         monkeypatch.setattr(capital, "get_capital", lambda: 5600)
-        # G9（2026-08-06 定稿 2%）：每股风险 0.42 元：1R → 112/0.42 = 266 → 200 股（2 手）
-        #                                             0.5R → 56/0.42 = 133 → 100 股（1 手）
+        # R-050（实盘资金 8401.26）：每股风险 0.42 元：1R → 210/0.42 = 500 → 500 股
+        #                                           0.5R → 105/0.42 = 250 → 200 股
         s1, _ = sim_trading.check_affordability(price=10.0, risk_per_share=0.42, risk_scale=1.0)
         s05, _ = sim_trading.check_affordability(price=10.0, risk_per_share=0.42, risk_scale=0.5)
-        assert s1 == 200
-        assert s05 == 100
+        assert s1 == 500
+        assert s05 == 200
 
 
 class TestEnvRiskScale:
@@ -159,13 +159,13 @@ class TestSimOpenDayUnified:
         monkeypatch.setattr(sim_trading, "_market_env_scale", lambda: 0.5)
         out = self._open(monkeypatch, tmp_path, "000001", make_df("good"))
         assert "0.5R" in out
-        assert "上限1000" in out  # 模拟线 10 万 × 2% × 0.5R（2026-08-08 无资金限制对照）
+        assert "上限1250" in out  # 模拟线 10 万 × 0.025 × 0.5R（V4）
 
     def test_good_market_env_full_risk(self, monkeypatch, tmp_path):
         monkeypatch.setattr(sim_trading, "_market_env_scale", lambda: 1.0)
         out = self._open(monkeypatch, tmp_path, "000001", make_df("bad"))
         assert "1R" in out
-        assert "上限2000" in out  # 模拟线 10 万 × 2% × 1R（2026-08-08 无资金限制对照）
+        assert "上限2500" in out  # 模拟线 10 万 × 0.025 × 1R（V4）
 
     def test_day_journal_unifies_second_open(self, monkeypatch, tmp_path):
         """当日头寸统一：第一笔 0.5R（个股环境差）→ 第二笔（个股环境好）
@@ -191,7 +191,7 @@ class TestSimOpenDayUnified:
         out = self._open(monkeypatch, tmp_path, "000001", make_df("good"),
                          risk_scale=0.5)
         assert "手动缩放0.5" in out
-        assert "上限1000" in out  # 模拟线 10 万 × 2% × 0.5R（2026-08-08 无资金限制对照）
+        assert "上限1250" in out  # 模拟线 10 万 × 0.025 × 0.5R（V4）
 
     def test_manual_scale_sets_day_unified(self, monkeypatch, tmp_path):
         """手动 0.5R 写入当日统一锚：后续自动开仓沿用 0.5R（当日出现降档信号
