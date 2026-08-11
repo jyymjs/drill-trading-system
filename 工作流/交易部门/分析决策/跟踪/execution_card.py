@@ -393,7 +393,9 @@ def protect_card(rows: list[dict] | None = None) -> str:
         # 旧行缺列 → 以进场价初始化——层面3/4 需正确极值才不失真）
         pos.highest_price = float(r.get("highest") or entry)
         pos.lowest_price = float(r.get("lowest") or entry)
-        v = evaluate_exit(pos, df_pos)   # V4 审核 P1-6 修复：传 df_pos（此前算而未用）
+        # V4 审核 P1-6 修复：传 df_pos（此前算而未用）
+        # R-060（2026-08-12 老板拍板）：主动出场用全量 df——短持仓不再静默失效
+        v = evaluate_exit(pos, df_pos, active_df=df)
         latest = df.iloc[-1]
         r_now = pos.current_r_multiple(float(latest["收盘"]))
         src = "实盘" if live else "模拟"

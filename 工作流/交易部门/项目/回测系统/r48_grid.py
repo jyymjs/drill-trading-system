@@ -125,16 +125,31 @@ def _enriched_cache_path(signals_path: str | Path) -> Path:
 
 
 def _build_enriched_cache(signals_path: str | Path) -> Path:
-    """构建/校验 enrich 缓存（原子写：临时文件 + os.replace；指纹 = 行数+日期范围）
+    """构建/校验 enrich 缓存（原子写：临时文件 + os.replace；指纹 = 行数+日期范围+内容哈希）
 
     2026-08-11 提速：主网格/拐点窗/起始点格共用同一信号集，enrich（4,351 行逐行
     duckdb 复算 vol_ratio/mom20）每格重复耗时 ~30-50s——构建一次全格复用。
     指纹校验防信号集更新后读旧缓存；结果与每次复算零差（enrich 为逐行纯函数）。
+
+    2026-08-12 R-061 修复（易犯错误 #14）：原指纹仅"行数+日期范围"，R-060 改写了
+    exit_20d/r_20d 列内容（主动出场恢复触发）但指纹不变 → 误用旧缓存（D/E 组资金层
+    吃 R-060 前数据）。现加关键列（triggered_20d/exit_20d/r_20d）内容哈希——
+    任何出场列变化强制重建缓存。
     """
     from 回测系统.tighten_compare import enrich as _enrich
+    import hashlib as _hl
     cache = _enriched_cache_path(signals_path)
     src = read_signals(signals_path)
-    fp = f"{len(src)}_{str(src['date'].astype(str).min())[:10]}_{str(src['date'].astype(str).max())[:10]}"
+    # 内容哈希：关键列 code/date/triggered_20d/exit_20d/r_20d（enrich 依赖与资金层
+    # 成交依赖的全部可变列）——出场口径变化（R-060 类）时指纹必变
+    _key_cols = [c for c in ("code", "date", "triggered_20d", "exit_20d", "r_20d")
+                 if c in src.columns]
+    _h = _hl.sha256()
+    for c in _key_cols:
+        _h.update(str(src[c].dtype).encode())
+        _h.update(src[c].astype(str).str.cat(sep="\x1f").encode("utf-8", errors="replace"))
+    fp = (f"{len(src)}_{str(src['date'].astype(str).min())[:10]}"
+          f"_{str(src['date'].astype(str).max())[:10]}_{_h.hexdigest()[:16]}")
     fp_file = Path(str(cache) + ".fp")
     if cache.exists() and fp_file.exists() and fp_file.read_text(encoding="utf-8").strip() == fp:
         return cache

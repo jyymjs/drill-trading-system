@@ -348,3 +348,34 @@ def test_switches_all_false_is_pure_stop_loss():
                            enable_active=False, enable_ttp=False)
     assert res["stop_update"] is None, "全关时不得有任何止损上移"
     assert res["should_exit"] is False, "全关时不得主动离场（R=6.2 无止损触发）"
+
+
+# ============ R-060 active_df（2026-08-12 老板拍板：主动出场防短持仓静默）============
+
+def test_r060_short_slice_active_silent_without_active_df():
+    """短切片（<21 根，P0-3 触发日切片）不传 active_df → 主动出场数据不足静默（原行为）"""
+    df = _active_df()                       # 24 根全量（主动出场信号在）
+    pos = make_pos(entry=10.0, stop=9.0, highest=11.5)
+    short = df.iloc[-2:]                    # 模拟进场日切片（2 根 < 21）
+    res = em.evaluate_exit(pos, short)
+    assert res["should_exit"] is False
+    assert "主动出场" not in res["reason"]
+
+
+def test_r060_short_slice_active_fires_with_active_df():
+    """短切片 + active_df=全量 → 主动出场恢复触发（R-060 修复核心）"""
+    df = _active_df()
+    pos = make_pos(entry=10.0, stop=9.0, highest=11.5)
+    short = df.iloc[-2:]
+    res = em.evaluate_exit(pos, short, active_df=df)
+    assert res["should_exit"] is True
+    assert "主动出场" in res["reason"]
+
+
+def test_r060_active_df_default_keeps_old_behavior():
+    """不传 active_df 且 df 本身 ≥21 根 → 行为与修复前一致（默认参数零变化）"""
+    df = _active_df()
+    pos = make_pos(entry=10.0, stop=9.0, highest=11.5)
+    res = em.evaluate_exit(pos, df)
+    assert res["should_exit"] is True
+    assert "主动出场" in res["reason"]

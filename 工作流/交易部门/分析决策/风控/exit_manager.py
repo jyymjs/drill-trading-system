@@ -345,7 +345,8 @@ def position_zone(position: Position) -> str:
 
 def evaluate_exit(position: Position, df: pd.DataFrame,
                   enable_breakeven: bool = True, enable_trailing: bool = True,
-                  enable_active: bool = True, enable_ttp: bool = True) -> dict:
+                  enable_active: bool = True, enable_ttp: bool = True,
+                  active_df: pd.DataFrame | None = None) -> dict:
     """综合离场评估
 
     按优先级检查所有离场条件。2026-08-04 增强：
@@ -357,13 +358,21 @@ def evaluate_exit(position: Position, df: pd.DataFrame,
     默认全 True = 现状行为零变化（生产调用 sim_check/protect_card 不传参）；
     实验组显式传 False 关闭对应规则（A 基线 = 全 False）。
 
+    R-060（2026-08-12 老板拍板）：active_df 参数——主动出场（detect_active_exit）
+    需要 ≥21 根 K 线（近 5 根 vs 前 15 根涨速对比"累耗失衡"），而 P0-3 切片
+    （防移动获利拐点污染）从进场日切片后短持仓主动出场"数据不足"静默失效。
+    修复：主动出场用 active_df（默认 = df）；调用方传全量 df（累耗失衡语义
+    本就含进场前蓄势对比），移动获利保持切片防污染。两口径分离，实验与
+    生产（sim_check/protect_card/r57）同步生效。
+
     Args:
         position: 持仓对象
-        df: K线DataFrame
+        df: K线DataFrame（层面3 移动获利窗口切片）
         enable_breakeven: 层面2 1R 平保（R≥1 止损移成本价）
         enable_trailing: 层面3 移动获利（拐点三要素）
         enable_active: 主动出场（斜率骤变/波幅/放量）
         enable_ttp: 层面4 36% 追踪获利（≥5R 且无移动获利点）
+        active_df: 主动出场用 K 线（默认 = df；调用方传全量防短持仓静默）
 
     Returns:
         {"should_exit": bool, "reason": str, "exit_price": float, "stop_update": float|None,
@@ -417,8 +426,9 @@ def evaluate_exit(position: Position, df: pd.DataFrame,
             result["reason"] = f"追踪获利触发(层面4), 止损移至{tr}"
 
     # 检查主动出场（内训 19·6：环境前提有利可图+累耗失衡 + 拐点三特征）
+    # R-060：主动出场用 active_df（全量）——累耗失衡需进场前蓄势对比，短持仓切片会静默失效
     if enable_active:
-        active = detect_active_exit(position, df)
+        active = detect_active_exit(position, active_df if active_df is not None else df)
         if active["signal"]:
             if result["reason"]:
                 result["reason"] += "; "

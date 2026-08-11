@@ -34,10 +34,11 @@ def add_trade(trade: TradeRecord) -> None:
     today = datetime.now().strftime("%Y-%m-%d")
     with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
+        # 24 列（V4 审核 P1-7：trail_stop/highest/lowest 落库；closed 行动态止损不追历史）
         writer.writerow([
             trade.trade_id, trade.entry_date, trade.symbol, trade.name,
             trade.direction, "stock", trade.entry_price,
-            trade.stop_loss, trade.volume, trade.grade_at_entry,
+            trade.stop_loss, "", "", "", trade.volume, trade.grade_at_entry,
             "", "", "closed", trade.exit_price, trade.exit_date,
             trade.exit_reason, trade.r_multiple, trade.pnl, "", "",
             today,
@@ -53,16 +54,17 @@ def add_open_trade(trade_id: str, symbol: str, name: str,
     """实盘开仓录入（status=open；0.5R 试探仓带 phase=half 可进执行卡分步确认）
 
     2026-08-10 补：执行卡分步建仓持仓卡此前只认 sim_journal，实盘 0.5R 仓
-    录不进次日三条件确认——trade_journal 扩为同构 21 列后由
-    execution_card._iter_half_positions 合并读取。
+    录不进次日三条件确认——trade_journal 扩为同构 24 列后由
+    execution_card._iter_half_positions 合并读取（2026-08-12 V4 迁移：21→24 列）。
     """
     _ensure_file()
     today = date or datetime.now().strftime("%Y-%m-%d")
     with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
+        # 24 列（V4 审核 P1-7；open 仓 trail_stop/highest/lowest 留空，sim-check 逐日维护）
         writer.writerow([
             trade_id, today, symbol, name, direction, market,
-            entry_price, stop_loss, volume, grade,
+            entry_price, stop_loss, "", "", "", volume, grade,
             ty_high, ty_low, "open", "", "", "",
             "", "", env_scale, phase, today,
         ])

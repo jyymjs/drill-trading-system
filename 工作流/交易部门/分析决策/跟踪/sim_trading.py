@@ -636,7 +636,8 @@ def sim_check() -> str:
         r["lowest"] = f"{min(pos.lowest_price, l_now):.2f}"
         pos.highest_price = max(pos.highest_price, h_now)
         pos.lowest_price = min(pos.lowest_price, l_now)
-        verdict = em.evaluate_exit(pos, df_pos)
+        # R-060（2026-08-12 老板拍板）：主动出场用全量 df——短持仓（<21 根）不再静默失效
+        verdict = em.evaluate_exit(pos, df_pos, active_df=df)
         latest = df.iloc[-1]
         if verdict["should_exit"]:
             exit_price = verdict["exit_price"] or float(latest["收盘"])
