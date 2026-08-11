@@ -158,7 +158,8 @@ def test_scan_single_stock_trigger_zero_not_broken(monkeypatch):
 # ============ T-020: P2 放量阈值标注 ============
 
 def test_scan_single_stock_prebreak_volume_threshold(monkeypatch):
-    """T-020: prebreak 候选输出放量阈值 = 前20日均量×1.5（不含最新日，对齐 dn_confirm 回测口径）"""
+    """T-020（R-070 拍板 1.2）: prebreak 候选输出放量阈值 = 前20日均量×1.2
+    （不含最新日；dn_confirm 触发日 1.5 保持——双阈值区分）"""
     monkeypatch.setattr(
         scanner, "get_daily_kline",
         lambda code, use_cache=True: make_kline(last_close=9.5))
@@ -166,12 +167,12 @@ def test_scan_single_stock_prebreak_volume_threshold(monkeypatch):
         {"code": "600001", "name": "贵州茅台"},
         FakeStrategy(trigger_price=10.0), mode="prebreak")
     assert entry is not None
-    # make_kline 成交量恒 1e6 → 前20日均量 1e6 → 放量阈值 = 1.5e6
-    assert entry["放量阈值"] == 1500000.0
+    # make_kline 成交量恒 1e6 → 前20日均量 1e6 → 放量阈值 = 1.2e6（VOL_MIN）
+    assert entry["放量阈值"] == 1200000.0
 
 
 def test_scan_single_stock_volume_threshold_min_bars(monkeypatch):
-    """T-020: 恰好 60 根（扫描最低门槛）时放量阈值仍正常（前20根均量×1.5）"""
+    """T-020（R-070 1.2）: 恰好 60 根（扫描最低门槛）时放量阈值仍正常（前20根均量×1.2）"""
     monkeypatch.setattr(
         scanner, "get_daily_kline",
         lambda code, use_cache=True: make_kline(n=60, last_close=9.5))
@@ -179,8 +180,8 @@ def test_scan_single_stock_volume_threshold_min_bars(monkeypatch):
         {"code": "600001", "name": "贵州茅台"},
         FakeStrategy(trigger_price=10.0), mode="prebreak")
     assert entry is not None
-    # 60 根 → 不含最新日 20 根均量 1e6 → 阈值 1.5e6
-    assert entry["放量阈值"] == 1500000.0
+    # 60 根 → 不含最新日 20 根均量 1e6 → 阈值 1.2e6
+    assert entry["放量阈值"] == 1200000.0
 
 
 def test_scan_single_stock_normal_no_volume_threshold(monkeypatch):

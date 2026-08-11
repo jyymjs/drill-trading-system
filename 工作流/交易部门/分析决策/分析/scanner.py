@@ -24,6 +24,13 @@ C23_MOM_MAX = 0.10    # 动量上限：触发价 vs 20 交易日前收盘涨幅 
 C23_RISK_MIN = 0.5    # 止损距离下限（元）：trigger - stop ≥ 0.5（太近易被扫）
 C23_RISK_MAX = 3.0    # 止损距离上限（元）：trigger - stop ≤ 3.0（太远盈亏比差）
 
+# ── T-020 放量起步线（R-070 2026-08-12 老板拍板：1.5 → 1.2）──
+# 数据依据：R-069 实验 B/D——信号日量比与质量单调正相关；1.2 口径 E 无限期
+# 7y +835.9%/-6.8%（1.5 的 +683.3% 多赚 153pp、回撤仅多 0.8pp）；触发 +33%。
+# ⚠️ 双阈值区分：VOL_MIN（信号日量比，T-020 挂单起步线）≠ dn_confirm 1.5
+# （触发日量比，回测/实盘 R-053 B 确认口径——保持 1.5 不动）
+VOL_MIN = 1.2
+
 # G8 像素感池级预筛（2026-08-06）：知识卡「像素感直接pass掉，交投清淡不是真实意愿」
 # （2024-07-16 扫盘）——像素感严重（px < 阈值，评级内 = C 级硬降级）的品种在
 # 指标计算/评级前直接排除（池级预筛）。px 只用基础K线列（开/高/低/收）numpy
@@ -151,15 +158,15 @@ def scan_single_stock(
                         else "未突破"
                     )
 
-                    # 2026-08-06 T-020：P2 放量条件（dn_confirm 回测 X=1.5 甜点）接入
+                    # 2026-08-06 T-020：P2 放量条件（R-070 拍板起步线 1.2）接入
                     # 扫描候选——每只候选输出"放量阈值"（绝对成交量，单位同数据源=手），
-                    # 口径对齐 dn_confirm 回测"触发日前 20 日均量"：扫描时最新日视为潜在
-                    # 突破日 → 取不含最新日的前 20 根均量 × 1.5，每日用最新数据刷新。
-                    # 突破日成交量 > 放量阈值 即达标起步线（量比>1.5；T-025 修正：量比越高越好，
-                    # 1.5 仅作下限，不放上限）。
+                    # 口径：扫描时最新日视为潜在突破日 → 取不含最新日的前 20 根均量 ×
+                    # VOL_MIN（1.2），每日用最新数据刷新。突破日成交量 > 放量阈值 即达标
+                    # 起步线（量比>1.2；T-025 修正：量比越高越好，仅作下限，不放上限；
+                    # R-070：1.5→1.2 体感折中——质量仍高（被滤票 avgR 0.47 vs 保留 1.5））。
                     ref_vol = df["成交量"].iloc[max(0, len(df) - 21):len(df) - 1]
                     ref_mean = float(ref_vol.mean()) if len(ref_vol) > 0 else 0.0
-                    entry["放量阈值"] = round(ref_mean * 1.5, 0) if ref_mean > 0 else 0
+                    entry["放量阈值"] = round(ref_mean * VOL_MIN, 0) if ref_mean > 0 else 0
                     # R-053 当前量比（2026-08-11 老板拍板）：最新日量 / 前20日均量——
                     # 执行卡挂单指引展示用（挂单时突破日量比不可知，仅参考标注）
                     latest_vol = float(df["成交量"].iloc[-1])
@@ -396,7 +403,8 @@ def apply_bear_vol_cap(results: list[dict], regime: str | None) -> tuple[list[di
     for r in results:
         vol = r.get("成交量") or 0
         thr = r.get("放量阈值") or 0
-        ratio = vol * 1.5 / thr if thr > 0 else None
+        # R-070：放量阈值系数 1.5 → VOL_MIN（1.2）——量比反推口径同步
+        ratio = vol * VOL_MIN / thr if thr > 0 else None
         if ratio is not None and ratio > 3.0:
             rejected.append(r)
         else:

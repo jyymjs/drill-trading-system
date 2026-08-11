@@ -103,15 +103,17 @@ def main() -> int:
     # D1 现行（无 T-020）：E 无限期 8401（对账 r58 定版）
     print("D1 现行（无 T-020）E 无限期……")
     d1 = run_inf("E", GROUPS["E"], trig, kc, "E_not020")
-    # D2 T-020 保留（信号日量比 >1.5）
-    print("D2 T-020 保留 E 无限期……")
-    keep = []
-    for _, row in trig.iterrows():
-        sr = _sig_vol_ratio(str(row["code"]), str(row["date"])[:10], kc)
-        if sr is not None and sr > 1.5:
-            keep.append(row)
-    d2 = run_inf("E", GROUPS["E"], pd.DataFrame(keep), kc, "E_t020")
-    result = {"D1_现行(无T020)": d1, "D2_T020保留": d2}
+    # D2 T-020 保留（信号日量比 >1.5）+ D3 阈值 1.2（老板拍板 R-070）
+    result = {"D1_现行(无T020)": d1}
+    for th, label in [(1.5, "T020_1.5"), (1.2, "T020_1.2")]:
+        print(f"D{label} T-020 保留（>{th}）E 无限期……")
+        keep = []
+        for _, row in trig.iterrows():
+            sr = _sig_vol_ratio(str(row["code"]), str(row["date"])[:10], kc)
+            if sr is not None and sr > th:
+                keep.append(row)
+        print(f"  触发集 {len(keep)} 笔（26y）")
+        result[f"D{label}"] = run_inf("E", GROUPS["E"], pd.DataFrame(keep), kc, f"E_t{label}")
     (OUT / "r69d_combo_result.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=1))

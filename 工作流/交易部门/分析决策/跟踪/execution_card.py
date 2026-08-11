@@ -143,15 +143,15 @@ def order_card(candidates: list[dict], capital: float | None = None,
             note_s = f"挂单 {shares} 股（风险 {risk_ps * shares:.0f} 元 ≤ {risk_amt:.0f} 元）"
         out.append(f"  [{grade}] {code} {name} | 触发 {trigger:.2f} | 止损 {stop:.2f}"
                    f" | 每股风险 {risk_ps:.2f} | {label}: {note_s}")
-        # R-053 量能状态标注（2026-08-11 老板拍板）：挂单时可见——当前量比 <1.5
-        # 表示量能不足（突破日需量比>1.5 才确认，dn_confirm 口径）；仅参考，
-        # 最终以触发日收盘后确认判定（突破日量比挂单时不可知，无前视）
+        # R-053 量能状态标注（2026-08-11 老板拍板；R-070 阈值 1.5→1.2）：挂单时可见——
+        # 当前量比 <1.2 表示量能不足（T-020 起步线 1.2）；突破日需量比>1.5 才确认
+        # （dn_confirm 口径保持 1.5——双阈值区分）；仅参考，最终以触发日收盘后确认判定
         cur_ratio = r.get("当前量比", 0) or 0
         vol_th = r.get("放量阈值", 0) or 0
         if cur_ratio > 0:
-            flag = "✅" if cur_ratio > 1.5 else "⚠️"
+            flag = "✅" if cur_ratio > 1.2 else "⚠️"
             out.append(f"      📋 量能状态：当前量比 {cur_ratio} {flag}"
-                       f"（放量阈值 {vol_th:.0f} 手 = 前20日均量×1.5；突破日量比>1.5 才确认）")
+                       f"（放量阈值 {vol_th:.0f} 手 = 前20日均量×1.2；突破日量比>1.5 才确认）")
         if shares >= 100:
             # 云条件单录入参数（2026-08-08 老板提供券商可用单型：股价条件-突破/回落）
             # 买入 =「股价条件-突破」（≥触发价买入）；止损 =「股价条件-回落」（≤止损价卖出）
@@ -240,7 +240,7 @@ def scan_s_overview(scan_dir: str | Path | None = None) -> str:
     tag_map = {"": "✅ 合格候选（可挂单）",
                "_broken": "❌ 已突破（现价≥触发价，追高不买）",
                "_c23": "❌ C23 不达标",
-               "_vol": "❌ 放量不达标（量比≤1.5，暂不挂单；突破日确认量能）"}
+               "_vol": "❌ 放量不达标（量比≤1.2，暂不挂单；突破日确认量能）"}
     for f in files:
         suffix = f.stem.replace("scan_result_", "")[15:]
         try:
