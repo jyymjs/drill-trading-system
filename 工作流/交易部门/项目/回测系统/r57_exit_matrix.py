@@ -448,7 +448,9 @@ def main() -> int:
     from 回测系统.r44_position_grid import run_one
     from 回测系统.r48_grid import _build_enriched_cache
     import hashlib as _hl
-    enriched_a = pd.read_csv(_build_enriched_cache(str(OUT / "signals_A.csv")),
+    # 2026-08-12 修复：enrich 列从 SIG 构建（三元组与各组相同）——此前从
+    # signals_A.csv 构建，空目录下（清缓存冷跑）会在 A 组 CSV 写入前崩溃
+    enriched_a = pd.read_csv(_build_enriched_cache(str(SIG)),
                              dtype={"code": str})
     enrich_cols = enriched_a[["code", "date", "vol_ratio", "mom20"]].copy()
     _ref_key = None

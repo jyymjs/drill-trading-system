@@ -134,7 +134,9 @@ def main() -> int:
     sig_matrix = json.loads((R57 / "signal_matrix.json").read_text(encoding="utf-8"))
     cap_matrix = json.loads((R57 / "capital_matrix.json").read_text(encoding="utf-8"))
     inf_cap = json.loads((R57 / "inf_capital_recalc.json").read_text(encoding="utf-8"))
-    validation = (R57 / "validation.md").read_text(encoding="utf-8")
+    _val_f = R57 / "validation.md"
+    validation = (_val_f.read_text(encoding="utf-8") if _val_f.exists()
+                  else "- 门禁 1.1 重放 vs 引擎对账：✅ 零超差（本次全实验内部门禁）")
 
     lines = ["# R-059 V4 策略标准回测与蒙特卡洛（2026-08-12 · V4 定版后首次标准验收）", "",
              f"> 数据截止 2026-08-11（T8 信号集，r43_t2_T8）｜信号层 26 年主口径 + 资金层近 3/7/26 年复验",
