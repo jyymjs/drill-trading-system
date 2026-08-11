@@ -461,6 +461,18 @@ def sim_auto_open(csv_path: str | None = None) -> str:
             if (code, "pending") in existing or (code, "open") in existing:
                 skipped += 1
                 continue
+            # R-072：挂单前结构破坏校验（现价 ≤ 止损/TY低 → 不挂失效单）
+            try:
+                _px = float(rec.get("price", 0) or 0)
+                _ty_low = float(rec.get("TY低", 0) or 0)
+            except (TypeError, ValueError):
+                _px = _ty_low = 0.0
+            if _px > 0:
+                from 分析决策.分析.scanner import structure_broken
+                _sb = structure_broken(_px, stop, _ty_low or None)
+                if _sb["broken"]:
+                    skipped += 1
+                    continue
             shares, reason = check_affordability(trigger, risk_ps,
                                                  risk_scale=day_scale,
                                                  capital=SIM_CAPITAL)
@@ -551,6 +563,24 @@ def sim_check() -> str:
             _observe_update(r, "成交", note="到价成交")
             changed += 1
             continue
+        # R-072：结构破坏撤销（现价 ≤ 止损/TY低 → 挂单失效，不再依赖 1 日过期兜底）
+        try:
+            stop = float(r.get("stop_loss", 0) or 0)
+        except (TypeError, ValueError):
+            stop = 0.0
+        if stop > 0:
+            from 分析决策.分析.scanner import structure_broken
+            _px = float(df["收盘"].iloc[-1])
+            _ty_low = float(r.get("ty_low", 0) or 0)
+            _sb = structure_broken(_px, stop, _ty_low or None)
+            if _sb["broken"]:
+                r["status"] = "cancelled"
+                r["exit_date"] = str(dates[-1])[:10]
+                r["exit_reason"] = f"模拟条件单结构破坏撤销（{_sb['reason']}）"
+                out.append(f"  🔴 {code}: 条件单失效——{_sb['reason']} → 撤销留痕")
+                _observe_update(r, "撤销", exit_reason=r["exit_reason"])
+                changed += 1
+                continue
         fill_days = sum(1 for d in dates if d > created)
         if fill_days >= SIM_PENDING_EXPIRE_DAYS:
             r["status"] = "cancelled"
@@ -689,9 +719,34 @@ def sim_check() -> str:
         n_synced = _sync_r_curve(rows)   # 双线自动同步（2026-08-07）
         if n_synced:
             out.append(f"  📈 R 值曲线已自动同步 {n_synced} 笔（虚拟盘线，note=sim）")
+    # R-072 ④c：数据新鲜度告警（破位/过期撤销都依赖数据源——断更时撤销永不触发）
+    try:
+        from 数据基础.数据.fetcher import get_daily_kline as _gdk
+        _probe = None
+        for r in rows:
+            if r.get("status") in ("pending", "open"):
+                _probe = _gdk(r.get("symbol", ""), use_cache=True)
+                break
+        if _probe is not None and len(_probe):
+            _last = str(_probe["日期"].iloc[-1])[:10]
+            _recent = _recent_trading_day()
+            if _last < _recent:
+                out.append(f"  ⚠️ 数据不新鲜（K线最新 {_last} < 最近交易日 {_recent}）——"
+                           f"破位/过期撤销依赖数据源，断更时不会触发，请检查更新链路")
+    except Exception:  # noqa: BLE001 - 新鲜度告警失败不阻断主流程
+        pass
     if not out:
         return "无挂单中/持仓中的模拟交易"
     return "\n".join(out)
+
+
+def _recent_trading_day() -> str:
+    """最近交易日（跳过周末——节假日近似，工作日链路下够用）"""
+    from datetime import date, timedelta
+    d = date.today()
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return str(d)
 
 
 def sim_stats() -> str:

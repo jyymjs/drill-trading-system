@@ -252,7 +252,7 @@ def test_cloud_order_reminder_calibration_states(monkeypatch, tmp_path):
         encoding="utf-8-sig")
     text = cloud_order_reminder(track_file=track, scan_dir=scan_dir)
     assert "持续埋伏中" in text and "600001" in text
-    assert "触发价过时" in text and "600002" in text and "建议撤单" in text
+    assert "参数过时" in text and "600002" in text and "建议撤单" in text
     assert "已不在最新扫描" in text and "600003" in text and "建议撤单" in text
     assert "13.45" in text and "12.78" in text  # 最新口径展示
 
@@ -301,3 +301,21 @@ def test_protect_card_short_hold_active_is_reference_only(monkeypatch, tmp_path)
     assert "建议卖出" not in text
     # 止损值正常（trail_stop None → 用 stop_loss，NaN truthy bug 回归）
     assert "10.18" in text  # 平保止损保护显示
+
+
+def test_cloud_order_reminder_broken_stop_red_cancel(monkeypatch, tmp_path):
+    """R-072：挂单现价 ≤ 止损（结构破坏）→ 🔴 挂单失效建议撤单（000429 教训根因）"""
+    from 分析决策.跟踪.execution_card import cloud_order_reminder
+    track = tmp_path / "云条件单跟踪.md"
+    track.write_text(
+        "| 股票 | 挂单日 | 买入触发价 | 止损价 | 股数 | 状态 | 触发日 | 备注 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 000429 破位 | 2026-08-11 | ≥ 14.02 | ≤ 13.33 | 100 | 挂单中 | | 破位样例 |\n",
+        encoding="utf-8")
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    (scan_dir / "scan_result_20260811_190000.csv").write_text(
+        "code,name,price,触发价,止损价,TY高,TY低\n000429,粤高速A,13.29,14.02,13.33,13.99,13.36\n",
+        encoding="utf-8-sig")
+    text = cloud_order_reminder(track_file=track, scan_dir=scan_dir)
+    assert "挂单失效" in text and "建议撤单" in text and "持续埋伏中" not in text

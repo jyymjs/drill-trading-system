@@ -307,6 +307,29 @@ def split_prebreak_results(results: list[dict]) -> tuple[list[dict], list[dict]]
     return candidates, broken
 
 
+def structure_broken(price: float, stop_loss: float, ty_low: float | None = None) -> dict:
+    """结构破坏判定（R-072 2026-08-12 · 与"突破状态"对称的公共原语）
+
+    现价 ≤ 止损（或 TY 低）→ 结构破坏/挂单失效——供四方复用：
+    execution_card（云单校准四态/S级全览）、sim_check（pending 破位撤销）、
+    sim_auto_open（挂单前校验）、observe_pool。
+    口径（交易部终审）：现价 = 最新日收盘；TY低 恒比止损高 0.2%
+    （止损 = TY低 × 0.998，zuanqian_strategy.py:875）——取"任一即破"保守方向。
+    Returns:
+        {"broken": bool, "reason": str, "buffer_pct": float}  # buffer_pct = 现价高于止损的 %（负=已破）
+    """
+    if price <= 0 or stop_loss <= 0:
+        return {"broken": False, "reason": "数据不足", "buffer_pct": None}
+    buffer_pct = (price - stop_loss) / stop_loss * 100.0
+    if price <= stop_loss:
+        return {"broken": True, "reason": f"现价 {price:.2f} ≤ 止损 {stop_loss:.2f}（结构破坏）",
+                "buffer_pct": buffer_pct}
+    if ty_low and ty_low > 0 and price <= ty_low:
+        return {"broken": True, "reason": f"现价 {price:.2f} ≤ TY低 {ty_low:.2f}（跌破平台下沿）",
+                "buffer_pct": buffer_pct}
+    return {"broken": False, "reason": "结构完好", "buffer_pct": buffer_pct}
+
+
 def apply_vol_filter(results: list[dict]) -> tuple[list[dict], list[dict]]:
     """放量过滤（2026-08-07 T-020 接线 · 老板拍板）
 

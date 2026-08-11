@@ -32,6 +32,7 @@ from pathlib import Path
 
 from 分析决策.跟踪 import sim_trading
 from 分析决策.风控.capital import get_capital, get_risk_ratio
+from 分析决策.分析.scanner import structure_broken
 
 _CARD_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出"
 
@@ -334,8 +335,13 @@ def cloud_order_reminder(track_file: str | Path | None = None,
                         trig = rec.get("触发价", "")
                         stop = rec.get("止损价", "")
                         if code and trig:
+                            # R-072：扩列 price/TY高/TY低——现价维度（000429 教训：
+                            # 只比对触发价导致破止损挂单误报"持续埋伏"）
                             scan_map[code] = {"trigger": float(trig) or 0.0,
-                                              "stop": float(stop) or 0.0}
+                                              "stop": float(stop) or 0.0,
+                                              "price": float(rec.get("price", 0) or 0),
+                                              "ty_high": float(rec.get("TY高", 0) or 0),
+                                              "ty_low": float(rec.get("TY低", 0) or 0)}
     except (OSError, ValueError):
         scan_map = None
     if scan_map is not None:
@@ -362,13 +368,34 @@ def cloud_order_reminder(track_file: str | Path | None = None,
             out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
                        f"已不在最新扫描 S 级候选（结构变化/参数失效）→ "
                        f"**建议撤单，不再埋伏**")
-        elif abs(s["trigger"] - p["trigger"]) < 0.005:
-            out.append(f"  ✅ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
-                       f"触发价已校准，持续埋伏中（{p['vol']} 股 0.5R 试探，无需操作）")
-        else:
-            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
-                       f"**触发价过时**——最新口径 ≥{s['trigger']:.2f}（止损 {s['stop']:.2f}）"
+            continue
+        # R-072 四态升级：① 破止损/TY低 → 🔴 挂单失效（000429 教训根因）
+        sb = structure_broken(s["price"], p["stop"], s.get("ty_low"))
+        if sb["broken"]:
+            out.append(f"  🔴 {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"**挂单失效——{sb['reason']} → **建议撤单，不再埋伏**")
+            continue
+        # ② 触发价/止损一致性比对（止损也一并比对，审核口径 abs<0.005）
+        trig_ok = abs(s["trigger"] - p["trigger"]) < 0.005
+        stop_ok = abs(s["stop"] - p["stop"]) < 0.005
+        if not (trig_ok and stop_ok):
+            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}/≤{p['stop']:.2f}："
+                       f"**参数过时**——最新口径 ≥{s['trigger']:.2f}（止损 {s['stop']:.2f}）"
                        f"→ **建议撤单，按最新口径重挂**")
+            continue
+        # ③ 有效：贴价/贴止损提示（R-072：<0.5% 贴价优质线 dist_asc；<1% 贴止损警示）
+        tips = []
+        if s["trigger"] > 0 and s["price"] > 0:
+            td = (s["trigger"] - s["price"]) / s["price"] * 100.0
+            if td < 0.5:
+                tips.append(f"🟢 贴价候选（距触发 {td:.1f}%）")
+        buf = sb["buffer_pct"]
+        if buf is not None and buf < 1.0:
+            tips.append(f"🟡 贴止损（缓冲 {buf:.1f}%）")
+        tip_s = "；".join(tips)
+        out.append(f"  ✅ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                   f"参数已校准，持续埋伏中（{p['vol']} 股 0.5R 试探，无需操作"
+                   + (f"；{tip_s}" if tip_s else "") + "）")
     out.append(line)
     return "\n".join(out)
 
