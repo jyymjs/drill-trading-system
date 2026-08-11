@@ -234,7 +234,10 @@ def cloud_order_reminder(track_file: str | Path | None = None,
         out.append(line)
         return "\n".join(out)
     # 最新扫描结果（主 scan_result，同 sim_auto_open 文件选取规则）——校准基准
+    # R-065 修复：标注批次日期防误用旧数据（08-12 实测 08-11 主文件缺失时静默读
+    # 08-10 旧批次——校准基准过时一天）
     scan_map: dict[str, dict] | None = {}
+    scan_batch = ""
     try:
         files = sorted((p for p in sdir.glob("scan_result_*.csv")
                         if re.match(r"scan_result_\d{8}_\d{6}$", p.stem)),
@@ -242,6 +245,7 @@ def cloud_order_reminder(track_file: str | Path | None = None,
         if not files:
             scan_map = None
         else:
+            scan_batch = files[0].stem.replace("scan_result_", "")
             with open(files[0], encoding="utf-8-sig") as fh:
                 for rec in csv.DictReader(fh):
                     code = str(rec.get("code", "")).strip()
@@ -252,6 +256,8 @@ def cloud_order_reminder(track_file: str | Path | None = None,
                                           "stop": float(stop) or 0.0}
     except (OSError, ValueError):
         scan_map = None
+    if scan_map is not None:
+        out.append(f"  ℹ️ 校准基准：扫描批次 {scan_batch}（数据基础/扫描输出 最新主文件）")
     for p in pending:
         if scan_map is None:
             out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
