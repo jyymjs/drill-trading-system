@@ -189,9 +189,12 @@ def cmd_scan(args):
             save_results(grade_rejected, suffix="_grade")
 
 
+    # R-066（2026-08-12）：主文件无条件生成——空候选也写空表（标准表头）——
+    # "当日无合格候选"的明确语义，防下游（模拟挂单/云单校准）因主文件缺失
+    # 静默读旧批次（08-11 事故根因：全被过滤时主文件未生成）
+    save_results(results)
     if results:
         print_results(results, mode=mode)
-        save_results(results)
         if broken:
             print(f"\n=== 已突破（现价≥触发价，不参与挂单候选，供研究）: {len(broken)} 只 ===")
             print_results(broken, mode=mode)

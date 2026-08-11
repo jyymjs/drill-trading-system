@@ -169,7 +169,7 @@ def test_auto_open_default_picks_main_file_not_variants(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     out_dir = tmp_path / "数据基础" / "扫描输出"
     out_dir.mkdir(parents=True)
-    main_csv = out_dir / "scan_result_20260807_223326.csv"
+    main_csv = out_dir / "scan_result_20260812_223326.csv"
     pd.DataFrame([{"code": "600001", "name": "主文件票", "评级": "S",
                    "触发价": 10.5, "止损价": 9.8, "每股风险": 0.7}]
                  ).to_csv(main_csv, index=False, encoding="utf-8-sig")
@@ -179,7 +179,7 @@ def test_auto_open_default_picks_main_file_not_variants(monkeypatch, tmp_path):
                  ).to_csv(out_dir / "scan_result_20260807_223326_broken.csv",
                           index=False, encoding="utf-8-sig")
     text = st.sim_auto_open()  # 无参：走 glob 选择逻辑
-    assert "scan_result_20260807_223326.csv" in text
+    assert "scan_result_20260812_223326.csv" in text
     rows = st._read_all()
     assert len(rows) == 1 and rows[0]["symbol"] == "600001"  # 主文件票，非变体票
 
@@ -298,3 +298,20 @@ def test_auto_open_rehangs_cancelled_while_still_candidate(monkeypatch, tmp_path
     assert "新建 1 笔条件单" in text or "新建 1 笔" in text
     r = st._read_all()
     assert any(x["status"] == "pending" and x["symbol"] == "600001" for x in r)
+
+
+def test_auto_open_skips_stale_batch(monkeypatch, tmp_path):
+    """R-066：自动链路读到旧批次主文件（日期 < 当日）→ 跳过挂单 + 明确告警
+    （08-11 主文件缺失后曾静默用 08-10 旧批次挂旧触发价单）"""
+    use_tmp_journal(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "数据基础" / "扫描输出"
+    out_dir.mkdir(parents=True)
+    pd.DataFrame([{"code": "600001", "name": "旧批次票", "评级": "S",
+                   "触发价": 10.5, "止损价": 9.8, "每股风险": 0.7}]
+                 ).to_csv(out_dir / "scan_result_20260810_190829.csv",
+                          index=False, encoding="utf-8-sig")
+    text = st.sim_auto_open()  # 无参自动链路 → 应被新鲜度校验拦截
+    assert "扫描主文件缺失或过时" in text
+    assert "跳过模拟挂单" in text
+    assert st._read_all() == []  # 未挂任何单

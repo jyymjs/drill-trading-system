@@ -20,6 +20,9 @@ function Invoke-Archive {
         $dest = Join-Path $scanArch $f.Name
         if (-not (Test-Path $dest)) { Copy-Item $f.FullName $dest -Force }
     }
+    # R-066（2026-08-12）：归档必须含当日主文件（无变体后缀）——缺失 → 告警
+    $mainFile = $files | Where-Object { $_.Name -match '^scan_result_\d{8}_\d{6}\.csv$' }
+    if (-not $mainFile) { Write-Log "⚠️ R-066: 归档缺主文件（scan_result_${date}_*.csv 仅变体或全缺）——检查扫描链路" }
     $cardArch = "产出\输出\归档\执行卡"
     New-Item -ItemType Directory -Force -Path $cardArch | Out-Null
     $card = "产出\输出\执行卡_$date.md"
@@ -42,6 +45,10 @@ function Invoke-HealthCheck {
     # 检查1：当日执行卡（扫描正常应生成；去重跳过日也应存在）
     $card = "产出\输出\执行卡_$date.md"
     if (-not (Test-Path $card)) { $issues += "⚠️ 执行卡缺失 ($card)" }
+    # 检查1.5（R-066 2026-08-12）：当日主扫描文件必须存在（空表也算——"无候选"语义）
+    $mainScan = Get-ChildItem '数据基础\扫描输出' -Filter "scan_result_${date}_*.csv" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^scan_result_\d{8}_\d{6}\.csv$' } | Select-Object -First 1
+    if (-not $mainScan) { $issues += "⚠️ 当日主扫描文件缺失（scan_result_${date}_*.csv 无主文件——扫描未生成/失败）" }
     # 检查2：数据新鲜度复核（与主流程 $check 逻辑一致，取首行防多行错误文本污染）
     $dbLatest = (& 'C:\Program Files\Python312\python.exe' -c "import duckdb; con=duckdb.connect(r'数据基础\行情数据\t017_p2.duckdb',read_only=True); print(con.execute('select max(date) from daily').fetchone()[0])" 2>&1 | Select-Object -First 1)
     $dbDate = "$dbLatest".Trim()
@@ -99,8 +106,13 @@ if ($latest -ne $today) {
 # 3. 全市场扫描（prebreak S 级候选，5600 元整手约束）
 & 'C:\Program Files\Python312\python.exe' main.py scan --strategy zuanqian_strategy --mode prebreak --max-price 50 *>> $log
 # 4. 报告落盘（扫描输出复制为带日期报告；源目录=数据基础\扫描输出）
-$src = Get-ChildItem '数据基础\扫描输出' -Filter 'scan_result*.csv' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# R-066（2026-08-12）：只认主文件（scan_result_YYYYMMDD_HHMMSS.csv，无变体后缀）——
+# 08-11 曾把 _grade 变体当主文件复制（产出/输出/扫描_20260811.csv 实为变体）
+$src = Get-ChildItem '数据基础\扫描输出' -Filter 'scan_result*.csv' |
+    Where-Object { $_.Name -match '^scan_result_\d{8}_\d{6}\.csv$' } |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($src) { Copy-Item $src.FullName "产出\输出\扫描_$date.csv" -Force; Write-Log "report: 扫描_$date.csv" }
+else { Write-Log "⚠️ R-066: 当日主扫描文件缺失（扫描未生成主文件或失败）——报告未复制" }
 # 4.2 模拟线自动跟进（2026-08-08 老板确认方案①③）：扫描候选 → 模拟条件单（10万名义，
 #     到价才成交）→ 到价成交/超期撤销/持仓出场——模拟线从此每天自动留痕
 & 'C:\Program Files\Python312\python.exe' main.py track sim-auto-open *>> $log

@@ -407,6 +407,7 @@ def sim_auto_open(csv_path: str | None = None) -> str:
     from 数据基础.配置.stock_pool import get_stock_codes
 
     scan_dir = Path("数据基础") / "扫描输出"
+    auto_mode = csv_path is None   # R-066：自动链路（无参）才做新鲜度校验
     if csv_path is None:
         # 只认标准主文件名 scan_result_YYYYMMDD_HHMMSS.csv（正则精确匹配，文件名
         # 含 scan_result 自身的下划线共 3 个）；排除同秒生成的实验变体
@@ -430,6 +431,14 @@ def sim_auto_open(csv_path: str | None = None) -> str:
     else:
         env_note = f"当日统一沿用{'0.5R' if day_scale == 0.5 else '1R'}"
     today = datetime.now().strftime("%Y-%m-%d")
+    # R-066（2026-08-12）：主文件批次新鲜度校验——自动链路读到的批次日期 < 当日
+    # → 跳过挂单 + 明确告警（08-11 主文件缺失后曾静默用 08-10 旧批次挂旧触发价单；
+    # 空表主文件（无候选）批次 = 当日 → 正常"无候选"，不告警）
+    if auto_mode:
+        _batch = Path(csv_path).stem.replace("scan_result_", "")
+        if _batch[:8] < today.replace("-", ""):
+            return (f"⚠️ 扫描主文件缺失或过时（最新批次 {_batch}，今日 {today} "
+                    f"未生成主文件）——跳过模拟挂单，请检查扫描链路")
     rows = _read_all()
     existing = {(r.get("symbol"), r.get("status")) for r in rows
                 if r.get("status") in ("pending", "open")}

@@ -97,6 +97,14 @@ def _print_prebreak(results: list[dict], top_n: int) -> None:
     print(table)
 
 
+# R-066 标准列（2026-08-12）：空候选主文件也写标准表头——"当日无合格候选"
+# 的明确语义，防下游（模拟挂单/云单校准）静默读旧批次
+_SCAN_STD_COLUMNS = ["code", "name", "price", "涨幅%", "换手率%", "成交量",
+                     "MA5", "MA20", "RSI", "评级", "策略", "环境", "风险档",
+                     "触发价", "止损价", "每股风险", "TY高", "TY低", "突破状态",
+                     "放量阈值", "动量20日%", "C23", "C23原因"]
+
+
 def save_results(results: list[dict], suffix: str = "") -> str:
     """保存结果到 CSV
 
@@ -104,11 +112,17 @@ def save_results(results: list[dict], suffix: str = "") -> str:
         results: 扫描结果列表
         suffix: 文件名后缀（如 "_broken" 保存已突破研究行；
                 2026-08-06 老板拍板：已突破不参与挂单候选但保留供研究）
+    R-066（2026-08-12）：results 为空也写主文件（空表 + 标准表头）——
+    主文件"存在但空" = 当日真实"无合格候选"；下游读到当日空表 = 明确语义，
+    不再因主文件缺失静默回退旧批次（08-11 事故根因）。
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = OUTPUT_DIR / f"scan_result_{timestamp}{suffix}.csv"
 
-    df = pd.DataFrame(results)
+    if results:
+        df = pd.DataFrame(results)
+    else:
+        df = pd.DataFrame(columns=_SCAN_STD_COLUMNS)
     df.to_csv(path, index=False, encoding="utf-8-sig")
     print(f"结果已保存: {path}")
     return str(path)
