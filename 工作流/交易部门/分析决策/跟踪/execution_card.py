@@ -257,7 +257,15 @@ def cloud_order_reminder(track_file: str | Path | None = None,
     except (OSError, ValueError):
         scan_map = None
     if scan_map is not None:
-        out.append(f"  ℹ️ 校准基准：扫描批次 {scan_batch}（数据基础/扫描输出 最新主文件）")
+        # R-065 防再犯（08-12 实测 08-11 主文件缺失静默读 08-10 旧批次）：
+        # 批次日期 < 今日-1 交易日 → 明确警告数据过时，校准不可靠
+        _batch_date = scan_batch[:8] if len(scan_batch) >= 8 else ""
+        _stale = bool(_batch_date and _batch_date < today.replace("-", ""))
+        if _stale:
+            out.append(f"  ⚠️ **扫描数据过时**：最新主文件批次 {scan_batch}（{_batch_date}）"
+                       f"——今日未生成主扫描文件，校准基准不可靠，请检查扫描链路")
+        else:
+            out.append(f"  ℹ️ 校准基准：扫描批次 {scan_batch}")
     for p in pending:
         if scan_map is None:
             out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
