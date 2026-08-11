@@ -280,3 +280,24 @@ def test_scan_s_overview_lists_all_s_with_reasons(monkeypatch, tmp_path):
     assert "600002" in text and "C23 不达标" in text and "止损0.4元<0.5" in text
     assert "600003" in text and "放量不达标" in text
     assert "600004" in text and "已突破" in text
+
+
+def test_protect_card_short_hold_active_is_reference_only(monkeypatch, tmp_path):
+    """R-068：短持仓（<21 根）主动出场 = 参考信号（继续持有），不构成"建议卖出"
+    （600833 教训：曾据保护卡信号误建议开盘卖）"""
+    import pandas as pd
+    from 分析决策.跟踪.execution_card import protect_card
+    from 数据基础.duckdb.reader import read_kline
+    df = read_kline('600833', shared=True)
+    dates = df['日期'].astype(str).str[:10]
+    entry_idx = next(i for i, d in enumerate(dates) if d == '2026-08-10')
+    # 构造短持仓行（trail_stop 空 + 日期 08-10 进场——切片仅 2 根）
+    rows = [{"symbol": "600833", "name": "第一医药", "date": "2026-08-10",
+             "status": "open", "entry_price": "10.18", "stop_loss": "9.64",
+             "trail_stop": None, "highest": None, "lowest": None, "volume": "100",
+             "grade_at_entry": "A", "ty_high": "0", "ty_low": "0"}]
+    text = protect_card(rows)
+    assert "参考信号" in text and "继续持有" in text
+    assert "建议卖出" not in text
+    # 止损值正常（trail_stop None → 用 stop_loss，NaN truthy bug 回归）
+    assert "10.18" in text  # 平保止损保护显示

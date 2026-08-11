@@ -511,7 +511,11 @@ def protect_card(rows: list[dict] | None = None) -> str:
         if df is None or len(df) < 2:
             continue
         entry = float(r["entry_price"])
-        stop = float(r.get("trail_stop") or r["stop_loss"])
+        # R-068 修复：trail_stop 空值经 pandas 读成 NaN（NaN 为 truthy → or 失效）
+        _ts = r.get("trail_stop")
+        stop = float(r["stop_loss"] if (_ts is None or _ts == ""
+                                        or (isinstance(_ts, float) and _ts != _ts))
+                     else _ts)
         # R-054 审核 P0-3：df 从进场日切片（防进场前 K 线污染拐点判定）
         entry_idx = next((i for i, d in enumerate(
             df["日期"].astype(str).str[:10].values) if d == r["date"]), None)
@@ -535,7 +539,17 @@ def protect_card(rows: list[dict] | None = None) -> str:
         head = f"  {code} {name}（{src} {r.get('volume')} 股 @{entry:.2f}）| R={r_now:+.2f}"
         if v.get("should_exit"):
             # V4 审核 P1-5：主动出场卖出建议（实盘人工执行入口）
-            out.append(f"{head}\n      ⚠️ 主动出场信号 → 建议卖出（{v['reason']}）")
+            # R-068（2026-08-12 老板拍板）：短持仓（切片 <21 根）的主动出场 =
+            # 参考信号——R-062 自动执行口径明确"持仓 ≥21 根才自动触发"（R-063
+            # 审计：短持仓触发砍肉 -231pp）——只标注参考，不构成"建议卖出"
+            # （600833 教训：曾据保护卡信号误建议开盘卖，实际应继续持有）
+            _short_active = (len(df_pos) < 21 and "主动出场" in v.get("reason", ""))
+            if _short_active:
+                out.append(f"{head}\n      ⚠️ 主动出场**参考信号**（持仓 {len(df_pos)} 根 <21——"
+                           f"策略自动执行不触发，**继续持有**；止损保护 "
+                           f"{v.get('stop_update') or stop:.2f}）")
+            else:
+                out.append(f"{head}\n      ⚠️ 主动出场信号 → 建议卖出（{v['reason']}）")
         elif v.get("stop_update"):
             out.append(f"{head}\n      止损 {stop:.2f} → 建议 {v['stop_update']:.2f}"
                        f"（{v['reason']}）——照此改云单止损价")
