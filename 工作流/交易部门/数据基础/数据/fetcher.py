@@ -333,7 +333,15 @@ def get_stock_list(use_cache: bool = True) -> list[dict]:
     if use_cache:
         cached = read_cache(cache_key, STOCK_LIST_CACHE_DAYS)
         if cached is not None:
-            return cached.to_dict("records")
+            df = cached.copy()
+            # 2026-08-10 修复：pandas 读 CSV 把 "600000" 推断为 int，
+            # code 变数值导致与字符串候选比较恒 False（池校验把全部候选
+            # 当池外票剔除）；此处统一规范化为 6 位字符串。
+            if "code" in df.columns:
+                df["code"] = df["code"].astype(str).str.zfill(6)
+            if "name" in df.columns:
+                df["name"] = df["name"].fillna("")
+            return df.to_dict("records")
 
     result = _get_stock_list_baostock()
     if not result:

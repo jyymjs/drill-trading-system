@@ -14,22 +14,6 @@ import pandas as pd
 from 分析决策.风控.position import Position
 
 
-def calc_initial_stop(ty_low: float, ty_high: float, direction: str = "long",
-                      entry_price: float = 0) -> float:
-    """层面1：计算原始止损价
-
-    多头：TY低点下方（留余量）
-    空头：TY高点上方（留余量）
-
-    Returns:
-        止损价
-    """
-    if direction == "long":
-        return round(ty_low * 0.995, 2)
-    else:
-        return round(ty_high * 1.005, 2)
-
-
 def check_breakeven(position: Position, current_price: float) -> float | None:
     """层面2：平价保护检测
 

@@ -36,7 +36,8 @@ def is_st_name(name: str) -> bool:
     Returns:
         True = 该股票属于 ST/*ST，应一票否决
     """
-    n = (name or "").replace(" ", "").upper()
+    # 2026-08-10 防御：缓存 CSV 空名称读回为 NaN（float），直接 .replace 崩
+    n = str(name or "").replace(" ", "").upper()
     # ST 标记恒出现在名称前 4 字符（ST / *ST / SST / S*ST / NST）
     return "ST" in n[:4]
 

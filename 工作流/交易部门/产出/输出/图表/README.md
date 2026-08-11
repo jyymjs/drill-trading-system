@@ -42,8 +42,8 @@
 
 ```bash
 python main.py dashboard              # 全景图（回测+蒙卡+实盘）
-python main.py dashboard --live-only  # 实盘图（已接入每日 19:05 扫描）
+python main.py dashboard --live-only  # 实盘图（已接入每日 18:05 扫描）
 python main.py dashboard --subdir 20260807-全面测试   # 测试归档子目录
 ```
 
-> 每日 19:05 扫描后实盘 3 图自动更新；回测全景图数据固定（3 年），有需要重跑。
+> 每日 18:05 扫描后实盘 3 图自动更新；回测全景图数据固定（3 年），有需要重跑。

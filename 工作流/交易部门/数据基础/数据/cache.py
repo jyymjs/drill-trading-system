@@ -26,12 +26,23 @@ def is_cache_valid(path: str, max_days: int = 1) -> bool:
 
 
 def read_cache(symbol: str, max_days: int = 1) -> pd.DataFrame | None:
-    """读取缓存，过期返回None"""
+    """读取缓存，过期返回None
+
+    2026-08-10 修复：股票列表缓存（__stock_list__.csv，仅 code/name 列）
+    用 parse_dates=["日期"] 读取恒抛异常 → 缓存永远未命中 → 每次走网络
+    （网络慢时整链路卡死，实测暴露）。列不存在时回退普通读取。
+    """
     path = cache_path(symbol)
     if is_cache_valid(path, max_days):
         try:
             df = pd.read_csv(path, parse_dates=["日期"])
             return df
+        except (ValueError, KeyError):
+            # 无"日期"列的缓存（如股票列表）→ 普通读取
+            try:
+                return pd.read_csv(path)
+            except Exception:
+                return None
         except Exception:
             return None
     return None
