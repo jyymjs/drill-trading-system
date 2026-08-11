@@ -190,24 +190,35 @@ def _open_pending_add() -> float:
                for r in rows if r.get("status") == "open" and r.get("phase") == "half")
 
 
-def cloud_order_reminder() -> str:
-    """云条件单到期提醒板块（2026-08-11 老板拍板：每日执行卡提醒未触发到期单）
+def cloud_order_reminder(track_file: str | Path | None = None,
+                         scan_dir: str | Path | None = None) -> str:
+    """云条件单持续埋伏 + 每日校准（R-065 2026-08-12 老板拍板，替代 3 日到期提醒）
 
-    读 交易日志/云条件单跟踪.md 的「挂单中」行 → 挂单日 + 3 个交易日（策略有效期，
-    突破 69% 发生在 3 日内）判定 → ⚠️ 到期撤单重挂 / 剩余交易日提示。
+    读 云条件单跟踪.md 的「挂单中」行 → 与最新扫描结果（主 scan_result）
+    对比触发价/止损 → 三态：
+      ✅ 触发价一致     → 持续埋伏中（无需操作）
+      ⚠️ 触发价过时     → **建议撤单**，按最新口径重挂（显示最新触发价/止损）
+      ⚠️ 不在最新候选   → **建议撤单**（S 级消失，不再埋伏）
+    老板拍板（R-065）：任何需要操作的状态必须显式提示"撤单"。
     已成交行的止损单（保护仓）不提醒——长期有效；只有「挂单中」的买入单提醒。
-    老板未设券商有效期（长期挂）→ 按策略 3 交易日提醒，防价格过时后旧单失效。
+
+    Args:
+        track_file: 云单跟踪表路径（测试注入；缺省 = 交易日志/云条件单跟踪.md）
+        scan_dir: 扫描输出目录（测试注入；缺省 = 数据基础/扫描输出）
 
     Returns:
         提醒板块文本（无挂单中单 → 一行说明）
     """
     import re
-    import numpy as np
+    import csv
     W = 76
     line = "-" * W
     today = datetime.now().strftime("%Y-%m-%d")
-    f = Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md"
-    out = [line, f"〔云条件单到期提醒〕{today}".center(W), line]
+    f = (Path(track_file) if track_file
+         else Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md")
+    sdir = (Path(scan_dir) if scan_dir
+            else Path(__file__).resolve().parent.parent.parent / "数据基础" / "扫描输出")
+    out = [line, f"〔云条件单持续埋伏〕{today}".center(W), line]
     pending = []
     if f.exists():
         for ln in f.read_text(encoding="utf-8").splitlines():
@@ -219,23 +230,45 @@ def cloud_order_reminder() -> str:
                                     "trigger": float(trig), "stop": float(stop),
                                     "vol": int(vol)})
     if not pending:
-        out.append("  无挂单中的买入条件单（今日无到期提醒）")
+        out.append("  无挂单中的买入条件单（持续埋伏池为空）")
         out.append(line)
         return "\n".join(out)
-    for p in pending:
-        try:
-            days = int(np.busday_count(np.datetime64(p["date"]), np.datetime64(today)))
-        except (TypeError, ValueError):
-            days = 0
-        remain = 3 - days  # 有效期 3 个交易日
-        if remain <= 0:
-            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
-                       f"挂单 {p['date'][5:]} 起已 {days} 个交易日未触发 → "
-                       f"**到期撤单重挂**（价格可能已过时，请核对最新执行卡参数）")
+    # 最新扫描结果（主 scan_result，同 sim_auto_open 文件选取规则）——校准基准
+    scan_map: dict[str, dict] | None = {}
+    try:
+        files = sorted((p for p in sdir.glob("scan_result_*.csv")
+                        if re.match(r"scan_result_\d{8}_\d{6}$", p.stem)),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        if not files:
+            scan_map = None
         else:
-            out.append(f"  ⏳ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
-                       f"挂单 {p['date'][5:]}，剩 {remain} 个交易日有效"
-                       f"（{p['vol']} 股 0.5R 试探）")
+            with open(files[0], encoding="utf-8-sig") as fh:
+                for rec in csv.DictReader(fh):
+                    code = str(rec.get("code", "")).strip()
+                    trig = rec.get("触发价", "")
+                    stop = rec.get("止损价", "")
+                    if code and trig:
+                        scan_map[code] = {"trigger": float(trig) or 0.0,
+                                          "stop": float(stop) or 0.0}
+    except (OSError, ValueError):
+        scan_map = None
+    for p in pending:
+        if scan_map is None:
+            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"未找到最新扫描结果，无法校准 → 请核对最新执行卡参数后决定撤单/重挂")
+            continue
+        s = scan_map.get(p["code"])
+        if s is None:
+            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"已不在最新扫描 S 级候选（结构变化/参数失效）→ "
+                       f"**建议撤单，不再埋伏**")
+        elif abs(s["trigger"] - p["trigger"]) < 0.005:
+            out.append(f"  ✅ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"触发价已校准，持续埋伏中（{p['vol']} 股 0.5R 试探，无需操作）")
+        else:
+            out.append(f"  ⚠️ {p['code']} {p['name']} 买入单 ≥{p['trigger']:.2f}："
+                       f"**触发价过时**——最新口径 ≥{s['trigger']:.2f}（止损 {s['stop']:.2f}）"
+                       f"→ **建议撤单，按最新口径重挂**")
     out.append(line)
     return "\n".join(out)
 

@@ -116,12 +116,13 @@ def test_pending_fills_only_when_high_hits_trigger(monkeypatch, tmp_path):
 
 
 def test_pending_not_filled_when_price_never_hits(monkeypatch, tmp_path):
-    """未到价不成交（老板核心担忧：实盘未触发模拟线不得假买入）"""
+    """未到价不成交（老板核心担忧：实盘未触发模拟线不得假买入）——挂单当日 K 线
+    （fill_days=0 未超 R-065 隔天有效期）→ 保持挂单中"""
     use_tmp_journal(monkeypatch, tmp_path)
     monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                         lambda code, use_cache=True: mk_kline([
                             ("2025-01-02", 9.0, 9.5, 8.8, 9.2),
-                            ("2025-01-06", 9.0, 10.4, 8.9, 10.0),  # 最高 10.4 < 10.5
+                            ("2025-01-03", 9.0, 10.4, 8.9, 10.0),  # 挂单日：最高 10.4 < 10.5
                         ]))
     st._write_all([pend_row(created="2025-01-03")])
     text = st.sim_check()
@@ -130,13 +131,14 @@ def test_pending_not_filled_when_price_never_hits(monkeypatch, tmp_path):
 
 
 def test_pending_cancelled_after_expire_days(monkeypatch, tmp_path):
-    """挂单后 3 个交易日仍未触发 → 撤销留痕（机会成本真实记录，老板拍板 3 日）"""
+    """挂单后 1 个交易日仍未触发 → 撤销留痕（R-065 老板拍板：隔天失效 + 每日重挂 =
+    每日校准触发价；次日 sim_auto_open 仍在候选则自动重挂）"""
     use_tmp_journal(monkeypatch, tmp_path)
     monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                         lambda code, use_cache=True: mk_kline([
-                            ("2025-01-06", 9.0, 10.4, 8.9, 10.0),  # 第1日
-                            ("2025-01-07", 9.0, 10.4, 8.9, 10.0),  # 第2日
-                            ("2025-01-08", 9.0, 10.4, 8.9, 10.0),  # 第3日 → 撤销
+                            ("2025-01-02", 9.0, 9.5, 8.8, 9.2),   # 挂单前
+                            ("2025-01-06", 9.0, 10.4, 8.9, 10.0),  # 第1日（挂单后）→ 撤销
+                            ("2025-01-07", 9.0, 10.4, 8.9, 10.0),  # 数据完整性
                         ]))
     st._write_all([pend_row(created="2025-01-03")])
     text = st.sim_check()
@@ -183,12 +185,13 @@ def test_auto_open_default_picks_main_file_not_variants(monkeypatch, tmp_path):
 
 
 def test_sim_check_with_only_pending_no_open(monkeypatch, tmp_path):
-    """仅挂单中（无持仓）时 sim_check 正常返回跟进信息，不崩"""
+    """仅挂单中（无持仓）时 sim_check 正常返回跟进信息，不崩（挂单当日 K 线，
+    fill_days=0 未超 R-065 隔天有效期）"""
     use_tmp_journal(monkeypatch, tmp_path)
     monkeypatch.setattr("数据基础.数据.fetcher.get_daily_kline",
                         lambda code, use_cache=True: mk_kline([
                             ("2025-01-02", 9.0, 9.5, 8.8, 9.2),
-                            ("2025-01-06", 9.0, 10.4, 8.9, 10.0),
+                            ("2025-01-03", 9.0, 10.4, 8.9, 10.0),
                         ]))
     st._write_all([pend_row(created="2025-01-03")])
     text = st.sim_check()
@@ -273,3 +276,25 @@ class TestR053BreakQuality:
         step = st._check_half_position(df, _mk_row())
         assert step["action"] == "add", step
         assert step["open_close_ok"] is True and step["vol_ok"] is True
+
+
+def test_auto_open_rehangs_cancelled_while_still_candidate(monkeypatch, tmp_path):
+    """R-065：撤销后的票仍在扫描候选 → sim_auto_open 重新挂单（每日校准/持续埋伏）"""
+    use_tmp_journal(monkeypatch, tmp_path)
+    monkeypatch.setattr(st, "_market_env_scale", lambda: 1.0)
+    monkeypatch.setattr("数据基础.配置.stock_pool.get_stock_codes",
+                        lambda: {"600001"})
+    csv_path = write_scan_csv(tmp_path, [
+        {"code": "600001", "name": "甲", "评级": "S", "触发价": 10.5,
+         "止损价": 9.8, "每股风险": 0.7, "TY高": 11.0, "TY低": 9.5},
+    ])
+    # 前一日撤销留痕（R-065：隔天失效）——票仍在候选 → 今日应重挂
+    rows = st._read_all()
+    rows.append({**pend_row(code="600001", trigger=10.5, stop=9.8),
+                 "status": "cancelled",
+                 "exit_reason": "模拟条件单超期未触发（1 个交易日）"})
+    st._write_all(rows)
+    text = st.sim_auto_open(csv_path=csv_path)
+    assert "新建 1 笔条件单" in text or "新建 1 笔" in text
+    r = st._read_all()
+    assert any(x["status"] == "pending" and x["symbol"] == "600001" for x in r)

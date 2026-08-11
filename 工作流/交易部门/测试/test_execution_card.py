@@ -230,3 +230,28 @@ class TestR051FundCheck:
         text = execution_card.order_card([cand(price=18.0)], capital=8401, risk_ratio=0.025)
         assert "资金占用校验" in text
         assert "已持 2000" in text and "待补仓 2000" in text and "新挂单触发 1800" in text
+
+
+def test_cloud_order_reminder_calibration_states(monkeypatch, tmp_path):
+    """R-065 云单校准三态：一致→持续埋伏 / 过时→撤单重挂 / 不在候选→撤单（均须含撤单提示）"""
+    from 分析决策.跟踪.execution_card import cloud_order_reminder
+    track = tmp_path / "云条件单跟踪.md"
+    track.write_text(
+        "| 股票 | 挂单日 | 买入触发价 | 止损价 | 股数 | 状态 | 触发日 | 备注 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 600001 甲 | 2026-08-11 | ≥ 10.50 | ≤ 9.80 | 100 | 挂单中 | | 一致样例 |\n"
+        "| 600002 乙 | 2026-08-11 | ≥ 14.02 | ≤ 13.33 | 100 | 挂单中 | | 过时样例 |\n"
+        "| 600003 丙 | 2026-08-11 | ≥ 8.80 | ≤ 8.10 | 100 | 挂单中 | | 不在候选样例 |\n",
+        encoding="utf-8")
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    (scan_dir / "scan_result_20260811_190000.csv").write_text(
+        "code,name,触发价,止损价\n"
+        "600001,甲,10.50,9.80\n"
+        "600002,乙,13.45,12.78\n",
+        encoding="utf-8-sig")
+    text = cloud_order_reminder(track_file=track, scan_dir=scan_dir)
+    assert "持续埋伏中" in text and "600001" in text
+    assert "触发价过时" in text and "600002" in text and "建议撤单" in text
+    assert "已不在最新扫描" in text and "600003" in text and "建议撤单" in text
+    assert "13.45" in text and "12.78" in text  # 最新口径展示
