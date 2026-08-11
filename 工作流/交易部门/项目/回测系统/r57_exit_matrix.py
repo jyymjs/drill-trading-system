@@ -104,9 +104,10 @@ def replay(row: pd.Series, df: pd.DataFrame, switches: dict, hold: int) -> dict:
         day_df = df.iloc[trig_idx:j + 1]
         pos.highest_price = max(pos.highest_price, float(highs[j]))
         pos.lowest_price = min(pos.lowest_price, float(lows[j]))
-        # R-060（2026-08-12 老板拍板）：主动出场用全量 df（与生产 sim_check/protect_card
-        # 同口径）——短持仓（<21 根）主动出场不再因切片"数据不足"静默，实验数字修正
-        ev = evaluate_exit(pos, day_df, active_df=df, **switches)
+        # R-062（2026-08-12 老板拍板）：回测/自动执行口径 = 切片 + 持仓 ≥21 根才触发
+        # 主动出场（R-060 全量口径短持仓触发砍趋势启动 -231pp；长持仓正贡献 +222pp——
+        # 回到 R-060 前 997.7% 口径）。保护卡人工建议保留全量（execution_card.py）
+        ev = evaluate_exit(pos, day_df, **switches)
         if ev["stop_update"] and ev["stop_update"] > pos.current_stop:
             pos.current_stop = ev["stop_update"]
         if ev["should_exit"]:
@@ -134,11 +135,14 @@ def _r(entry: float, exit_price: float, risk: float) -> float:
 _KC = KlineCache()
 _RC = ReplayResultCache()
 _SIG_HASH_CACHE: str | None = None
+# R-062 口径版本：主动出场自动执行 = 切片 + 持仓 ≥21 根（R-060 曾用全量口径）——
+# 改口径必须换版本号，防磁盘缓存命中旧口径结果（易犯错误 #14 同源教训）
+_CACHE_VER = "r062"
 
 
 def _sig_hash() -> str:
-    """信号集内容哈希（code/date/trigger/stop 三元组+止损——重放输入全依赖）——
-    磁盘缓存键：信号集更新（每日 18:00 数据）→ 哈希变 → 缓存自动失效"""
+    """信号集内容哈希（code/date/trigger/stop 三元组+止损——重放输入全依赖）+
+    口径版本前缀——磁盘缓存键：信号集更新（每日 18:00 数据）→ 哈希变 → 缓存自动失效"""
     global _SIG_HASH_CACHE
     if _SIG_HASH_CACHE is not None:
         return _SIG_HASH_CACHE
@@ -147,7 +151,7 @@ def _sig_hash() -> str:
     h = _hl.sha256()
     for c in ("code", "date", "trigger", "stop"):
         h.update(sig[c].astype(str).str.cat(sep="\x1f").encode("utf-8", errors="replace"))
-    _SIG_HASH_CACHE = h.hexdigest()[:16]
+    _SIG_HASH_CACHE = f"{_CACHE_VER}_{h.hexdigest()[:16]}"
     return _SIG_HASH_CACHE
 
 

@@ -636,8 +636,10 @@ def sim_check() -> str:
         r["lowest"] = f"{min(pos.lowest_price, l_now):.2f}"
         pos.highest_price = max(pos.highest_price, h_now)
         pos.lowest_price = min(pos.lowest_price, l_now)
-        # R-060（2026-08-12 老板拍板）：主动出场用全量 df——短持仓（<21 根）不再静默失效
-        verdict = em.evaluate_exit(pos, df_pos, active_df=df)
+        # R-062（2026-08-12 老板拍板）：自动执行口径 = 切片 + 持仓 ≥21 根才触发主动出场
+        # （R-060 全量口径下短持仓触发 = 砍趋势启动，回测 -231pp；长持仓触发 = 正贡献
+        # +222pp——数据分界）。保护卡（人工建议）保留全量口径（execution_card.py）。
+        verdict = em.evaluate_exit(pos, df_pos)
         latest = df.iloc[-1]
         if verdict["should_exit"]:
             exit_price = verdict["exit_price"] or float(latest["收盘"])
