@@ -422,3 +422,29 @@ class TestPositionsOverview:
         assert "600001 甲 进10.50 现10.90 损10.20 R+0.42 ✅确认→补仓@10.80" in text
         assert "卖单 ≤10.2 已挂(到期08-31)" in text
         assert "现金够" in text and "## 资金" in text
+
+
+class TestNameFallback:
+    def test_s_overview_name_fallback(self, tmp_path):
+        """R-076d：S 级全览变体文件 name 空 → 主文件 name 兜底（不显示裸代码）"""
+        from 分析决策.跟踪.execution_card import _s_overview_body
+        import re as _re
+        scan = tmp_path / "scan"
+        scan.mkdir()
+        # 主文件（600001 带 name）
+        (scan / "scan_result_20260812_180000.csv").write_text(
+            "code,name,评级,触发价,止损价,price,TY低\n"
+            "600001,甲票,S,10.50,9.80,10.00,9.60\n", encoding="utf-8")
+        # 变体（600002 name 空）
+        (scan / "scan_result_20260812_180000_vol.csv").write_text(
+            "code,name,评级,触发价,止损价,price,TY低,当前量比\n"
+            "600002,,S,8.80,8.10,8.20,8.00,1.1\n", encoding="utf-8")
+        old = execution_card._SCAN_DIR
+        execution_card._SCAN_DIR = scan
+        try:
+            text = _s_overview_body()
+        finally:
+            execution_card._SCAN_DIR = old
+        assert "600002" in text and "600002" in text  # 变体独有票仍在列
+        # 600002 无主文件 name → 兜底显示代码本身（不崩）；600001 用主文件 name
+        assert "甲票" in text

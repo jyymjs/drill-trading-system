@@ -844,7 +844,11 @@ def _half_step(rows: list[dict] | None = None) -> list[dict]:
             continue
         capital = None if str(r.get("trade_id", "")).startswith("LIVE") else sim_trading.SIM_CAPITAL
         step = sim_trading._check_half_position(df, r, capital=capital)
-        steps.append({"code": code, "name": r.get("name", "") or "",
+        # R-076d：name 空兜底（云单表补，仍缺 → 代码）
+        _nm = (r.get("name", "") or "").strip()
+        if not _nm:
+            _nm = next((o["name"] for o in _cloud_orders() if o["code"] == code), "") or code
+        steps.append({"code": code, "name": _nm,
                       "row": r, "step": step, "df": df})
     return steps
 
@@ -913,6 +917,10 @@ def positions_overview(rows: list[dict] | None = None,
     opens = [r for r in rows if r.get("status") == "open"]
     orders = {o["code"]: o for o in _cloud_orders()}
     steps = {h["code"]: h for h in _half_step(rows)}
+    # R-076d：journal name 空兜底（云单表 name 补齐，仍缺 → 代码）
+    for r in opens:
+        if not (r.get("name") or "").strip():
+            r["name"] = orders.get(str(r.get("symbol", "")), {}).get("name", "") or r.get("symbol", "")
     _ctx = _env_capital_ctx()
     _held = _open_hold_cost()
     _pend = _open_pending_add()
@@ -1081,6 +1089,17 @@ def _s_overview_body() -> str:
                "_broken": "❌ 已突破（现价≥触发价，追高不买）",
                "_c23": "❌ C23 不达标",
                "_vol": "❌ 放量不达标（量比≤1.2，不新挂单（已挂单除外）；突破日确认量能）"}
+    # R-076d：主文件 name 映射——变体文件 name 空时兜底（08-11 变体曾 name 全空）
+    main_names: dict[str, str] = {}
+    for f in files:
+        if f.stem.replace("scan_result_", "")[15:] != "":
+            continue
+        try:
+            with open(f, encoding="utf-8-sig") as fh:
+                for rec in csv.DictReader(fh):
+                    main_names[str(rec.get("code", "")).strip()] = rec.get("name", "") or ""
+        except (OSError, ValueError):
+            pass
     for f in files:
         suffix = f.stem.replace("scan_result_", "")[15:]
         try:
@@ -1092,9 +1111,10 @@ def _s_overview_body() -> str:
                     reason = tag_map.get(suffix, "")
                     if suffix == "_c23":
                         reason += f"（{rec.get('C23原因', '') or '不达标'}）"
+                    _nm = (rec.get("name", "") or "").strip() or main_names.get(code, "") or code
                     s_level[code] = {"trigger": rec.get("触发价", ""),
                                      "stop": rec.get("止损价", ""), "reason": reason,
-                                     "name": rec.get("name", ""),
+                                     "name": _nm,
                                      "price": rec.get("price", ""),
                                      "ty_low": rec.get("TY低", "")}
         except (OSError, ValueError):
