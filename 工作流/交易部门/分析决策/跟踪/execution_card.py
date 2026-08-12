@@ -925,6 +925,7 @@ def positions_overview(rows: list[dict] | None = None,
                                            float(c.get("TY低", 0) or 0) or None)["broken"])
     _cash = _ctx["cap"] - _held
     out = [f"## 持仓（{len(opens)} 笔）"]
+    _mv = 0.0   # 持仓市值（Σ 最新收盘价×股数——券商 App 口径，老板对账用）
     if not opens:
         out.append("无在持仓")
     for r in opens:
@@ -954,6 +955,7 @@ def positions_overview(rows: list[dict] | None = None,
             _act_txt = ""
         # 止损显示建议值（有 stop_update 用建议——券商卖单按建议挂）
         _disp_stop = st["v"].get("stop_update") or stop
+        _mv += st["latest_close"] * int(r.get("volume", 0) or 0)
         out.append(f"  {code} {name} 进{entry:.2f} 现{st['latest_close']:.2f} "
                    f"损{_disp_stop:.2f} R{r_now:+.2f} {_act_txt}{_sell_txt}")
         # 从行：非平凡才印（补仓参数/止盈目标/突破质量/止损建议）
@@ -970,17 +972,20 @@ def positions_overview(rows: list[dict] | None = None,
         elif st["v"].get("stop_update"):
             out.append(f"    📋 止损 {stop:.2f} → 建议 {st['v']['stop_update']:.2f}"
                        f"（{st['v'].get('reason', '')}）")
-    # 资金段（与 order_card 占用校验同源：_open_hold_cost/_open_pending_add/
-    # _pending_orders_cost + _env_capital_ctx）
+    # 资金段（券商 App 口径优先——老板对账标准，2026-08-12 老板指出"资金 8401"对不上）：
+    #   总资产 = 现金 + 持仓市值；累计盈亏 = 市值 - 成本（≈ App 摊薄浮盈亏）
+    #   预算口径（本金 8401 与占用）作为第二行，用于补仓/挂单决策
     cap = _ctx["cap"]
+    _asset = _cash + _mv
+    _pnl = _mv - _held
     out.append("## 资金")
-    out.append(f"  资金 {cap:.0f} ｜ 可用现金约 {_cash:.0f} ｜ 已持 {_held:.0f}"
-               f" ｜ 待补仓 {_pend:.0f} ｜ 触发占用 {_trig_n + _trig_o:.0f}"
-               f"（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）")
+    out.append(f"  总资产 ~{_asset:.0f} ｜ 可用现金 ~{_cash:.0f} ｜ 市值 {_mv:.0f}"
+               f" ｜ 累计盈亏 ~{_pnl:+.0f}（市值-成本）")
+    out.append(f"  💰 预算口径：本金 {cap:.0f} ｜ 已持成本 {_held:.0f} ｜ 待补仓 {_pend:.0f}"
+               f" ｜ 触发占用 {_trig_n + _trig_o:.0f}（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）")
     _total = _held + _pend + _trig_n + _trig_o
     if _total > cap:
-        out.append(f"  ⚠️ 预算缺口 {_total - cap:.0f} 元（{_total:.0f}/{cap:.0f}）——"
-                   f"优先补仓，挂单排队等回款")
+        out.append(f"  ⚠️ 预算缺口 {_total - cap:.0f} 元——优先补仓，挂单排队等回款")
     return "\n".join(out)
 
 
