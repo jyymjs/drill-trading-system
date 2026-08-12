@@ -286,6 +286,7 @@ def _cloud_orders(track_file: str | Path | None = None) -> list[dict]:
         return cols.index(name) if name in cols else None
 
     i_sell, i_expire, i_status, i_note = ci("卖出条件单"), ci("到期日"), ci("状态"), ci("备注")
+    i_trig_date = ci("触发日")
     orders = []
     for ln in lines[hdr + 2:]:
         if not ln.startswith("|"):
@@ -305,7 +306,7 @@ def _cloud_orders(track_file: str | Path | None = None) -> list[dict]:
             "vol": cells[4] if len(cells) > 4 else "",
             "status": get(i_status).replace("**", ""),
             "sell": get(i_sell).replace("**", ""), "expire": get(i_expire),
-            "note": get(i_note),
+            "trigger_date": get(i_trig_date), "note": get(i_note),
         })
     return orders
 
@@ -1010,10 +1011,18 @@ def positions_overview(rows: list[dict] | None = None,
 
 
 def cloud_orders_status() -> str:
-    """云单状态全表（R-076：买入+卖出+到期+校准 一行一单——补上旧板块缺失的
-    卖出单/到期日维度；校准三态简化版：✅有效/⚠️参数过时/🔴破位/不在候选）"""
+    """云单状态全表（R-076f 规范化：6 列——股票/买入单/买入止损/卖出单/到期/当前状态）
+
+    状态合成（当前状态 = 买入单状态 + 卖出单角色）：
+      🕐 埋伏中（挂单中，校准态附：✅有效/🔴破位/⚠️过时/不在候选）
+      ✅ 持仓保护中（已成交 + 卖出保护单在挂，附触发日）
+      🔴 平仓中（已成交 + 确认不通过——_half_step 判定 exit_reject/exit_stop）
+      已撤单 → 主表排除，尾部一行汇总（历史不占主表）
+    卖出单备注（"原≤10.04 作废"类）不进主表（源表备注列保留）。
+    """
+    import re
     orders = _cloud_orders()
-    out = ["## 云单状态"]
+    out = ["## 云单状态（当前有效单）"]
     try:
         scan_map, batch = _scan_map()
     except Exception:  # noqa: BLE001
@@ -1021,15 +1030,29 @@ def cloud_orders_status() -> str:
     if batch:
         # 校准基准放表格前——markdown 表格要求连续行，插中间会打断渲染
         out.append(f"  ℹ️ 校准基准：批次 {batch}")
-    out += ["| 股票 | 买入单 | 卖出单 | 到期 | 状态 |",
-            "|---|---|---|---|---|"]
+    out += ["| 股票 | 买入单 | 买入止损 | 卖出单 | 到期 | 当前状态 |",
+            "|---|---|---|---|---|---|"]
     if not orders:
-        out.append("| — | — | — | — | 云单表为空（无记录）|")
+        out.append("| — | — | — | — | — | 云单表为空（无记录）|")
         return "\n".join(out)
+    # 已成交票的确认判定（平仓中 vs 持仓保护中——共享 _half_step 判定）
+    steps = {h["code"]: h["step"] for h in _half_step()}
+    withdrawn: list[str] = []
     for o in orders:
         stat = o["status"]
+        if "已撤单" in stat:
+            withdrawn.append(f"{o['code']} {o['name']}（{o['note'][:12] or '已撤'}）")
+            continue
         trig = f"≥{o['trigger']}/{o['vol']}股" if o["trigger"] else "—"
-        sell = (o["sell"] or "—").replace("**", "")
+        stop_px = o["stop"] or "—"
+        # 卖出单：只显示触发价+状态（备注不进主表）
+        sell = (o["sell"] or "").replace("**", "")
+        _sell_short = ""
+        if sell:
+            m_sell = re.match(r"≤?\s*([\d.]+)\s*(.*)", sell)
+            if m_sell:
+                _sell_short = f"≤{m_sell.group(1)}" + (" 已挂" if "已挂" in sell else "")
+        sell_txt = _sell_short or "—"
         exp = o["expire"] or "—"
         cal = ""
         if "挂单中" in stat and scan_map:
@@ -1039,15 +1062,25 @@ def cloud_orders_status() -> str:
             else:
                 sb = structure_broken(s["price"], float(o["stop"] or 0) or 0, s.get("ty_low"))
                 if sb["broken"]:
-                    cal = f"🔴 破位失效"
+                    cal = "🔴 破位失效"
                 elif abs(s["trigger"] - float(o["trigger"] or 0)) >= 0.005:
                     cal = "⚠️ 参数过时"
                 else:
                     cal = "✅ 有效"
                     if s.get("vol", 0) > 0 and s["vol"] <= 1.2:
                         cal += "（缩量不撤）"
-        out.append(f"| {o['code']} {o['name']} | {trig} | {sell} | {exp} | "
-                   f"{stat}{(' ' + cal) if cal else ''} |")
+        if "挂单中" in stat:
+            cur = f"🕐 埋伏中{(' ' + cal) if cal else ''}"
+        else:  # 已成交：平仓中 vs 持仓保护中（确认判定优先）
+            stp = steps.get(o["code"])
+            if stp and stp.get("action") in ("exit_reject", "exit_stop"):
+                cur = "🔴 平仓中（确认不通过）"
+            else:
+                cur = f"✅ 持仓保护中{('（' + o['trigger_date'] + ' 成交）') if o['trigger_date'] else ''}"
+        out.append(f"| {o['code']} {o['name']} | {trig} | {stop_px} | {sell_txt} | {exp} | {cur} |")
+    if withdrawn:
+        out.append(f"（已撤单 {len(withdrawn)} 只：{' / '.join(o.split('（')[0] for o in withdrawn)}"
+                   f"——历史不占主表）")
     return "\n".join(out)
 
 
