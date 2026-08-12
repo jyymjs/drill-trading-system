@@ -83,22 +83,32 @@ def order_card(candidates: list[dict], capital: float | None = None,
     out.append(f"  💰 当前配置：资金 {cap:.0f} 元 | 单笔风险额 {risk_amt:.0f} 元"
                f"（{cap:.0f}×{risk_ratio:.4%}{'×0.5' if scale != 1.0 else ''}）"
                f" | 持仓上限：无限制（有 S 级候选就买）")
-    # R-051 挂单资金占用校验（2026-08-11 老板拍板采纳）：已持占用 + 潜在补仓 +
-    # 新候选触发占用 vs 余额——防多笔试探仓触发后资金链断裂（补仓日余额不足
-    # 按 R-051 规则维持 0.5R 不补，但挂单前先给提示）
+    # R-051 挂单资金占用校验（2026-08-11 老板拍板采纳；R-074 复核修订 2026-08-12）：
+    # 已持占用 + 待补仓（仅确认通过）+ 触发占用（云单挂单中 + 当日有效新候选）
+    # vs 余额——防多笔试探仓触发后资金链断裂。修订三点（交易部复核 P1-1）：
+    #   ① 待补仓只算"确认通过可补"（平仓中/未确认不占）
+    #   ② 新候选排除破位票（600285 类现价≤止损不可挂，不占）
+    #   ③ 补上已挂单触发占用（300453 1952——漏计会低估资金需求）
     _held = _open_hold_cost()
     _pend = _open_pending_add()
-    # 新挂单触发占用只算有效候选（触发/止损/每股风险 >0——排除 600001 类池外/参数无效票
-    # 混入占用计算，2026-08-11 实测发现：600001 触发 10.00/止损 0.00 曾污染占用数字）
-    _trig = sum(float(r.get("触发价", 0) or 0) * 100 for r in candidates
-                if (r.get("触发价", 0) or 0) > 0 and (r.get("止损价", 0) or 0) > 0
-                and (r.get("每股风险", 0) or 0) > 0)
+    # 新候选触发占用：有效候选（触发/止损/风险 >0 且结构未破——R-073 破位原语）
+    _trig_new = sum(float(r.get("触发价", 0) or 0) * 100 for r in candidates
+                    if (r.get("触发价", 0) or 0) > 0 and (r.get("止损价", 0) or 0) > 0
+                    and (r.get("每股风险", 0) or 0) > 0
+                    and not structure_broken(float(r.get("price", 0) or r.get("现价", 0) or 0),
+                                             float(r.get("止损价", 0) or 0),
+                                             float(r.get("TY低", 0) or 0) or None)["broken"])
+    _trig_orders = _pending_orders_cost()   # 云单「挂单中」触发占用
+    _trig = _trig_new + _trig_orders
     _total = _held + _pend + _trig
     _left = cap - _total
     _flag = " ⚠️ 超支风险" if _left < 0 else ""
+    _cash = cap - _held   # 真实现金估算（R-051 补仓判定用：预算 - 已投入）
     out.append(f"  💰 资金占用校验：已持 {_held:.0f} + 待补仓 {_pend:.0f}"
-               f" + 新挂单触发 {_trig:.0f} = {_total:.0f} 元 / 资金 {cap:.0f} 元"
-               f"（剩余 {_left:.0f} 元）{_flag}")
+               f" + 触发占用 {_trig:.0f}（新候选 {_trig_new:.0f} + 已挂单 {_trig_orders:.0f}）"
+               f" = {_total:.0f} 元 / 资金 {cap:.0f} 元（剩余 {_left:.0f} 元）{_flag}")
+    out.append(f"  💵 可用现金约 {_cash:.0f} 元（预算 {cap:.0f} - 已投入 {_held:.0f}）"
+               f"——补仓判定以此为准（R-051 修订口径）")
     out.append(f"  新候选挂单路径：{'1R 正常挂单' if scale == 1.0 else '0.5R 试探挂单'}")
     if scale != 1.0:
         out.append("  流程（0.5R 试探 → 次日收线确认，2024-06-29 周会原文）：")
@@ -181,14 +191,46 @@ def _open_hold_cost() -> float:
 
 
 def _open_pending_add() -> float:
-    """实盘待补仓资金（未确认 0.5R 试探仓的等额补仓款，Σ 进场价×股数）
+    """实盘待补仓资金（仅"确认通过可补"的 half 等额款，Σ 补仓价×补仓股数）
 
-    R-051 挂单资金占用校验用（2026-08-11 老板拍板采纳）。只读实盘账本。
+    R-051 挂单资金占用校验用。与 position_card 同源判定
+    （sim_trading._check_half_position，含资金可买性检查）：
+    平仓中（exit_reject/exit_stop）与未确认（wait/hold）不占用补仓款——
+    R-074 复核修正（2026-08-12）：曾把全部 half 进场额当待补款
+    （603970 平仓中仍占 1058、600315 未确认占 1833 → 误报超支）。
     """
     from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
-    rows = _get_live()
-    return sum(float(r.get("entry_price", 0) or 0) * int(r.get("volume", 0) or 0)
-               for r in rows if r.get("status") == "open" and r.get("phase") == "half")
+    from 数据基础.数据.fetcher import get_daily_kline
+    rows = [r for r in _get_live()
+            if r.get("status") == "open" and r.get("phase") == "half"]
+    total = 0.0
+    for r in rows:
+        try:
+            df = get_daily_kline(str(r.get("symbol", "")), use_cache=True)
+            step = sim_trading._check_half_position(df, r, capital=None)
+            if step["action"] == "add":
+                total += float(step.get("add_price", 0) or 0) * int(step.get("add_shares", 0) or 0)
+        except Exception:  # noqa: BLE001 - 单仓数据异常不阻断整体校验
+            continue
+    return total
+
+
+def _pending_orders_cost() -> float:
+    """实盘已挂「挂单中」买入单触发占用（Σ 触发价×股数，读云单跟踪表）
+
+    R-074 复核修正（2026-08-12）：占用校验漏计已挂单（300453 1952 元）——
+    触发占用 = 云单挂单中 + 当日有效新候选，两者都要算。
+    """
+    import re
+    f = Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md"
+    if not f.exists():
+        return 0.0
+    total = 0.0
+    for ln in f.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\| (\d{6}) .+? \| (\d{4}-\d{2}-\d{2}) \| ≥ ([\d.]+) \| ≤ ([\d.]+) \| (\d+) \| (.+?) \|", ln)
+        if m and "挂单中" in m.group(6):
+            total += float(m.group(3)) * int(m.group(5))
+    return total
 
 
 def _latest_scan_files(scan_dir: Path) -> tuple[list[Path], str]:
@@ -241,7 +283,7 @@ def scan_s_overview(scan_dir: str | Path | None = None) -> str:
     tag_map = {"": "✅ 合格候选（可挂单）",
                "_broken": "❌ 已突破（现价≥触发价，追高不买）",
                "_c23": "❌ C23 不达标",
-               "_vol": "❌ 放量不达标（量比≤1.2，暂不挂单；突破日确认量能）"}
+               "_vol": "❌ 放量不达标（量比≤1.2，不新挂单（已挂单除外）；突破日确认量能）"}
     for f in files:
         suffix = f.stem.replace("scan_result_", "")[15:]
         try:
@@ -355,7 +397,10 @@ def cloud_order_reminder(track_file: str | Path | None = None,
                                               "stop": float(stop) or 0.0,
                                               "price": float(rec.get("price", 0) or 0),
                                               "ty_high": float(rec.get("TY高", 0) or 0),
-                                              "ty_low": float(rec.get("TY低", 0) or 0)}
+                                              "ty_low": float(rec.get("TY低", 0) or 0),
+                                              # R-074 复核 P1-2：量比口径——挂单依据信号日
+                                              # 放量，今日缩量不撤单（突破日才确认量能）
+                                              "vol": float(rec.get("当前量比", 0) or 0)}
     except (OSError, ValueError):
         scan_map = None
     if scan_map is not None:
@@ -403,6 +448,11 @@ def cloud_order_reminder(track_file: str | Path | None = None,
             td = (s["trigger"] - s["price"]) / s["price"] * 100.0
             if td < 0.5:
                 tips.append(f"🟢 贴价候选（距触发 {td:.1f}%）")
+        # R-074 复核 P1-2：今日缩量（量比≤1.2）不撤单——挂单依据信号日放量，
+        # 与 S 级全览"放量不达标"口径统一说明，防误撤单（300453 案例）
+        if s.get("vol", 0) > 0 and s["vol"] <= 1.2:
+            tips.append(f"⚠️ 今日量比 {s['vol']:.2f} 缩量（挂单依据信号日放量——"
+                        f"突破日才确认量能，**不撤单**）")
         buf = sb["buffer_pct"]
         if buf is not None and buf < 1.0:
             tips.append(f"🟡 贴止损（缓冲 {buf:.1f}%）")
@@ -484,11 +534,13 @@ def position_card(rows: list[dict] | None = None) -> str:
         held = int(r.get("volume", 0))
         if act == "add":
             # R-051 规则（2026-08-11 老板拍板采纳）：确认补仓时余额不足 → 维持 0.5R 不补
+            # R-074 修订（2026-08-12 交易部复核 P1-1）：add = 可买性检查已过（资金够），
+            # 不再固定打印"余额不足"误导（600833 曾因固定文本误判不补）
             add_cost = float(step.get("add_price", 0) or 0) * int(step.get("add_shares", 0) or 0)
             out.append(f"  ✅ {code} {name}: 收线确认（{step['reason']}）→ "
                        f"补 0.5R 挂单 {step['add_shares']} 股 @ {step['add_price']:.2f}"
                        f"（等额，总 {held + step['add_shares']} 股 = 1R，约需 {add_cost:.0f} 元）")
-            out.append(f"      📋 R-051 规则：补仓日余额不足 → 维持 0.5R 不补（半仓持有到出场）")
+            out.append(f"      📋 R-051 补仓资金：可买性检查通过（约需 {add_cost:.0f} 元）✅ 执行补仓")
         elif act == "exit_stop":
             out.append(f"  🛑 {code} {name}: 确认日触止损（{step['reason']}）→ 按止损 {stop:.2f} 平仓")
         elif act == "exit_reject":

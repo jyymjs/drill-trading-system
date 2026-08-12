@@ -223,13 +223,19 @@ class TestPositionCard:
 
 class TestR051FundCheck:
     def test_051_fund_occupancy_check(self, monkeypatch):
-        """R-051 挂单资金占用校验行（2026-08-11 老板拍板采纳）"""
+        """R-051 挂单资金占用校验行（2026-08-11 老板拍板采纳；R-074 修订口径 2026-08-12）
+
+        修订（交易部复核 P1-1）：触发占用 = 新候选 + 已挂单（云单表）；加可用现金行。
+        """
         monkeypatch.setattr(execution_card.sim_trading, "_market_env_scale", lambda: 1.0)
         monkeypatch.setattr(execution_card, "_open_hold_cost", lambda: 2000.0)
-        monkeypatch.setattr(execution_card, "_open_pending_add", lambda: 2000.0)
+        monkeypatch.setattr(execution_card, "_open_pending_add", lambda: 1211.0)
+        monkeypatch.setattr(execution_card, "_pending_orders_cost", lambda: 1952.0)
         text = execution_card.order_card([cand(price=18.0)], capital=8401, risk_ratio=0.025)
         assert "资金占用校验" in text
-        assert "已持 2000" in text and "待补仓 2000" in text and "新挂单触发 1800" in text
+        assert "已持 2000" in text and "待补仓 1211" in text
+        assert "触发占用 3752" in text and "新候选 1800" in text and "已挂单 1952" in text
+        assert "可用现金约 6401" in text   # 8401 - 已持 2000（R-051 补仓判定口径）
 
 
 def test_cloud_order_reminder_calibration_states(monkeypatch, tmp_path):
