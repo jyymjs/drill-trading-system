@@ -35,6 +35,7 @@ from 分析决策.风控.capital import get_capital, get_risk_ratio
 from 分析决策.分析.scanner import structure_broken
 
 _CARD_DIR = Path(__file__).resolve().parent.parent.parent / "产出" / "输出"
+_SCAN_DIR = Path(__file__).resolve().parent.parent.parent / "数据基础" / "扫描输出"
 
 
 def env_day_scale() -> tuple[float, str]:
@@ -48,6 +49,17 @@ def env_day_scale() -> tuple[float, str]:
     if s is None:
         return 1.0, "指数数据不可得→默认1R日"
     return s, ("环境好(非右下角)→1R日" if s == 1.0 else "环境弱(右下角)→0.5R日")
+
+
+def _env_capital_ctx(capital: float | None = None,
+                     risk_ratio: float | None = None) -> dict:
+    """环境档/资金/风险额共享上下文（R-076 抽法：order_card 与新版式同源，
+    防 R-074 式口径漂移）。"""
+    scale, note = env_day_scale()
+    cap = capital if capital is not None else get_capital()
+    rr = risk_ratio if risk_ratio is not None else get_risk_ratio()
+    return {"scale": scale, "note": note, "cap": cap, "risk_ratio": rr,
+            "risk_amt": round(cap * rr * scale, 2)}
 
 
 def order_card(candidates: list[dict], capital: float | None = None,
@@ -67,10 +79,9 @@ def order_card(candidates: list[dict], capital: float | None = None,
     Returns:
         指引卡文本（含「1R 日/0.5R 日」标注与逐票挂单指引；无候选 → 相应说明）
     """
-    scale, note = env_day_scale()
-    cap = capital if capital is not None else get_capital()
-    risk_ratio = risk_ratio if risk_ratio is not None else get_risk_ratio()
-    risk_amt = round(cap * risk_ratio * scale, 2)
+    _ctx = _env_capital_ctx(capital, risk_ratio)
+    scale, note = _ctx["scale"], _ctx["note"]
+    cap, risk_ratio, risk_amt = _ctx["cap"], _ctx["risk_ratio"], _ctx["risk_amt"]
     today = datetime.now().strftime("%Y-%m-%d")
     W = 76
     line = "-" * W
@@ -215,21 +226,104 @@ def _open_pending_add() -> float:
     return total
 
 
+def _scan_map(scan_dir: str | Path | None = None) -> tuple[dict | None, str]:
+    """最新扫描批次 S 级映射（R-076 抽法：cloud_order_reminder / cloud_orders_status 共用）
+
+    Returns:
+        (scan_map, batch)：code → {trigger/stop/price/ty_high/ty_low/vol}；
+        无批次 → (None, "")
+    """
+    import csv
+    sdir = (Path(scan_dir) if scan_dir
+            else Path(__file__).resolve().parent.parent.parent / "数据基础" / "扫描输出")
+    scan_map: dict[str, dict] | None = {}
+    batch = ""
+    try:
+        files, batch = _latest_scan_files(sdir)
+        if not files:
+            scan_map = None
+        else:
+            for f in files:
+                with open(f, encoding="utf-8-sig") as fh:
+                    for rec in csv.DictReader(fh):
+                        code = str(rec.get("code", "")).strip()
+                        if code in scan_map:
+                            continue
+                        trig = rec.get("触发价", "")
+                        stop = rec.get("止损价", "")
+                        if code and trig:
+                            # R-072：扩列 price/TY高/TY低——现价维度（000429 教训）
+                            scan_map[code] = {"trigger": float(trig) or 0.0,
+                                              "stop": float(stop) or 0.0,
+                                              "price": float(rec.get("price", 0) or 0),
+                                              "ty_high": float(rec.get("TY高", 0) or 0),
+                                              "ty_low": float(rec.get("TY低", 0) or 0),
+                                              # R-074 复核 P1-2：量比口径（缩量不撤单）
+                                              "vol": float(rec.get("当前量比", 0) or 0)}
+    except (OSError, ValueError):
+        scan_map = None
+    return scan_map, batch
+
+
+def _cloud_orders(track_file: str | Path | None = None) -> list[dict]:
+    """云单表结构化解析（R-076：表头列名定位 + 缺列容错，兼容新旧格式）
+
+    返回每行：code/name/date/trigger/stop/vol/status/sell(卖出条件单)/expire(到期日)/
+    note(备注)。状态列前的 6 列与旧正则一致（正则消费方不受影响）。
+    """
+    f = (Path(track_file) if track_file
+         else Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md")
+    if not f.exists():
+        return []
+    lines = f.read_text(encoding="utf-8").splitlines()
+    hdr = next((i for i, ln in enumerate(lines)
+                if ln.startswith("|") and "买入触发价" in ln), None)
+    if hdr is None:
+        return []
+    cols = [c.strip() for c in lines[hdr].strip("|").split("|")]
+
+    def ci(name: str) -> int | None:
+        return cols.index(name) if name in cols else None
+
+    i_sell, i_expire, i_status, i_note = ci("卖出条件单"), ci("到期日"), ci("状态"), ci("备注")
+    orders = []
+    for ln in lines[hdr + 2:]:
+        if not ln.startswith("|"):
+            continue
+        cells = [c.strip() for c in ln.strip("|").split("|")]
+        if not cells or len(cells[0]) < 6 or not cells[0][:6].isdigit():
+            continue
+
+        def get(ix: int | None) -> str:
+            return cells[ix].strip() if ix is not None and ix < len(cells) else ""
+
+        orders.append({
+            "code": cells[0][:6], "name": cells[0][6:].strip(),
+            "date": cells[1] if len(cells) > 1 else "",
+            "trigger": cells[2].replace("≥", "").replace("**", "").strip() if len(cells) > 2 else "",
+            "stop": cells[3].replace("≤", "").replace("**", "").strip() if len(cells) > 3 else "",
+            "vol": cells[4] if len(cells) > 4 else "",
+            "status": get(i_status).replace("**", ""),
+            "sell": get(i_sell).replace("**", ""), "expire": get(i_expire),
+            "note": get(i_note),
+        })
+    return orders
+
+
 def _pending_orders_cost() -> float:
     """实盘已挂「挂单中」买入单触发占用（Σ 触发价×股数，读云单跟踪表）
 
     R-074 复核修正（2026-08-12）：占用校验漏计已挂单（300453 1952 元）——
     触发占用 = 云单挂单中 + 当日有效新候选，两者都要算。
+    R-076：改用 _cloud_orders 结构化解析（兼容旧格式正则）
     """
-    import re
-    f = Path(__file__).resolve().parent.parent / "交易日志" / "云条件单跟踪.md"
-    if not f.exists():
-        return 0.0
     total = 0.0
-    for ln in f.read_text(encoding="utf-8").splitlines():
-        m = re.match(r"\| (\d{6}) .+? \| (\d{4}-\d{2}-\d{2}) \| ≥ ([\d.]+) \| ≤ ([\d.]+) \| (\d+) \| (.+?) \|", ln)
-        if m and "挂单中" in m.group(6):
-            total += float(m.group(3)) * int(m.group(5))
+    for o in _cloud_orders():
+        if "挂单中" in o["status"] and o["trigger"]:
+            try:
+                total += float(o["trigger"]) * int(o["vol"] or 0)
+            except ValueError:
+                continue
     return total
 
 
@@ -569,6 +663,58 @@ def position_card(rows: list[dict] | None = None) -> str:
     return "\n".join(out)
 
 
+def _position_status(r: dict) -> dict | None:
+    """单仓动态止损状态计算（R-076 共享 helper——protect_card 渲染与
+    positions_overview 聚合同源，防 600833 型口径打架；protect_card 逐字保真）。
+
+    Returns:
+        dict（code/name/live/entry/stop/v/r_now/df_pos/len_df_pos/head 等）；
+        数据异常 → None（调用方跳过该仓）
+    """
+    from 分析决策.风控.exit_manager import Position, evaluate_exit
+    from 数据基础.数据.fetcher import get_daily_kline
+
+    code = r.get("symbol", "?")
+    name = r.get("name", "") or ""
+    live = str(r.get("trade_id", "")).startswith("LIVE")
+    try:
+        df = get_daily_kline(code, use_cache=True)
+    except Exception:  # noqa: BLE001 - 数据失败不阻断其他持仓
+        return None
+    if df is None or len(df) < 2:
+        return None
+    entry = float(r["entry_price"])
+    # R-068 修复：trail_stop 空值经 pandas 读成 NaN（NaN 为 truthy → or 失效）
+    _ts = r.get("trail_stop")
+    stop = float(r["stop_loss"] if (_ts is None or _ts == ""
+                                    or (isinstance(_ts, float) and _ts != _ts))
+                 else _ts)
+    # R-054 审核 P0-3：df 从进场日切片（防进场前 K 线污染拐点判定）
+    entry_idx = next((i for i, d in enumerate(
+        df["日期"].astype(str).str[:10].values) if d == r["date"]), None)
+    df_pos = df.iloc[entry_idx:] if entry_idx is not None else df
+    pos = Position(symbol=code, direction="long", market="stock",
+                   entry_price=entry, initial_stop=float(r["stop_loss"]),
+                   current_stop=stop, volume=int(r.get("volume", 0)),
+                   ty_high=float(r.get("ty_high") or 0),
+                   ty_low=float(r.get("ty_low") or 0),
+                   grade_at_entry=r.get("grade_at_entry", ""))
+    # V4 审核 P0-2：注入持有期极值（journal highest/lowest 持久化列；
+    # 旧行缺列 → 以进场价初始化——层面3/4 需正确极值才不失真）
+    pos.highest_price = float(r.get("highest") or entry)
+    pos.lowest_price = float(r.get("lowest") or entry)
+    # V4 审核 P1-6 修复：传 df_pos（此前算而未用）
+    # R-060（2026-08-12 老板拍板）：主动出场用全量 df——短持仓不再静默失效
+    v = evaluate_exit(pos, df_pos, active_df=df)
+    latest = df.iloc[-1]
+    r_now = pos.current_r_multiple(float(latest["收盘"]))
+    src = "实盘" if live else "模拟"
+    head = f"  {code} {name}（{src} {r.get('volume')} 股 @{entry:.2f}）| R={r_now:+.2f}"
+    return {"code": code, "name": name, "live": live, "entry": entry, "stop": stop,
+            "v": v, "r_now": r_now, "df_pos": df_pos, "len_df_pos": len(df_pos),
+            "head": head, "latest_close": float(latest["收盘"])}
+
+
 def protect_card(rows: list[dict] | None = None) -> str:
     """持仓保护卡（R-054 2026-08-11 老板拍板）：全部 open 持仓的动态止损状态
     ——现止损 → 建议止损（1R 平保/移动获利/TTP 依据，exit_manager.evaluate_exit
@@ -577,9 +723,6 @@ def protect_card(rows: list[dict] | None = None) -> str:
     Args:
         rows: 持仓行（缺省读 sim_journal + trade_journal 全部 open）
     """
-    from 分析决策.风控.exit_manager import Position, evaluate_exit
-    from 数据基础.数据.fetcher import get_daily_kline
-
     if rows is None:
         rows = sim_trading._read_all()
         from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
@@ -594,51 +737,22 @@ def protect_card(rows: list[dict] | None = None) -> str:
         out.append(line)
         return "\n".join(out)
     for r in opens:
-        code = r.get("symbol", "?")
-        name = r.get("name", "") or ""
-        live = str(r.get("trade_id", "")).startswith("LIVE")
-        try:
-            df = get_daily_kline(code, use_cache=True)
-        except Exception:  # noqa: BLE001 - 数据失败不阻断其他持仓
+        st = _position_status(r)
+        if st is None:
             continue
-        if df is None or len(df) < 2:
-            continue
-        entry = float(r["entry_price"])
-        # R-068 修复：trail_stop 空值经 pandas 读成 NaN（NaN 为 truthy → or 失效）
-        _ts = r.get("trail_stop")
-        stop = float(r["stop_loss"] if (_ts is None or _ts == ""
-                                        or (isinstance(_ts, float) and _ts != _ts))
-                     else _ts)
-        # R-054 审核 P0-3：df 从进场日切片（防进场前 K 线污染拐点判定）
-        entry_idx = next((i for i, d in enumerate(
-            df["日期"].astype(str).str[:10].values) if d == r["date"]), None)
-        df_pos = df.iloc[entry_idx:] if entry_idx is not None else df
-        pos = Position(symbol=code, direction="long", market="stock",
-                       entry_price=entry, initial_stop=float(r["stop_loss"]),
-                       current_stop=stop, volume=int(r.get("volume", 0)),
-                       ty_high=float(r.get("ty_high") or 0),
-                       ty_low=float(r.get("ty_low") or 0),
-                       grade_at_entry=r.get("grade_at_entry", ""))
-        # V4 审核 P0-2：注入持有期极值（journal highest/lowest 持久化列；
-        # 旧行缺列 → 以进场价初始化——层面3/4 需正确极值才不失真）
-        pos.highest_price = float(r.get("highest") or entry)
-        pos.lowest_price = float(r.get("lowest") or entry)
-        # V4 审核 P1-6 修复：传 df_pos（此前算而未用）
-        # R-060（2026-08-12 老板拍板）：主动出场用全量 df——短持仓不再静默失效
-        v = evaluate_exit(pos, df_pos, active_df=df)
-        latest = df.iloc[-1]
-        r_now = pos.current_r_multiple(float(latest["收盘"]))
-        src = "实盘" if live else "模拟"
-        head = f"  {code} {name}（{src} {r.get('volume')} 股 @{entry:.2f}）| R={r_now:+.2f}"
+        code, name, live, entry, stop, v, r_now = (
+            st["code"], st["name"], st["live"], st["entry"], st["stop"],
+            st["v"], st["r_now"])
+        head = st["head"]
         if v.get("should_exit"):
             # V4 审核 P1-5：主动出场卖出建议（实盘人工执行入口）
             # R-068（2026-08-12 老板拍板）：短持仓（切片 <21 根）的主动出场 =
             # 参考信号——R-062 自动执行口径明确"持仓 ≥21 根才自动触发"（R-063
             # 审计：短持仓触发砍肉 -231pp）——只标注参考，不构成"建议卖出"
             # （600833 教训：曾据保护卡信号误建议开盘卖，实际应继续持有）
-            _short_active = (len(df_pos) < 21 and "主动出场" in v.get("reason", ""))
+            _short_active = (st["len_df_pos"] < 21 and "主动出场" in v.get("reason", ""))
             if _short_active:
-                out.append(f"{head}\n      ⚠️ 主动出场**参考信号**（持仓 {len(df_pos)} 根 <21——"
+                out.append(f"{head}\n      ⚠️ 主动出场**参考信号**（持仓 {st['len_df_pos']} 根 <21——"
                            f"策略自动执行不触发，**继续持有**；止损保护 "
                            f"{v.get('stop_update') or stop:.2f}）")
             else:
@@ -715,21 +829,282 @@ def system_status(rows: list[dict] | None = None) -> str:
     return "\n".join(out)
 
 
+def _half_step(rows: list[dict] | None = None) -> list[dict]:
+    """0.5R 试探仓判定步骤（R-076 抽法：position_card 与 action_plan 同源）"""
+    halves = _iter_half_positions(rows)
+    steps = []
+    from 数据基础.数据.fetcher import get_daily_kline
+    for r in halves:
+        code = r.get("symbol", "?")
+        try:
+            df = get_daily_kline(code, use_cache=True)
+        except Exception:  # noqa: BLE001
+            continue
+        if df is None or len(df) < 2:
+            continue
+        capital = None if str(r.get("trade_id", "")).startswith("LIVE") else sim_trading.SIM_CAPITAL
+        step = sim_trading._check_half_position(df, r, capital=capital)
+        steps.append({"code": code, "name": r.get("name", "") or "",
+                      "row": r, "step": step, "df": df})
+    return steps
+
+
+def action_plan(rows: list[dict] | None = None) -> str:
+    """今日行动清单（R-076 决策导航式置顶——老板第一眼看到今天干什么）
+
+    优先级：🔴 必须做（补仓/平仓/止损）→ 🟡 关注（确认日/贴价/临期）→ ℹ️ 信息（埋伏）。
+    推导来源：_check_half_position 判定 + 云单表状态 + 到期日（单一来源，不复制）。
+    """
+    out = []
+    # ① 持仓判定 → 动作指令
+    for h in _half_step(rows):
+        code, name, step = h["code"], h["name"], h["step"]
+        act = step["action"]
+        row = h["row"]
+        sell = next((o["sell"] for o in _cloud_orders() if o["code"] == code), "")
+        _sell_txt = f"（卖单 {sell}）" if sell else ""
+        if act == "add":
+            cost = float(step.get("add_price", 0) or 0) * int(step.get("add_shares", 0) or 0)
+            out.append(f"🔴 [补仓] {code} {name}：确认通过，挂 {step['add_shares']} 股 "
+                       f"@ {step['add_price']:.2f}（约 {cost:.0f} 元）{_sell_txt}")
+        elif act == "exit_reject":
+            out.append(f"🔴 [平仓] {code} {name}：确认不通过，按 {step.get('close', 0):.2f} 卖出"
+                       f"（0.5R 试探止步）{_sell_txt}")
+        elif act == "exit_stop":
+            out.append(f"🔴 [止损] {code} {name}：确认日触止损，按 {float(row['stop_loss']):.2f} 出场")
+        elif act == "wait":
+            out.append(f"🟡 [确认] {code} {name}：{step.get('reason', '等待收线')}（进场 "
+                       f"{float(row['entry_price']):.2f} / 止损 {float(row['stop_loss']):.2f}）")
+        elif act == "hold":
+            out.append(f"🟡 [受限] {code} {name}：{step.get('reason', '补仓受限')}——保持 0.5R")
+    # ② 云单挂单中：贴价 / 临期
+    try:
+        scan_map, _ = _scan_map()
+    except Exception:  # noqa: BLE001
+        scan_map = None
+    for o in _cloud_orders():
+        if "挂单中" not in o["status"]:
+            continue
+        s = scan_map.get(o["code"]) if scan_map else None
+        price = float(s["price"]) if s and s.get("price") else 0.0
+        trig = float(o["trigger"] or 0)
+        if price > 0 and trig > 0:
+            td = (trig - price) / price * 100.0
+            if td < 0.5:
+                out.append(f"🟡 [贴价] {o['code']} {o['name']}：买 ≥{trig:.2f}（现价 {price:.2f}，"
+                           f"距触发 {td:.1f}%——随时可能成交）")
+        exp = o.get("expire", "")
+        if exp and exp != "长期" and len(exp) == 5:
+            out.append(f"🟡 [临期] {o['code']} {o['name']}：买入单到期 {exp}——到期前未触发请重挂")
+    if not out:
+        out.append("ℹ️ 今日无需操作（全部持仓确认完成/挂单有效）")
+    return "\n".join(out)
+
+
+def positions_overview(rows: list[dict] | None = None,
+                       candidates: list[dict] | None = None) -> str:
+    """持仓一表化 + 资金段（R-076：每股 1 主行——代码/进场/现价/止损/R/状态/下一步
+    + 卖单状态；从行（补仓参数/止盈/突破质量）非平凡才印。与 protect_card /
+    order_card 同源数据（_position_status / _half_step / _env_capital_ctx）。"""
+    if rows is None:
+        rows = sim_trading._read_all()
+        from 分析决策.跟踪.trade_journal import get_all_trades as _get_live
+        rows = rows + _get_live()
+    opens = [r for r in rows if r.get("status") == "open"]
+    orders = {o["code"]: o for o in _cloud_orders()}
+    steps = {h["code"]: h for h in _half_step(rows)}
+    _ctx = _env_capital_ctx()
+    _held = _open_hold_cost()
+    _pend = _open_pending_add()
+    _trig_o = _pending_orders_cost()
+    _trig_n = sum(float(c.get("触发价", 0) or 0) * 100 for c in (candidates or [])
+                  if (c.get("触发价", 0) or 0) > 0 and (c.get("止损价", 0) or 0) > 0
+                  and (c.get("每股风险", 0) or 0) > 0
+                  and not structure_broken(float(c.get("price", 0) or c.get("现价", 0) or 0),
+                                           float(c.get("止损价", 0) or 0),
+                                           float(c.get("TY低", 0) or 0) or None)["broken"])
+    _cash = _ctx["cap"] - _held
+    out = [f"## 持仓（{len(opens)} 笔）"]
+    if not opens:
+        out.append("无在持仓")
+    for r in opens:
+        st = _position_status(r)
+        if st is None:
+            continue
+        code, name = st["code"], st["name"]
+        entry, stop, r_now = st["entry"], st["stop"], st["r_now"]
+        o = orders.get(code, {})
+        sell = (o.get("sell", "") or "").replace("**", "")
+        expire = o.get("expire", "") or ""
+        _sell_txt = f"｜ 卖单 {sell}" + (f"(到期{expire})" if expire else "") if sell else ""
+        h = steps.get(code)
+        act = h["step"]["action"] if h else ""
+        # 注意：不用 dict 字面量映射——f-string 会提前求值所有分支（缺 close 键炸）
+        if act == "add":
+            _act_txt = f"✅确认→补仓@{h['step']['add_price']:.2f}"
+        elif act == "exit_reject":
+            _act_txt = f"❌确认不通过→平仓@{h['step'].get('close', 0):.2f}"
+        elif act == "exit_stop":
+            _act_txt = "🛑触止损→出场"
+        elif act == "wait":
+            _act_txt = "⏳确认中"
+        elif act == "hold":
+            _act_txt = "⏸受限持有"
+        else:
+            _act_txt = ""
+        # 止损显示建议值（有 stop_update 用建议——券商卖单按建议挂）
+        _disp_stop = st["v"].get("stop_update") or stop
+        out.append(f"  {code} {name} 进{entry:.2f} 现{st['latest_close']:.2f} "
+                   f"损{_disp_stop:.2f} R{r_now:+.2f} {_act_txt}{_sell_txt}")
+        # 从行：非平凡才印（补仓参数/止盈目标/突破质量/止损建议）
+        if act == "add" and h:
+            cost = float(h["step"]["add_price"]) * int(h["step"]["add_shares"])
+            _cash_txt = (f"现金够 ✅" if cost <= _cash
+                         else f"现金缺 {cost - _cash:.0f}（等回款）")
+            out.append(f"    📋 补 {h['step']['add_shares']} 股 @ {h['step']['add_price']:.2f}"
+                       f"（约 {cost:.0f} 元，{_cash_txt}）")
+        if st["v"].get("should_exit"):
+            _short = st["len_df_pos"] < 21 and "主动出场" in st["v"].get("reason", "")
+            out.append(f"    ⚠️ {'主动出场参考信号（短持仓，继续持有）' if _short else '主动出场→建议卖出'}"
+                       f"（{st['v'].get('reason', '')}）")
+        elif st["v"].get("stop_update"):
+            out.append(f"    📋 止损 {stop:.2f} → 建议 {st['v']['stop_update']:.2f}"
+                       f"（{st['v'].get('reason', '')}）")
+    # 资金段（与 order_card 占用校验同源：_open_hold_cost/_open_pending_add/
+    # _pending_orders_cost + _env_capital_ctx）
+    cap = _ctx["cap"]
+    out.append("## 资金")
+    out.append(f"  资金 {cap:.0f} ｜ 可用现金约 {_cash:.0f} ｜ 已持 {_held:.0f}"
+               f" ｜ 待补仓 {_pend:.0f} ｜ 触发占用 {_trig_n + _trig_o:.0f}"
+               f"（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）")
+    _total = _held + _pend + _trig_n + _trig_o
+    if _total > cap:
+        out.append(f"  ⚠️ 预算缺口 {_total - cap:.0f} 元（{_total:.0f}/{cap:.0f}）——"
+                   f"优先补仓，挂单排队等回款")
+    return "\n".join(out)
+
+
+def cloud_orders_status() -> str:
+    """云单状态全表（R-076：买入+卖出+到期+校准 一行一单——补上旧板块缺失的
+    卖出单/到期日维度；校准三态简化版：✅有效/⚠️参数过时/🔴破位/不在候选）"""
+    orders = _cloud_orders()
+    out = ["## 云单状态"]
+    if not orders:
+        out.append("云单表为空（无记录）")
+        return "\n".join(out)
+    try:
+        scan_map, batch = _scan_map()
+    except Exception:  # noqa: BLE001
+        scan_map, batch = None, ""
+    if batch:
+        out.append(f"  ℹ️ 校准基准：批次 {batch}")
+    for o in orders:
+        stat = o["status"]
+        trig = f"买≥{o['trigger']}" if o["trigger"] else "—"
+        sell = (o["sell"] or "—").replace("**", "")
+        exp = o["expire"] or "—"
+        cal = ""
+        if "挂单中" in stat and scan_map:
+            s = scan_map.get(o["code"])
+            if s is None:
+                cal = "⚠️ 不在候选"
+            else:
+                sb = structure_broken(s["price"], float(o["stop"] or 0) or 0, s.get("ty_low"))
+                if sb["broken"]:
+                    cal = f"🔴 破位失效（{sb['reason']}）"
+                elif abs(s["trigger"] - float(o["trigger"] or 0)) >= 0.005:
+                    cal = "⚠️ 参数过时"
+                else:
+                    cal = "✅ 有效"
+                    if s.get("vol", 0) > 0 and s["vol"] <= 1.2:
+                        cal += f"（量比 {s['vol']:.2f} 缩量不撤）"
+        out.append(f"  {o['code']} {o['name']} {trig}/{o['vol']}股 损{o['stop']}"
+                   f" ｜ 卖 {sell} ｜ 到期 {exp} ｜ {stat}{(' ' + cal) if cal else ''}")
+    return "\n".join(out)
+
+
 def full_card(candidates: list[dict], rows: list[dict] | None = None,
               write_file: bool = True, sort_by: str = "risk_mid") -> str:
-    """完整执行卡（系统状态 + 挂单指引卡 + 分步建仓持仓卡）
+    """完整执行卡（R-076 决策导航式 5 段：头部 → 今日行动 → 持仓+资金 →
+    云单状态 → 市场机会）
 
-    2026-08-06 全自动执行链：默认落盘 `产出/输出/执行卡_YYYYMMDD.md`
-    （T-022 同日覆盖；计划任务与手动调用同款）——扫描输出即挂单依据，不审核。
+    老板拍板（2026-08-12）：信息完整（补仓/止损/平仓/到期不用问）+ 可扫读
+    （今日行动置顶、每股 1 主行）。旧板块函数（order_card/position_card/
+    protect_card/cloud_order_reminder）保留函数体（测试与交易部复核用），
+    full_card 输出不再拼接旧板块文本。
+
+    2026-08-06 全自动执行链：默认落盘 `产出/输出/执行卡_YYYYMMDD.md`。
     """
-    card = "〔系统状态〕\n" + system_status(rows) + "\n" \
-        + order_card(candidates, sort_by=sort_by) + "\n" + position_card(rows) \
-        + "\n" + protect_card(rows) + "\n" + scan_s_overview() + "\n" + cloud_order_reminder()
+    _ctx = _env_capital_ctx()
+    scale, note = _ctx["scale"], _ctx["note"]
+    label = "1R 日" if scale == 1.0 else "0.5R 日"
+    _f = _data_freshness_line().replace("  🕒 ", "🕒 ", 1)
+    head = (f"# 实盘执行卡 {datetime.now().strftime('%Y-%m-%d')} "
+            f"（{datetime.now().strftime('%A')[:3]}）· {label}（{note}）\n"
+            f"{_f} ｜ 批次 {_latest_scan_files(_SCAN_DIR)[1] or '无'}\n")
+    sec_action = "## 今日行动\n" + action_plan(rows)
+    sec_pos = positions_overview(rows, candidates)
+    sec_cloud = cloud_orders_status()
+    sec_market = "## 市场机会（S 级）\n" + _s_overview_body()
+    card = head + "\n" + sec_action + "\n\n" + sec_pos + "\n\n" + sec_cloud \
+        + "\n\n" + sec_market
     if write_file:
         _CARD_DIR.mkdir(parents=True, exist_ok=True)
         fname = _CARD_DIR / f"执行卡_{datetime.now().strftime('%Y%m%d')}.md"
         fname.write_text(card, encoding="utf-8")
     return card
+
+
+def _s_overview_body() -> str:
+    """S 级全览正文（R-076：scan_s_overview 的板块体抽离，去标题行——
+    新版式市场机会段复用同口径）"""
+    import csv
+    sdir = _SCAN_DIR
+    files, batch = _latest_scan_files(sdir)
+    if not files:
+        return "  未找到扫描结果（数据基础/扫描输出），无法列出 S 级"
+    s_level: dict[str, dict] = {}
+    tag_map = {"": "✅ 合格候选（可挂单）",
+               "_broken": "❌ 已突破（现价≥触发价，追高不买）",
+               "_c23": "❌ C23 不达标",
+               "_vol": "❌ 放量不达标（量比≤1.2，不新挂单（已挂单除外）；突破日确认量能）"}
+    for f in files:
+        suffix = f.stem.replace("scan_result_", "")[15:]
+        try:
+            with open(f, encoding="utf-8-sig") as fh:
+                for rec in csv.DictReader(fh):
+                    code = str(rec.get("code", "")).strip()
+                    if not code or rec.get("评级", "").strip() != "S" or code in s_level:
+                        continue
+                    reason = tag_map.get(suffix, "")
+                    if suffix == "_c23":
+                        reason += f"（{rec.get('C23原因', '') or '不达标'}）"
+                    s_level[code] = {"trigger": rec.get("触发价", ""),
+                                     "stop": rec.get("止损价", ""), "reason": reason,
+                                     "name": rec.get("name", ""),
+                                     "price": rec.get("price", ""),
+                                     "ty_low": rec.get("TY低", "")}
+        except (OSError, ValueError):
+            continue
+    if not s_level:
+        return "  当日无 S 级候选（全部不达标或未扫描到）"
+    out = []
+    for code, info in s_level.items():
+        if not info["reason"].startswith("✅"):
+            out.append(f"  {info['reason']}  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
+                       if info['trigger'] else f"  {info['reason']}  {code} {info['name']}")
+            continue
+        sb = structure_broken(float(info["price"] or 0), float(info["stop"] or 0),
+                              float(info["ty_low"] or 0) or None)
+        if sb["broken"]:
+            out.append(f"  🔴 已破位（现价≤止损/平台下沿，不可挂单）  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
+                       f" | {sb['reason']}")
+        else:
+            out.append(f"  {info['reason']}  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}")
+    return "\n".join(out)
 
 
 def main() -> int:

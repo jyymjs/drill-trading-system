@@ -325,3 +325,100 @@ def test_cloud_order_reminder_broken_stop_red_cancel(monkeypatch, tmp_path):
         encoding="utf-8-sig")
     text = cloud_order_reminder(track_file=track, scan_dir=scan_dir)
     assert "挂单失效" in text and "建议撤单" in text and "持续埋伏中" not in text
+
+
+# ═══════════════ R-076 新版式（决策导航式）═══════════════
+
+def test_cloud_orders_10col_parse(tmp_path):
+    """R-076 云单表 10 列结构化解析（含卖出条件单/到期日）"""
+    from 分析决策.跟踪.execution_card import _cloud_orders
+    track = tmp_path / "云条件单跟踪.md"
+    track.write_text(
+        "| 股票 | 挂单日 | 买入触发价 | 止损价 | 股数 | 状态 | 卖出条件单 | 到期日 | 触发日 | 备注 |\n"
+        "|---|---|---|---|---|---|---|---|---|---|\n"
+        "| 300453 三鑫医疗 | 2026-08-12 | ≥ 9.76 | ≤ 9.26 | 200 | 挂单中 | | 08-31 | | 测试 |\n"
+        "| 603368 柳药集团 | 2026-08-12 | ≥ 15.94 | ≤ 15.25 | 100 | 已成交 | ≤15.25 已挂 | 长期 | 2026-08-12 | 测试 |\n",
+        encoding="utf-8")
+    orders = _cloud_orders(track)
+    assert len(orders) == 2
+    assert orders[0]["code"] == "300453" and orders[0]["trigger"] == "9.76"
+    assert orders[0]["status"] == "挂单中" and orders[0]["expire"] == "08-31"
+    assert orders[1]["sell"] == "≤15.25 已挂" and orders[1]["expire"] == "长期"
+
+
+def test_cloud_orders_8col_compat(tmp_path):
+    """R-076 云单表 8 列旧格式兼容（无卖出/到期列不崩，值空）"""
+    from 分析决策.跟踪.execution_card import _cloud_orders
+    track = tmp_path / "云条件单跟踪.md"
+    track.write_text(
+        "| 股票 | 挂单日 | 买入触发价 | 止损价 | 股数 | 状态 | 触发日 | 备注 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| 600001 甲 | 2026-08-11 | ≥ 10.50 | ≤ 9.80 | 100 | 挂单中 | | 旧格式 |\n",
+        encoding="utf-8")
+    orders = _cloud_orders(track)
+    assert len(orders) == 1
+    assert orders[0]["code"] == "600001" and orders[0]["trigger"] == "10.50"
+    assert orders[0]["sell"] == "" and orders[0]["expire"] == ""
+
+
+class TestActionPlan:
+    def test_add_gives_add_action(self, monkeypatch):
+        """R-076 今日行动：add 判定 → 🔴 补仓指令"""
+        from 分析决策.跟踪 import execution_card
+        fake = [{"code": "600001", "name": "甲",
+                 "row": {"symbol": "600001", "entry_price": "10.5", "stop_loss": "9.8",
+                         "trade_id": "LIVE001", "date": "2026-08-10"},
+                 "step": {"action": "add", "add_price": 10.8, "add_shares": 100,
+                          "reason": "收线确认"},
+                 "df": None}]
+        monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: fake)
+        monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [])
+        text = execution_card.action_plan()
+        assert "🔴 [补仓] 600001 甲" in text and "100 股" in text
+
+    def test_exit_reject_gives_close_action(self, monkeypatch):
+        """R-076 今日行动：exit_reject 判定 → 🔴 平仓指令"""
+        from 分析决策.跟踪 import execution_card
+        fake = [{"code": "600002", "name": "乙",
+                 "row": {"symbol": "600002", "entry_price": "10.5", "stop_loss": "9.8",
+                         "trade_id": "LIVE002", "date": "2026-08-10"},
+                 "step": {"action": "exit_reject", "close": 10.2, "reason": "收线未确认"},
+                 "df": None}]
+        monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: fake)
+        monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [])
+        text = execution_card.action_plan()
+        assert "🔴 [平仓] 600002 乙" in text and "10.20" in text
+
+    def test_no_action_gives_idle(self, monkeypatch):
+        """R-076 今日行动：无待办 → ℹ️ 今日无需操作"""
+        from 分析决策.跟踪 import execution_card
+        monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: [])
+        monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [])
+        text = execution_card.action_plan()
+        assert "今日无需操作" in text
+
+
+class TestPositionsOverview:
+    def test_overview_merges_cloud_and_status(self, monkeypatch):
+        """R-076 持仓总览：每股 1 主行 + 卖单/到期聚合（不跨板块）"""
+        from 分析决策.跟踪 import execution_card
+        monkeypatch.setattr(execution_card, "_position_status", lambda r: {
+            "code": "600001", "name": "甲", "entry": 10.5, "stop": 9.8,
+            "r_now": 0.42, "latest_close": 10.9, "len_df_pos": 5,
+            "v": {"stop_update": 10.2, "reason": "平保"}, "head": ""})
+        monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: [
+            {"code": "600001", "step": {"action": "add", "add_price": 10.8,
+                                        "add_shares": 100}, "df": None}])
+        monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [{
+            "code": "600001", "sell": "≤10.2 已挂", "expire": "08-31",
+            "trigger": "10.5", "vol": "100", "stop": "9.8", "status": "已成交"}])
+        monkeypatch.setattr(execution_card, "_open_hold_cost", lambda: 1050.0)
+        monkeypatch.setattr(execution_card, "_open_pending_add", lambda: 1080.0)
+        monkeypatch.setattr(execution_card, "_pending_orders_cost", lambda: 0.0)
+        monkeypatch.setattr(execution_card, "_env_capital_ctx", lambda *a, **k: {
+            "cap": 8401, "scale": 1.0, "risk_amt": 210})
+        text = execution_card.positions_overview(
+            [{"status": "open", "symbol": "600001", "name": "甲"}])
+        assert "600001 甲 进10.50 现10.90 损10.20 R+0.42 ✅确认→补仓@10.80" in text
+        assert "卖单 ≤10.2 已挂(到期08-31)" in text
+        assert "现金够" in text and "## 资金" in text
