@@ -978,14 +978,22 @@ def positions_overview(rows: list[dict] | None = None,
     cap = _ctx["cap"]
     _asset = _cash + _mv
     _pnl = _mv - _held
-    out.append("## 资金")
-    out.append(f"  总资产 ~{_asset:.0f} ｜ 可用现金 ~{_cash:.0f} ｜ 市值 {_mv:.0f}"
-               f" ｜ 累计盈亏 ~{_pnl:+.0f}（市值-成本）")
-    out.append(f"  💰 预算口径：本金 {cap:.0f} ｜ 已持成本 {_held:.0f} ｜ 待补仓 {_pend:.0f}"
-               f" ｜ 触发占用 {_trig_n + _trig_o:.0f}（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）")
     _total = _held + _pend + _trig_n + _trig_o
-    if _total > cap:
-        out.append(f"  ⚠️ 预算缺口 {_total - cap:.0f} 元——优先补仓，挂单排队等回款")
+    _gap = max(_total - cap, 0)
+    # 老板拍板（2026-08-12）：资金段表格展示——项/数值两列，券商 App 可对账
+    out.append("## 资金")
+    out.append("| 项 | 数值 |")
+    out.append("|---|---|")
+    out.append(f"| 总资产（现金+市值）| ~{_asset:.0f} 元 |")
+    out.append(f"| 可用现金 | ~{_cash:.0f} 元 |")
+    out.append(f"| 持仓市值 | {_mv:.0f} 元 |")
+    out.append(f"| 累计盈亏（市值-成本）| {_pnl:+.0f} 元 |")
+    out.append("| 本金（预算口径）| {:.0f} 元 |".format(cap))
+    out.append(f"| 已持成本 | {_held:.0f} 元 |")
+    out.append(f"| 待补仓 | {_pend:.0f} 元 |")
+    out.append(f"| 触发占用（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）| {_trig_n + _trig_o:.0f} 元 |")
+    if _gap > 0:
+        out.append(f"| 预算缺口 | {_gap:.0f} 元 ⚠️ 优先补仓，挂单排队等回款 |")
     return "\n".join(out)
 
 
