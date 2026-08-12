@@ -374,7 +374,7 @@ class TestActionPlan:
         monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: fake)
         monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [])
         text = execution_card.action_plan()
-        assert "| 🔴 必做 | 补仓 | 600001 甲" in text and "100 股" in text
+        assert "| 🔴 必做 | 补仓 600001 甲" in text and "100 股" in text
 
     def test_exit_reject_gives_close_action(self, monkeypatch):
         """R-076 今日行动：exit_reject 判定 → 🔴 平仓指令"""
@@ -387,7 +387,7 @@ class TestActionPlan:
         monkeypatch.setattr(execution_card, "_half_step", lambda rows=None: fake)
         monkeypatch.setattr(execution_card, "_cloud_orders", lambda: [])
         text = execution_card.action_plan()
-        assert "| 🔴 必做 | 平仓 | 600002 乙" in text and "10.20" in text
+        assert "| 🔴 必做 | 平仓 600002 乙" in text and "10.20" in text
 
     def test_no_action_gives_idle(self, monkeypatch):
         """R-076 今日行动：无待办 → ℹ️ 今日无需操作"""
@@ -419,10 +419,10 @@ class TestPositionsOverview:
             "cap": 8401, "scale": 1.0, "risk_amt": 210})
         text = execution_card.positions_overview(
             [{"status": "open", "symbol": "600001", "name": "甲"}])
-        # R-076e 表格化：主行断言同步为表格行格式
-        assert "| 600001 甲 | 10.50 | 10.90 | 10.20 | +0.42 |" in text
-        assert "补100股@10.80" in text and "现金够 ✅" in text
-        assert "卖单 ≤10.2 已挂（到期08-31）" in text
+        # R-076e/g 表格化：主行断言同步（浮盈%列 + 状态瘦身 + 卖单精简）
+        assert "| 600001 甲 | 10.50 | 10.90 | 10.20 | +0.42 | +3.8% |" in text
+        assert "现金够✅" in text
+        assert "≤10.2（08-31）" in text
         assert "## 资金" in text and "| 总资产 |" in text
 
 
