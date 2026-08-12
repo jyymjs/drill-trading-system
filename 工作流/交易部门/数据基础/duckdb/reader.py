@@ -97,6 +97,44 @@ def _to_cn_kline(k: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def qfq_price_to_real(qfq_price: float, factor: float) -> float:
+    """qfq 价 → 实盘价换算层（R-080 G12）：实盘委托价 = qfq 价 ÷ factor
+
+    factor 语义（compute_qfq）：该行相对最新价的前复权乘数，最新行 factor=1.0。
+    例：某股 10 送 10，历史 qfq 价被下调 50%（factor=0.5）→ 实盘价 = qfq价 ÷ 0.5。
+    """
+    if not factor or factor <= 0:
+        return float(qfq_price)
+    return round(float(qfq_price) / float(factor), 4)
+
+
+def get_factor(symbol: str, date: str, db_path=None) -> float:
+    """读指定日期的复权因子（qfq 基准=最新价）；无除权记录/异常 → 1.0
+
+    Args:
+        symbol: 股票代码
+        date: 日期 "YYYYMMDD"（信号日/委托日；取当日及以前最近交易日的 factor）
+    """
+    import duckdb as _dd
+    con = open_db(db_path, read_only=True)
+    try:
+        daily = read_daily_raw(con, symbol)
+        if daily is None or daily.empty:
+            return 1.0
+        xdxr = read_xdxr(con, symbol)
+    finally:
+        con.close()
+    k = compute_qfq(daily, xdxr if len(xdxr) else None)
+    if k is None or k.empty:
+        return 1.0
+    dt = pd.to_datetime(date)
+    sub = k[k["date"] <= dt]
+    if sub.empty:
+        return 1.0
+    f = sub.iloc[-1]["factor"]
+    return float(f) if np.isfinite(f) and f > 0 else 1.0
+
+
 # 共享只读连接（2026-08-08 提速方案 C：回测引擎每 worker 进程内单连接复用，
 # 替代每股开/关连接 ×5000；进程隔离安全，引擎 worker 串行读）
 _SHARED_CONN = None
