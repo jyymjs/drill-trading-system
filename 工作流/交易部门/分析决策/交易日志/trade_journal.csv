@@ -1,0 +1,5 @@
+﻿trade_id,date,symbol,name,direction,market,entry_price,stop_loss,trail_stop,highest,lowest,volume,grade_at_entry,ty_high,ty_low,status,exit_price,exit_date,exit_reason,r_multiple,pnl,env_scale,phase,created_date
+LIVE20260810193001,2026-08-10,600833,第一医药,long,stock,10.18,9.64,,,,100,A,10.16,9.66,open,,,,,,0.5,half,2026-08-10
+LIVE20260810193002,2026-08-10,603970,中农立华,long,stock,10.58,10.04,,,,100,A,10.56,10.06,open,,,,,,0.5,half,2026-08-10
+LIVE20260811193001,2026-08-11,600315,上海家化,long,stock,18.33,17.39,,,,100,S,18.50,17.80,open,,,,,,0.5,half,2026-08-11
+LIVE20260812193001,2026-08-12,603368,柳药集团,long,stock,15.94,15.25,,,,100,S,16.09,15.76,open,,,,,,0.5,half,2026-08-12
