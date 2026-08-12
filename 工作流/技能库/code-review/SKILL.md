@@ -10,7 +10,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (see `工程部门/流程/测试/质检.md` and `工程部门/流程/测试/质检标准.md`): Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by `improve-codebase-architecture`, reviewer judgement, and `playwright` + Bash runs respectively.
+**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (（见仓库质检流程文档）: Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by `improve-codebase-architecture`, reviewer judgement, and `playwright` + Bash runs respectively.
 
 ## Process
 
@@ -33,7 +33,7 @@ Look for the originating spec, in this order:
 
 ### 3. Identify the standards sources
 
-The repo's documented coding standards — in this harness: `工程部门/支撑/规则/00-核心规则.md` – `工程部门/支撑/规则/05-架构规则.md` plus `工程部门/流程/测试/质检标准.md` — and anything else that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
+The repo's documented coding standards — in this harness: 仓库编码规范（根 CLAUDE.md、各部门 CLAUDE.md 等） — and anything else that documents how code should be written, such as `CODING_STANDARDS.md` or `CONTRIBUTING.md`.
 
 On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
 

@@ -1,11 +1,11 @@
 ---
 name: playwright
-description: 环境验证技能——质检部六轴第 6 轴。用 MCP 浏览器工具操作页面、Bash 运行命令行、真实数据验证功能。覆盖页面/CLI/数据三种验证分支。有 UI 页面→优先使用。
+description: 环境验证技能——环境验证六轴第 6 轴。用 MCP 浏览器工具操作页面、Bash 运行命令行、真实数据验证功能。覆盖页面/CLI/数据三种验证分支。有 UI 页面→优先使用。
 ---
 
 # 环境验证（六轴第 6 轴）
 
-标准见 `工程部门/流程/测试/质检标准.md`（唯一事实源）。不是看代码，而是像真实用户一样运行程序、操作页面、检查交互结果。
+标准见仓库质检规范（唯一事实源）。不是看代码，而是像真实用户一样运行程序、操作页面、检查交互结果。
 
 ## 何时使用 / 何时不用
 
@@ -25,7 +25,7 @@ description: 环境验证技能——质检部六轴第 6 轴。用 MCP 浏览�
 4. **识别选择器**：`browser_snapshot` 获取页面结构 → 从渲染结果确定操作目标（Reconnaissance-Then-Action：先侦察后行动）
 5. **执行操作**：`browser_click` / `browser_type` / `browser_fill_form` / `browser_select_option` / `browser_press_key`
 6. **检查结果**：`browser_snapshot` 验证状态变化，必要时 `browser_console_messages` 查报错、`browser_network_requests` 查请求
-7. **截图留证**：`browser_take_screenshot` 保存（命名：`工程部门/支撑/文档/审计记录/{任务名}-{验证点}.png`）
+7. **截图留证**：`browser_take_screenshot` 保存（命名：`{任务名}-{验证点}.png`）
 
 **登录/鉴权**：有登录页时先确认测试账号（问用户或用 .env 测试凭据）；验证码/OTP 场景说明无法自动化，记录为"人工验证项"。
 
