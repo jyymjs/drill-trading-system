@@ -60,3 +60,6 @@ bv3_subtitle.txt
 
 # agency-agents 研究副本（NEXUS 人格池，按需取用，不入库）
 公共资源部/第三方引擎/agency-agents/
+
+# 敏感配置（API key / cookie）——绝不入库
+**/config.local.json
