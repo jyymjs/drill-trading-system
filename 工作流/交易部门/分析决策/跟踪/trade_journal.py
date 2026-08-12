@@ -9,12 +9,14 @@ from 分析决策.风控.position import TradeRecord
 JOURNAL_DIR = Path(__file__).resolve().parent.parent / "交易日志"
 TRADES_FILE = JOURNAL_DIR / "trade_journal.csv"
 
-# 21 列，与 sim_journal.csv 同构（2026-08-10 扩列）：执行卡分步确认/双线对照/
-# 净值曲线共享读取口径；status 区分 open（在持）/closed（已平仓）。
+# 21 列，与 sim_journal.csv 同构（2026-08-10 扩列；2026-08-13 G3 修复列序与
+# SIM_COLUMNS 统一——volume/grade_at_entry 在 ty_high 前，highest/lowest 在后）：
+# 执行卡分步确认/双线对照/净值曲线共享读取口径；status 区分 open（在持）/
+# closed（已平仓）。
 TRADE_COLUMNS = [
     "trade_id", "date", "symbol", "name", "direction", "market",
-    "entry_price", "stop_loss", "trail_stop", "highest", "lowest",
-    "volume", "grade_at_entry", "ty_high", "ty_low", "status",
+    "entry_price", "stop_loss", "trail_stop", "volume", "grade_at_entry",
+    "ty_high", "ty_low", "highest", "lowest", "status",
     "exit_price", "exit_date", "exit_reason", "r_multiple", "pnl",
     "env_scale", "phase", "created_date",
 ]
@@ -35,11 +37,12 @@ def add_trade(trade: TradeRecord) -> None:
     with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         # 24 列（V4 审核 P1-7：trail_stop/highest/lowest 落库；closed 行动态止损不追历史）
+        # 列序 = TRADE_COLUMNS（G3 统一后与 sim_journal SIM_COLUMNS 一致）
         writer.writerow([
             trade.trade_id, trade.entry_date, trade.symbol, trade.name,
             trade.direction, "stock", trade.entry_price,
-            trade.stop_loss, "", "", "", trade.volume, trade.grade_at_entry,
-            "", "", "closed", trade.exit_price, trade.exit_date,
+            trade.stop_loss, "", trade.volume, trade.grade_at_entry,
+            "", "", "", "", "closed", trade.exit_price, trade.exit_date,
             trade.exit_reason, trade.r_multiple, trade.pnl, "", "",
             today,
         ])
@@ -62,10 +65,11 @@ def add_open_trade(trade_id: str, symbol: str, name: str,
     with open(TRADES_FILE, "a", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         # 24 列（V4 审核 P1-7；open 仓 trail_stop/highest/lowest 留空，sim-check 逐日维护）
+        # 列序 = TRADE_COLUMNS（G3 统一后与 sim_journal SIM_COLUMNS 一致）
         writer.writerow([
             trade_id, today, symbol, name, direction, market,
-            entry_price, stop_loss, "", "", "", volume, grade,
-            ty_high, ty_low, "open", "", "", "",
+            entry_price, stop_loss, "", volume, grade,
+            ty_high, ty_low, "", "", "open", "", "", "",
             "", "", env_scale, phase, today,
         ])
 
