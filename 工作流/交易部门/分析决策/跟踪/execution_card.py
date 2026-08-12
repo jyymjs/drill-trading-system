@@ -859,7 +859,7 @@ def action_plan(rows: list[dict] | None = None) -> str:
     优先级：🔴 必须做（补仓/平仓/止损）→ 🟡 关注（确认日/贴价/临期）→ ℹ️ 信息（埋伏）。
     推导来源：_check_half_position 判定 + 云单表状态 + 到期日（单一来源，不复制）。
     """
-    out = []
+    rows_t: list[tuple[str, str, str]] = []
     # ① 持仓判定 → 动作指令
     for h in _half_step(rows):
         code, name, step = h["code"], h["name"], h["step"]
@@ -869,18 +869,21 @@ def action_plan(rows: list[dict] | None = None) -> str:
         _sell_txt = f"（卖单 {sell}）" if sell else ""
         if act == "add":
             cost = float(step.get("add_price", 0) or 0) * int(step.get("add_shares", 0) or 0)
-            out.append(f"🔴 [补仓] {code} {name}：确认通过，挂 {step['add_shares']} 股 "
-                       f"@ {step['add_price']:.2f}（约 {cost:.0f} 元）{_sell_txt}")
+            rows_t.append(("🔴 必做", "补仓", f"{code} {name}：确认通过，挂 {step['add_shares']} 股 "
+                           f"@ {step['add_price']:.2f}（约 {cost:.0f} 元）{_sell_txt}"))
         elif act == "exit_reject":
-            out.append(f"🔴 [平仓] {code} {name}：确认不通过，按 {step.get('close', 0):.2f} 卖出"
-                       f"（0.5R 试探止步）{_sell_txt}")
+            rows_t.append(("🔴 必做", "平仓", f"{code} {name}：确认不通过，按 "
+                           f"{step.get('close', 0):.2f} 卖出（0.5R 试探止步）{_sell_txt}"))
         elif act == "exit_stop":
-            out.append(f"🔴 [止损] {code} {name}：确认日触止损，按 {float(row['stop_loss']):.2f} 出场")
+            rows_t.append(("🔴 必做", "止损", f"{code} {name}：确认日触止损，按 "
+                           f"{float(row['stop_loss']):.2f} 出场"))
         elif act == "wait":
-            out.append(f"🟡 [确认] {code} {name}：{step.get('reason', '等待收线')}（进场 "
-                       f"{float(row['entry_price']):.2f} / 止损 {float(row['stop_loss']):.2f}）")
+            rows_t.append(("🟡 关注", "确认", f"{code} {name}：{step.get('reason', '等待收线')}"
+                           f"（进场 {float(row['entry_price']):.2f} / "
+                           f"止损 {float(row['stop_loss']):.2f}）"))
         elif act == "hold":
-            out.append(f"🟡 [受限] {code} {name}：{step.get('reason', '补仓受限')}——保持 0.5R")
+            rows_t.append(("🟡 关注", "受限", f"{code} {name}：{step.get('reason', '补仓受限')}"
+                           f"——保持 0.5R"))
     # ② 云单挂单中：贴价 / 临期
     try:
         scan_map, _ = _scan_map()
@@ -895,13 +898,17 @@ def action_plan(rows: list[dict] | None = None) -> str:
         if price > 0 and trig > 0:
             td = (trig - price) / price * 100.0
             if td < 0.5:
-                out.append(f"🟡 [贴价] {o['code']} {o['name']}：买 ≥{trig:.2f}（现价 {price:.2f}，"
-                           f"距触发 {td:.1f}%——随时可能成交）")
+                rows_t.append(("🟡 关注", "贴价", f"{o['code']} {o['name']}：买 ≥{trig:.2f}"
+                               f"（现价 {price:.2f}，距触发 {td:.1f}%——随时可能成交）"))
         exp = o.get("expire", "")
         if exp and exp != "长期" and len(exp) == 5:
-            out.append(f"🟡 [临期] {o['code']} {o['name']}：买入单到期 {exp}——到期前未触发请重挂")
-    if not out:
-        out.append("ℹ️ 今日无需操作（全部持仓确认完成/挂单有效）")
+            rows_t.append(("🟡 关注", "临期", f"{o['code']} {o['name']}：买入单到期 {exp}"
+                           f"——到期前未触发请重挂"))
+    out = ["## 今日行动", "| 级别 | 动作 | 明细 |", "|---|---|---|"]
+    if rows_t:
+        out += [f"| {lvl} | {act} | {detail} |" for lvl, act, detail in rows_t]
+    else:
+        out.append("| ℹ️ 信息 | 无操作 | 今日无需操作（全部持仓确认完成/挂单有效）|")
     return "\n".join(out)
 
 
@@ -932,10 +939,12 @@ def positions_overview(rows: list[dict] | None = None,
                                            float(c.get("止损价", 0) or 0),
                                            float(c.get("TY低", 0) or 0) or None)["broken"])
     _cash = _ctx["cap"] - _held
-    out = [f"## 持仓（{len(opens)} 笔）"]
+    out = [f"## 持仓（{len(opens)} 笔）",
+           "| 股票 | 进场 | 现价 | 止损 | R | 状态/下一步 | 卖单（到期）|",
+           "|---|---|---|---|---|---|---|"]
     _mv = 0.0   # 持仓市值（Σ 最新收盘价×股数——券商 App 口径，老板对账用）
     if not opens:
-        out.append("无在持仓")
+        out.append("| — | — | — | — | — | 无在持仓 | — |")
     for r in opens:
         st = _position_status(r)
         if st is None:
@@ -945,7 +954,8 @@ def positions_overview(rows: list[dict] | None = None,
         o = orders.get(code, {})
         sell = (o.get("sell", "") or "").replace("**", "")
         expire = o.get("expire", "") or ""
-        _sell_txt = f"｜ 卖单 {sell}" + (f"(到期{expire})" if expire else "") if sell else ""
+        # R-076e 表格化：卖单列不再带"｜ "前缀（表格有竖线分隔）
+        _sell_txt = f"卖单 {sell}" + (f"（到期{expire}）" if expire else "") if sell else ""
         h = steps.get(code)
         act = h["step"]["action"] if h else ""
         # 注意：不用 dict 字面量映射——f-string 会提前求值所有分支（缺 close 键炸）
@@ -964,44 +974,38 @@ def positions_overview(rows: list[dict] | None = None,
         # 止损显示建议值（有 stop_update 用建议——券商卖单按建议挂）
         _disp_stop = st["v"].get("stop_update") or stop
         _mv += st["latest_close"] * int(r.get("volume", 0) or 0)
-        out.append(f"  {code} {name} 进{entry:.2f} 现{st['latest_close']:.2f} "
-                   f"损{_disp_stop:.2f} R{r_now:+.2f} {_act_txt}{_sell_txt}")
-        # 从行：非平凡才印（补仓参数/止盈目标/突破质量/止损建议）
+        # R-076e：从行信息并入状态列（；分隔）——表格化
+        _state_parts = [_act_txt] if _act_txt else []
         if act == "add" and h:
             cost = float(h["step"]["add_price"]) * int(h["step"]["add_shares"])
             _cash_txt = (f"现金够 ✅" if cost <= _cash
                          else f"现金缺 {cost - _cash:.0f}（等回款）")
-            out.append(f"    📋 补 {h['step']['add_shares']} 股 @ {h['step']['add_price']:.2f}"
-                       f"（约 {cost:.0f} 元，{_cash_txt}）")
+            _state_parts.append(f"补{h['step']['add_shares']}股@{h['step']['add_price']:.2f}"
+                                f"（{cost:.0f}元，{_cash_txt}）")
         if st["v"].get("should_exit"):
             _short = st["len_df_pos"] < 21 and "主动出场" in st["v"].get("reason", "")
-            out.append(f"    ⚠️ {'主动出场参考信号（短持仓，继续持有）' if _short else '主动出场→建议卖出'}"
-                       f"（{st['v'].get('reason', '')}）")
+            _state_parts.append("⚠️ 主动出场参考信号（短持仓继续持有）" if _short
+                                else "⚠️ 主动出场→建议卖出")
         elif st["v"].get("stop_update"):
-            out.append(f"    📋 止损 {stop:.2f} → 建议 {st['v']['stop_update']:.2f}"
-                       f"（{st['v'].get('reason', '')}）")
+            _state_parts.append(f"止损→{st['v']['stop_update']:.2f}")
+        _state = "；".join(_state_parts) if _state_parts else "—"
+        out.append(f"| {code} {name} | {entry:.2f} | {st['latest_close']:.2f} | "
+                   f"{_disp_stop:.2f} | {r_now:+.2f} | {_state} | {_sell_txt or '—'} |")
     # 资金段（券商 App 口径优先——老板对账标准，2026-08-12 老板指出"资金 8401"对不上）：
     #   总资产 = 现金 + 持仓市值；累计盈亏 = 市值 - 成本（≈ App 摊薄浮盈亏）
-    #   预算口径（本金 8401 与占用）作为第二行，用于补仓/挂单决策
+    #   预算口径（本金 8401 与占用）并入横向表格，用于补仓/挂单决策
     cap = _ctx["cap"]
     _asset = _cash + _mv
     _pnl = _mv - _held
     _total = _held + _pend + _trig_n + _trig_o
     _gap = max(_total - cap, 0)
-    # 老板拍板（2026-08-12）：资金段表格展示——项/数值两列，券商 App 可对账
+    # 老板拍板（2026-08-12）：资金段横向一行式表格（不要"| 项 | 数值 |"纵向两列）
     out.append("## 资金")
-    out.append("| 项 | 数值 |")
-    out.append("|---|---|")
-    out.append(f"| 总资产（现金+市值）| ~{_asset:.0f} 元 |")
-    out.append(f"| 可用现金 | ~{_cash:.0f} 元 |")
-    out.append(f"| 持仓市值 | {_mv:.0f} 元 |")
-    out.append(f"| 累计盈亏（市值-成本）| {_pnl:+.0f} 元 |")
-    out.append("| 本金（预算口径）| {:.0f} 元 |".format(cap))
-    out.append(f"| 已持成本 | {_held:.0f} 元 |")
-    out.append(f"| 待补仓 | {_pend:.0f} 元 |")
-    out.append(f"| 触发占用（新候选 {_trig_n:.0f} + 已挂单 {_trig_o:.0f}）| {_trig_n + _trig_o:.0f} 元 |")
-    if _gap > 0:
-        out.append(f"| 预算缺口 | {_gap:.0f} 元 ⚠️ 优先补仓，挂单排队等回款 |")
+    out.append("| 总资产 | 可用现金 | 持仓市值 | 累计盈亏 | 本金 | 已持成本 | 待补仓 | 触发占用 | 预算缺口 |")
+    out.append("|---|---|---|---|---|---|---|---|---|")
+    out.append(f"| ~{_asset:.0f} | ~{_cash:.0f} | {_mv:.0f} | {_pnl:+.0f} | {cap:.0f} | "
+               f"{_held:.0f} | {_pend:.0f} | {_trig_n + _trig_o:.0f} | "
+               + (f"{_gap:.0f} ⚠️ 优先补仓" if _gap > 0 else "0") + " |")
     return "\n".join(out)
 
 
@@ -1010,18 +1014,21 @@ def cloud_orders_status() -> str:
     卖出单/到期日维度；校准三态简化版：✅有效/⚠️参数过时/🔴破位/不在候选）"""
     orders = _cloud_orders()
     out = ["## 云单状态"]
-    if not orders:
-        out.append("云单表为空（无记录）")
-        return "\n".join(out)
     try:
         scan_map, batch = _scan_map()
     except Exception:  # noqa: BLE001
         scan_map, batch = None, ""
     if batch:
+        # 校准基准放表格前——markdown 表格要求连续行，插中间会打断渲染
         out.append(f"  ℹ️ 校准基准：批次 {batch}")
+    out += ["| 股票 | 买入单 | 卖出单 | 到期 | 状态 |",
+            "|---|---|---|---|---|"]
+    if not orders:
+        out.append("| — | — | — | — | 云单表为空（无记录）|")
+        return "\n".join(out)
     for o in orders:
         stat = o["status"]
-        trig = f"买≥{o['trigger']}" if o["trigger"] else "—"
+        trig = f"≥{o['trigger']}/{o['vol']}股" if o["trigger"] else "—"
         sell = (o["sell"] or "—").replace("**", "")
         exp = o["expire"] or "—"
         cal = ""
@@ -1032,15 +1039,15 @@ def cloud_orders_status() -> str:
             else:
                 sb = structure_broken(s["price"], float(o["stop"] or 0) or 0, s.get("ty_low"))
                 if sb["broken"]:
-                    cal = f"🔴 破位失效（{sb['reason']}）"
+                    cal = f"🔴 破位失效"
                 elif abs(s["trigger"] - float(o["trigger"] or 0)) >= 0.005:
                     cal = "⚠️ 参数过时"
                 else:
                     cal = "✅ 有效"
                     if s.get("vol", 0) > 0 and s["vol"] <= 1.2:
-                        cal += f"（量比 {s['vol']:.2f} 缩量不撤）"
-        out.append(f"  {o['code']} {o['name']} {trig}/{o['vol']}股 损{o['stop']}"
-                   f" ｜ 卖 {sell} ｜ 到期 {exp} ｜ {stat}{(' ' + cal) if cal else ''}")
+                        cal += "（缩量不撤）"
+        out.append(f"| {o['code']} {o['name']} | {trig} | {sell} | {exp} | "
+                   f"{stat}{(' ' + cal) if cal else ''} |")
     return "\n".join(out)
 
 
@@ -1063,7 +1070,7 @@ def full_card(candidates: list[dict], rows: list[dict] | None = None,
     head = (f"# 实盘执行卡 {datetime.now().strftime('%Y-%m-%d')} "
             f"（{datetime.now().strftime('%A')[:3]}）· {label}（{note}）\n"
             f"{_f} ｜ 批次 {_latest_scan_files(_SCAN_DIR)[1] or '无'}\n")
-    sec_action = "## 今日行动\n" + action_plan(rows)
+    sec_action = action_plan(rows)
     sec_pos = positions_overview(rows, candidates)
     sec_cloud = cloud_orders_status()
     sec_market = "## 市场机会（S 级）\n" + _s_overview_body()
@@ -1120,24 +1127,39 @@ def _s_overview_body() -> str:
         except (OSError, ValueError):
             continue
     if not s_level:
-        return "  当日无 S 级候选（全部不达标或未扫描到）"
-    out = []
+        return "| — | — | — | — | 当日无 S 级候选 |"
+    out = ["| 股票 | 判定 | 触发 | 止损 | 说明 |",
+           "|---|---|---|---|---|"]
     for code, info in s_level.items():
+        if not info["trigger"]:
+            out.append(f"| {code} {info['name']} | {info['reason']} | — | — | — |")
+            continue
         if not info["reason"].startswith("✅"):
-            out.append(f"  {info['reason']}  {code} {info['name']} | "
-                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
-                       if info['trigger'] else f"  {info['reason']}  {code} {info['name']}")
+            _short, _why = _s_reason_short(info["reason"])
+            out.append(f"| {code} {info['name']} | {_short} | {float(info['trigger']):.2f} | "
+                       f"{float(info['stop']):.2f} | {_why} |")
             continue
         sb = structure_broken(float(info["price"] or 0), float(info["stop"] or 0),
                               float(info["ty_low"] or 0) or None)
         if sb["broken"]:
-            out.append(f"  🔴 已破位（现价≤止损/平台下沿，不可挂单）  {code} {info['name']} | "
-                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
-                       f" | {sb['reason']}")
+            out.append(f"| {code} {info['name']} | 🔴 破位不可买 | {float(info['trigger']):.2f} | "
+                       f"{float(info['stop']):.2f} | {sb['reason']} |")
         else:
-            out.append(f"  {info['reason']}  {code} {info['name']} | "
-                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}")
+            out.append(f"| {code} {info['name']} | ✅ 可挂单 | {float(info['trigger']):.2f} | "
+                       f"{float(info['stop']):.2f} | {info['reason']} |")
     return "\n".join(out)
+
+
+def _s_reason_short(reason: str) -> tuple[str, str]:
+    """S 级判定列短词 + 说明列（R-076e 表格化拆分）"""
+    if "已突破" in reason:
+        return "❌ 已突破", "现价≥触发价，追高不买"
+    if "C23 不达标" in reason:
+        _why = reason.split("（", 1)[1].rstrip("）") if "（" in reason else "止损不足"
+        return "❌ C23 不达标", _why
+    if "放量不达标" in reason:
+        return "❌ 放量不达标", "量比≤1.2，突破日确认量能"
+    return reason, ""
 
 
 def main() -> int:

@@ -167,19 +167,23 @@ def test_auto_open_default_picks_main_file_not_variants(monkeypatch, tmp_path):
     monkeypatch.setattr("数据基础.配置.stock_pool.get_stock_codes",
                         lambda: {"600001"})
     monkeypatch.chdir(tmp_path)
+    # R-073 修正（2026-08-13）：批次须用"今日"日期——数据新鲜度检查
+    # （批次 < 今日 → 过时跳过）使写死日期的夹具跨天后失效
+    import datetime as _dt
+    _today = _dt.datetime.now().strftime("%Y%m%d")
     out_dir = tmp_path / "数据基础" / "扫描输出"
     out_dir.mkdir(parents=True)
-    main_csv = out_dir / "scan_result_20260812_223326.csv"
+    main_csv = out_dir / f"scan_result_{_today}_223326.csv"
     pd.DataFrame([{"code": "600001", "name": "主文件票", "评级": "S",
                    "触发价": 10.5, "止损价": 9.8, "每股风险": 0.7}]
                  ).to_csv(main_csv, index=False, encoding="utf-8-sig")
     # 实验变体（同秒生成）：里面放不同的票，若被误取测试将失败
     pd.DataFrame([{"code": "600002", "name": "变体票", "评级": "S",
                    "触发价": 8.2, "止损价": 7.9, "每股风险": 0.3}]
-                 ).to_csv(out_dir / "scan_result_20260807_223326_broken.csv",
+                 ).to_csv(out_dir / f"scan_result_{_today}_223326_broken.csv",
                           index=False, encoding="utf-8-sig")
     text = st.sim_auto_open()  # 无参：走 glob 选择逻辑
-    assert "scan_result_20260812_223326.csv" in text
+    assert f"scan_result_{_today}_223326.csv" in text
     rows = st._read_all()
     assert len(rows) == 1 and rows[0]["symbol"] == "600001"  # 主文件票，非变体票
 
