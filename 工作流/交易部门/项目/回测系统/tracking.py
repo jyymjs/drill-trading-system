@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from 分析决策.分析.indicators import board_limit_pct
+
 
 @dataclass
 class Signal:
@@ -100,7 +102,8 @@ STAMP = 0.0005
 SLIPPAGE = 0.0001
 
 
-def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float = 1.0) -> float:
+def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float = 1.0,
+                volume: int | None = None) -> float:
     """单笔交易成本（元/股口径：按成交金额比例折算）
 
     Args:
@@ -119,8 +122,11 @@ def _trade_cost(entry: float, exit_price: float, enable: bool, multiplier: float
     """
     if not enable:
         return 0.0
-    buy_fee = entry * COMMISSION
-    sell_fee = exit_price * (COMMISSION + STAMP)
+    # R-080 G13（2026-08-13）：佣金最低 1 元/笔（券商标准）——对齐 capital.calc_trade_fee
+    # 每股口径：最低佣金 = 1 元 ÷ 股数（volume 默认 100 = 最小整手，保守侧）
+    min_fee_ps = 1.0 / volume if volume else 0.0
+    buy_fee = max(entry * COMMISSION, min_fee_ps)
+    sell_fee = max(exit_price * (COMMISSION + STAMP), min_fee_ps)
     cost = (buy_fee + sell_fee) * multiplier
     if multiplier > 1.0:
         # D2 压力：滑点翻倍计入（万1 × multiplier → 万2 单边）
@@ -175,8 +181,29 @@ def track_signal(signal: Signal, df: pd.DataFrame, hold: int, enable_cost: bool 
 #   （做多新止损必须高于进场价，2023-03-04 老师原话，2026-08-04 补齐）。
 # 判定口径（C5 定案）：日线收盘判定（信号日视角）；先回测验证后上线，不直接改生产出场行为。
 
+def _is_one_line_blocked(open_arr, high, low, close, j, prev_close_arr, code, side):
+    """一字涨/跌停判定（R-080 G10 · 2026-08-13，交易部修订：不依赖 ST 标记）
+
+    开=高=低=收 且 当日涨跌幅≈板块线（±0.005 容差）→ 一字板。
+    side="down"=一字跌停（卖出被堵）；"up"=一字涨停（买入被堵）。
+    """
+    if open_arr is None or prev_close_arr is None:
+        return False
+    if not (open_arr[j] == high[j] == low[j] == close[j]):
+        return False
+    # prev_close_arr 由调用方 np.roll 提供（rolled[j] = 前一交易日收盘）
+    prev = prev_close_arr[j] if j > 0 else None
+    if not prev:
+        return False
+    pct = board_limit_pct(code)
+    # 理论涨/跌停价（昨收 ×(1±pct)，四舍五入到分——交易所口径）
+    limit_price = round(prev * (1 - pct), 2) if side == "down" else round(prev * (1 + pct), 2)
+    return abs(close[j] - limit_price) < 0.01
+
+
 def _track_window(high, low, close, dates, start, end, entry, stop,
-                  enable_cost: bool, cost_multiplier: float, moving_stop: bool):
+                  enable_cost: bool, cost_multiplier: float, moving_stop: bool,
+                  open_arr=None, prev_close_arr=None, code=None):
     """窗口内出场跟踪（含 C5 移动止损可选模式）
 
     无移动止损（moving_stop=False，现有行为）：
@@ -197,7 +224,14 @@ def _track_window(high, low, close, dates, start, end, entry, stop,
     if not moving_stop:
         for j in range(start, end + 1):
             if low[j] <= stop:
-                return stop, pd.Timestamp(dates[j]), True
+                # R-080 G10（2026-08-13）：成交假设修正——open_arr 提供时生效
+                #   一字跌停（开=高=低=收=跌停价）→ 卖不出，顺延下一交易日
+                #   跳空穿越（开盘<止损 且非一字跌停）→ 按当日开盘价成交（实盘更差）
+                if _is_one_line_blocked(open_arr, high, low, close, j,
+                                        prev_close_arr, code, "down"):
+                    continue
+                ex = open_arr[j] if (open_arr is not None and open_arr[j] < stop) else stop
+                return ex, pd.Timestamp(dates[j]), True
         return close[end], pd.Timestamp(dates[end]), False
 
     highest = entry          # 持仓期最高价（初始=进场价，"买入后新高"从此算起）
@@ -209,9 +243,13 @@ def _track_window(high, low, close, dates, start, end, entry, stop,
             if new_stop > stop and new_stop > entry:      # 高于当前止损 且 进场位正向（硬规则）
                 stop = new_stop
             candidate = None
-        # ② 止损检查（当日最低触及 → 以当前止损价出场）
+        # ② 止损检查（当日最低触及 → 以当前止损价出场；G10：一字跌停顺延/跳空按开盘）
         if low[j] <= stop:
-            return stop, pd.Timestamp(dates[j]), True
+            if _is_one_line_blocked(open_arr, high, low, close, j,
+                                    prev_close_arr, code, "down"):
+                continue
+            ex = open_arr[j] if (open_arr is not None and open_arr[j] < stop) else stop
+            return ex, pd.Timestamp(dates[j]), True
         # ③ 新高更新（结构前提：必须有过买入后新高，回调低点才算"新结构低点"）
         highest = max(highest, high[j])
         # ④ 候选更新：已创新高后 当日创回调新低（无候选比昨日低，有候选比候选低）
@@ -222,7 +260,8 @@ def _track_window(high, low, close, dates, start, end, entry, stop,
 
 def _phase_in_track(high, low, close, dates, df, conf_idx: int, end: int, entry: float,
                     stop: float, enable_cost: bool, cost_multiplier: float,
-                    moving_stop: bool) -> tuple[float, pd.Timestamp, bool]:
+                    moving_stop: bool, open_arr=None, prev_close_arr=None,
+                    code=None) -> tuple[float, pd.Timestamp, bool]:
     """G3 分步建仓·收线确认后的出场跟踪（phase_in 模式 · 2024-06-29 周会原文）
 
     确认日 = conf_idx（开仓/触发日次日；delay2 允许延迟至 conf_idx+1）：
@@ -243,7 +282,8 @@ def _phase_in_track(high, low, close, dates, df, conf_idx: int, end: int, entry:
     if conf_idx > end:
         # 窗口内无确认收线 → 0.5R 持有到期平仓（无确认空间，保守近似）
         return _track_window(high, low, close, dates, conf_idx, end, entry, stop,
-                             enable_cost, cost_multiplier, moving_stop)
+                             enable_cost, cost_multiplier, moving_stop,
+                             open_arr, prev_close_arr, code)
     verdict = half_position_confirm_delay2(df, entry, stop, conf_idx, max_idx=end)
     used = verdict["conf_idx_used"]
     if verdict["stopped"]:
@@ -251,7 +291,8 @@ def _phase_in_track(high, low, close, dates, df, conf_idx: int, end: int, entry:
     if verdict["reject"]:
         return float(verdict["close"]), pd.Timestamp(dates[used]), False
     return _track_window(high, low, close, dates, used + 1, end, entry, stop,
-                         enable_cost, cost_multiplier, moving_stop)
+                         enable_cost, cost_multiplier, moving_stop,
+                         open_arr, prev_close_arr, code)
 
 
 def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
@@ -263,17 +304,21 @@ def _track_normal(signal: Signal, df: pd.DataFrame, t: int, end: int, hold: int,
     high = df["最高"].values
     low = df["最低"].values
     close = df["收盘"].values
+    open_a = df["开盘"].values if "开盘" in df.columns else None
+    prev_close = np.roll(close, 1)
     dates = df["日期"].values
 
     if phase_in:
         # G3 分步建仓（2026-08-06）：0.5R 起步 → 下一根收线确认（T+1）
         exit_price, exit_date, stopped = _phase_in_track(
             high, low, close, dates, df, t + 1, end, entry, stop,
-            enable_cost, cost_multiplier, moving_stop)
+            enable_cost, cost_multiplier, moving_stop,
+            open_a, prev_close, signal.code)
     else:
         exit_price, exit_date, stopped = _track_window(
             high, low, close, dates, t + 1, end, entry, stop,
-            enable_cost, cost_multiplier, moving_stop)
+            enable_cost, cost_multiplier, moving_stop,
+            open_a, prev_close, signal.code)
 
     cost = _trade_cost(entry, exit_price, enable_cost, cost_multiplier)
     r = (exit_price - entry - cost) / signal.risk if signal.risk > 0 else 0.0

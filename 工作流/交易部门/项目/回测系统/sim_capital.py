@@ -128,6 +128,7 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                      cap_per_day: int = 0,
                      max_date: str | None = None,
                      debug_rejects: bool = False,
+                     vol_map: dict | None = None,
                      confirm_shortfall_skip: bool = False) -> dict:
     """资金约束逐笔模拟（核心逻辑，可单测）
 
@@ -386,6 +387,23 @@ def simulate_capital(df: pd.DataFrame, capital: float, risk_ratio: float,
                 rejects.append({"code": row["code"], "date": date, "risk_ps": round(risk_ps, 3),
                                 "reason": _reason, "risk_amt_at": round(risk_amt, 2)})
             continue
+        # R-080 G11（2026-08-13）：流动性容量约束——单笔成交额 ≤ 当日成交额 5%
+        # （vol_map: code → date(YYYY-MM-DD) → 当日成交量(手)；5600 资金容量内不触发，
+        #  资金放大防"成交量幻觉"；amount 口径= vol×100×price）
+        if vol_map is not None:
+            _v = (vol_map.get(str(row["code"]), {}) or {}).get(str(date)[:10], 0) or 0
+            if _v > 0:
+                _cap_shares = int(_v * 5 / 100) * 100   # 成交额5% ÷ price 后股数 = vol×100×0.05
+                if shares > _cap_shares:
+                    shares = _cap_shares
+                    if shares < 100:
+                        reasons["容量不足(>日成交5%)"] = reasons.get("容量不足(>日成交5%)", 0) + 1
+                        if debug_rejects:
+                            rejects.append({"code": row["code"], "date": date,
+                                            "risk_ps": round(risk_ps, 3),
+                                            "reason": "容量不足(>日成交5%)",
+                                            "risk_amt_at": round(risk_amt, 2)})
+                        continue
         cost = price * shares
 
         # 4) 出场日期合法性校验（坏行/数据末尾未完成持仓跳过）
