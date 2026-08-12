@@ -10,7 +10,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (（见仓库质检流程文档）: Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by `improve-codebase-architecture`, reviewer judgement, and `playwright` + Bash runs respectively.
+**Framework mapping (六轴)**: these two axes map onto the harness's six review axes (（见仓库质检流程文档）: Standards → 代码质量 (axis 1); Spec → 业务验收 (axis 2) + 计划一致性 (axis 3). The remaining axes (架构合规 / 元审查 / 环境验证) are covered by reviewer judgement, and `playwright` + Bash runs respectively.
 
 ## Process
 
