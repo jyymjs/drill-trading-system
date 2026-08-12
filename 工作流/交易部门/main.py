@@ -76,18 +76,36 @@ def _load_strategy(name: str):
 
 
 def _scan_report_already_today() -> str | None:
-    """当日是否已产出扫描报告（T-022 当日去重，2026-08-06）
+    """当日是否已产出扫描报告（T-022 当日去重，2026-08-06；R-073 升级 2026-08-12）
 
     幂等依据：OUTPUT_DIR（数据基础/扫描输出）下存在当日 scan_result_*.csv。
     白天手动跑过 → 18:05 计划任务再跑时跳过，避免白跑 5 分钟 + 多份报告混淆。
 
+    R-073（2026-08-12 事故：06:48 用 08-11 旧数据跑出批次 → 18:05 被去重跳过，
+    收盘后未重扫、执行卡拿旧数据决策）：跳过需三重条件缺一不可——
+      ① 当日已有报告 ② 数据已更新到今日（db max(date)）③ 报告生成于 15:00 后
+      （当日数据可得之后；早于 15:00 的报告必是旧数据跑的 → 不跳过，更新后重扫）
+
     Returns:
-        已产出的报告文件名（str），当日无报告返回 None
+        已产出的报告文件名（str），当日无报告或数据不新鲜返回 None
     """
     from 数据基础.配置.settings import OUTPUT_DIR
     today = datetime.now().strftime("%Y%m%d")
+    # 条件②：数据是否已更新到今日（与每日扫描.ps1 健康检查同口径）
+    try:
+        import duckdb
+        con = duckdb.connect(r"数据基础\行情数据\t017_p2.duckdb", read_only=True)
+        db_date = str(con.execute("select max(date) from daily").fetchone()[0])
+        con.close()
+    except Exception:
+        db_date = ""
+    if db_date != datetime.now().strftime("%Y-%m-%d"):
+        return None
+    # 条件①③：当日报告 + 生成于 15:00 后
+    _cutoff = datetime.now().replace(hour=15, minute=0, second=0, microsecond=0)
     for p in sorted(OUTPUT_DIR.glob(f"scan_result_{today}_*.csv"), reverse=True):
-        return p.name
+        if datetime.fromtimestamp(p.stat().st_mtime) >= _cutoff:
+            return p.name
     return None
 
 

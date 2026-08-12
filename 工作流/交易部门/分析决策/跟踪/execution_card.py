@@ -258,7 +258,9 @@ def scan_s_overview(scan_dir: str | Path | None = None) -> str:
                     if suffix == "_c23":
                         reason += f"（{rec.get('C23原因', '') or '不达标'}）"
                     s_level[code] = {"trigger": trig, "stop": stop,
-                                     "reason": reason, "name": rec.get("name", "")}
+                                     "reason": reason, "name": rec.get("name", ""),
+                                     "price": rec.get("price", ""),
+                                     "ty_low": rec.get("TY低", "")}
         except (OSError, ValueError):
             continue
     if not s_level:
@@ -266,9 +268,21 @@ def scan_s_overview(scan_dir: str | Path | None = None) -> str:
         out.append(line)
         return "\n".join(out)
     for code, info in s_level.items():
-        out.append(f"  {info['reason']}  {code} {info['name']} | "
-                   f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
-                   if info['trigger'] else f"  {info['reason']}  {code} {info['name']}")
+        # R-073 补漏（2026-08-12）：合格候选（主文件）加破位检查——现价 ≤ 止损
+        # 结构已坏（600285 案例：大跌 -9.2% 现价 20.47 破止损 21.90 仍标"可挂单"）
+        if not info["reason"].startswith("✅"):
+            out.append(f"  {info['reason']}  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}"
+                       if info['trigger'] else f"  {info['reason']}  {code} {info['name']}")
+            continue
+        _sb = structure_broken(float(info["price"] or 0), float(info["stop"] or 0),
+                               float(info["ty_low"] or 0) or None)
+        if _sb["broken"]:
+            out.append(f"  🔴 已破位（现价≤止损/平台下沿，不可挂单）  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f} | {_sb['reason']}")
+        else:
+            out.append(f"  {info['reason']}  {code} {info['name']} | "
+                       f"触发 {float(info['trigger']):.2f} | 止损 {float(info['stop']):.2f}")
     out.append(line)
     return "\n".join(out)
 
@@ -586,6 +600,31 @@ def protect_card(rows: list[dict] | None = None) -> str:
     return "\n".join(out)
 
 
+def _data_freshness_line() -> str:
+    """执行卡时间检查（R-073，2026-08-12 老板拍板：开启执行单先查当前时间）。
+    生成时刻 vs 数据最后日期：收盘后（16:00 起，留数据源延迟缓冲）数据必须为当日——08-12 事故：
+    06:48 旧数据批次生成当日执行卡，18:05 去重跳过未重扫，收盘后拿着昨日数据决策。
+    盘中/盘前数据为最近交易日属正常；收盘后仍非当日 → 显著告警。"""
+    now = datetime.now()
+    db_date = "查询失败"
+    try:
+        import duckdb
+        con = duckdb.connect(r"数据基础\行情数据\t017_p2.duckdb", read_only=True)
+        db_date = str(con.execute("select max(date) from daily").fetchone()[0])
+        con.close()
+    except Exception:
+        pass
+    today = now.strftime("%Y-%m-%d")
+    if now.hour >= 16 and db_date != today:
+        return (f"  🕒 生成 {now.strftime('%H:%M')} | 🔴 **数据截至 {db_date}，"
+                f"已过收盘仍非当日 {today}**——旧数据执行卡，请先跑数据更新再决策")
+    if now.hour >= 16:
+        return f"  🕒 生成 {now.strftime('%H:%M')} | 数据截至 {db_date}（当日 ✅）"
+    if db_date != today and db_date != "查询失败":
+        return f"  🕒 生成 {now.strftime('%H:%M')} | 数据截至 {db_date}（盘中/盘前，最近交易日属正常）"
+    return f"  🕒 生成 {now.strftime('%H:%M')} | 数据截至 {db_date}"
+
+
 def system_status(rows: list[dict] | None = None) -> str:
     """系统状态行（2026-08-06 老板拍板全自动+熔断式警报——审核层移除后仅系统级介入）
 
@@ -598,7 +637,7 @@ def system_status(rows: list[dict] | None = None) -> str:
         rows: journal 行（缺省读取 sim_journal）；测试可注入
     """
     rows = rows if rows is not None else sim_trading._read_all()
-    out = []
+    out = [_data_freshness_line()]
     closed = [r for r in rows if r.get("status") == "closed"]
     losing = 0
     for r in reversed(closed):

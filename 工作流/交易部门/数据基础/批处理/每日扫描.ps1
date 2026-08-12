@@ -69,13 +69,16 @@ Write-Log "scan start$mode"
 # 1. 周末跳过
 $day = (Get-Date).DayOfWeek
 if ($day -eq 'Saturday' -or $day -eq 'Sunday') { Write-Log "weekend, skip"; exit 0 }
-# 1.5 当日去重（T-022，2026-08-06）：白天手动跑过（已产出当日 scan_result）→ 跳过，
-#     不再白跑 5 分钟；若当日带日期报告还没复制则顺手补一份，保证报告完整。
+# 1.5 当日去重（T-022 升级 R-073，2026-08-12）：跳过三条件缺一不可——
+#     ① 当日已有扫描批次 ② 数据已更新到今日 ③ 批次生成于 15:00 后（当日数据可得之后）。
+#     08-12 事故：06:48 批次（08-11 旧数据）导致 18:05 被去重跳过，收盘后未重扫、执行卡过期。
+#     06:48 < 15:00 → 旧数据批次，更新后必须重扫（批次全保留，无覆盖风险）。
 $date = Get-Date -Format 'yyyyMMdd'
+$dbLatestNow = & 'C:\Program Files\Python312\python.exe' -c "import duckdb; con=duckdb.connect(r'数据基础\行情数据\t017_p2.duckdb',read_only=True); print(con.execute('select max(date) from daily').fetchone()[0])" 2>&1 | Select-Object -First 1
 $todayScan = Get-ChildItem '数据基础\扫描输出' -Filter "scan_result_${date}_*.csv" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($todayScan) {
-    Write-Log "today scan already done, skip ($($todayScan.Name))"
+if ($todayScan -and $dbLatestNow.Trim() -eq (Get-Date -Format 'yyyy-MM-dd') -and $todayScan.LastWriteTime -ge (Get-Date).Date.AddHours(15)) {
+    Write-Log "today scan already done & data fresh & post-15:00, skip ($($todayScan.Name))"
     $daily = "产出\输出\扫描_$date.csv"
     if (-not (Test-Path $daily)) { Copy-Item $todayScan.FullName $daily -Force; Write-Log "report: $daily" }
     Invoke-Archive -date $date
@@ -83,8 +86,9 @@ if ($todayScan) {
     Write-Log "scan done (skipped)"
     exit 0
 }
-# 2. 数据新鲜度检查（库最新日期应为今天或最近交易日）
-$check = & 'C:\Program Files\Python312\python.exe' -c "import duckdb; con=duckdb.connect(r'数据基础\行情数据\t017_p2.duckdb',read_only=True); print(con.execute('select max(date) from daily').fetchone()[0])" 2>&1
+if ($todayScan) { Write-Log "R-073: 当日已有批次但不可跳过（数据未更新或批次早于15:00, db=$($dbLatestNow.Trim()) 批次=$($todayScan.Name)）——重扫" }
+# 2. 数据新鲜度检查（库最新日期应为今天或最近交易日；$dbLatestNow 已在 1.5 查询复用）
+$check = $dbLatestNow
 $latest = $check.Trim()
 Write-Log "db latest: $latest"
 $today = Get-Date -Format 'yyyy-MM-dd'
